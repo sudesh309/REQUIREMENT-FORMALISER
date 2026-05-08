@@ -40,6 +40,29 @@ specifications.
 python -m engine.cli examples/vehicle.sysml
 ```
 
+## GUI
+
+A Tkinter desktop GUI is bundled — three panes (containment tree,
+properties editor, validation log) plus a toolbar with one-click
+creation of every common SysML v2 element kind:
+
+```bash
+python -m gui.app
+```
+
+(Requires Tk; on Debian/Ubuntu: `sudo apt install python3-tk`.)
+
+Features:
+
+- File: New / Open JSON / Save JSON / Import `.sysml`
+- Tree: containment view of the project package, right-click to add or delete
+- Properties pane: edit name, short name, multiplicity, typing (by qualified
+  name), `req_id` / `text` fields, documentation; "Apply changes" commits
+- Toolbar buttons add Package, Part Def/Usage, Attribute Def/Usage,
+  Port Def/Usage, Connection, Action Def/Usage, State Def/Usage,
+  Requirement Def/Usage, Constraint Def/Usage, Enum Def
+- F5 runs the validator, listing all issues in the bottom pane
+
 Run tests:
 
 ```bash
