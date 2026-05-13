@@ -10,6 +10,7 @@ from .features import (
     Multiplicity, MultiplicityRange, FeatureDirection,
 )
 from .expressions import Expression, LiteralExpression, FeatureReferenceExpression, Invocation
+from .stereotypes import Stereotype, StereotypeTag, StereotypeApplication, stereotypes_on
 
 __all__ = [
     "Element", "Relationship", "Comment", "Documentation", "Annotation",
@@ -19,4 +20,5 @@ __all__ = [
     "Feature", "FeatureMembership", "FeatureTyping", "Subsetting", "Redefinition",
     "Multiplicity", "MultiplicityRange", "FeatureDirection",
     "Expression", "LiteralExpression", "FeatureReferenceExpression", "Invocation",
+    "Stereotype", "StereotypeTag", "StereotypeApplication", "stereotypes_on",
 ]

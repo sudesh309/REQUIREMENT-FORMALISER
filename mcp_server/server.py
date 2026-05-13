@@ -33,10 +33,13 @@ import traceback
 from typing import Any, Callable, Optional
 
 from engine import Repository, from_json, parse, to_json
+from engine.diagram import bdd as bdd_dot, ibd as ibd_dot, requirements as req_dot
+from engine.graph_export import EXPORTERS, export_knowledge_graph
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
+from kerml.stereotypes import Stereotype, stereotypes_on
 from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
@@ -83,6 +86,7 @@ KIND_REGISTRY: dict[str, type[Element]] = {
     "RequirementDefinition": RequirementDefinition,
     "RequirementUsage":      RequirementUsage,
     "EnumerationDefinition": EnumerationDefinition,
+    "Stereotype":            Stereotype,
 }
 
 
@@ -306,6 +310,82 @@ def tool_validate() -> dict:
     })
 
 
+def tool_define_stereotype(name: str,
+                           applies_to: Optional[list[str]] = None,
+                           tags: Optional[list[dict]] = None,
+                           parent: Optional[str] = None) -> dict:
+    parent_el = SESSION.find(parent) if parent else SESSION.repo.root_package
+    if parent_el is None or not isinstance(parent_el, Namespace):
+        return _err(f"Parent {parent!r} must be a Namespace")
+    applies = []
+    for kind_name in applies_to or []:
+        cls = KIND_REGISTRY.get(kind_name)
+        if cls is None:
+            return _err(f"Unknown kind in applies_to: {kind_name!r}")
+        applies.append(cls)
+    s = Stereotype(name=name, applies_to=applies or None)
+    parent_el.own(s)
+    for t in tags or []:
+        s.define_tag(t["name"], default=t.get("default"))
+    SESSION.repo.registry.register_tree(s)
+    return _ok(SESSION.element_summary(s))
+
+
+def tool_apply_stereotype(stereotype: str, target: str,
+                          values: Optional[dict] = None) -> dict:
+    s = SESSION.find(stereotype)
+    if not isinstance(s, Stereotype):
+        return _err(f"{stereotype!r} is not a Stereotype")
+    t = SESSION.find(target)
+    if t is None:
+        return _err(f"Target {target!r} not found")
+    try:
+        app = s.apply(t, values or {})
+    except (TypeError, KeyError) as ex:
+        return _err(str(ex))
+    return _ok({"applied": s.name, "to": t.qualified_name, "values": app.values})
+
+
+def tool_list_stereotypes(target: Optional[str] = None) -> dict:
+    if target:
+        t = SESSION.find(target)
+        if t is None:
+            return _err(f"Target {target!r} not found")
+        return _ok([
+            {"stereotype": a.stereotype.qualified_name, "values": a.values}
+            for a in stereotypes_on(t)
+        ])
+    return _ok([
+        {"qualified_name": s.qualified_name,
+         "tags": [t.name for t in s.all_tags()],
+         "applies_to": [c.__name__ for c in s.applies_to]}
+        for s in SESSION.repo.all_elements() if isinstance(s, Stereotype)
+    ])
+
+
+def tool_export_graph(format: str = "turtle") -> dict:
+    if format not in EXPORTERS:
+        return _err(f"Unknown format {format!r}. Known: {sorted(EXPORTERS)}")
+    text = export_knowledge_graph(SESSION.repo.root_package, format)
+    return _ok({"format": format, "size": len(text), "text": text})
+
+
+def tool_export_diagram(kind: str = "bdd", target: Optional[str] = None) -> dict:
+    if kind == "ibd":
+        t = SESSION.find(target) if target else None
+        if not isinstance(t, PartDefinition):
+            return _err("ibd requires a PartDefinition target")
+        return _ok({"kind": "ibd", "format": "dot", "text": ibd_dot(t)})
+    root = SESSION.find(target) if target else SESSION.repo.root_package
+    if root is None or not isinstance(root, Namespace):
+        return _err("Diagram root must be a Namespace")
+    if kind == "bdd":
+        return _ok({"kind": "bdd", "format": "dot", "text": bdd_dot(root)})
+    if kind in ("requirements", "req"):
+        return _ok({"kind": "requirements", "format": "dot", "text": req_dot(root)})
+    return _err(f"Unknown diagram kind {kind!r}")
+
+
 def tool_tree(root: Optional[str] = None) -> dict:
     r = SESSION.find(root) if root else SESSION.repo.root_package
     if r is None:
@@ -502,6 +582,72 @@ TOOLS: list[dict] = [
         "description": "Run the well-formedness validator over the current project.",
         "inputSchema": {"type": "object", "properties": {}},
         "handler": tool_validate,
+    },
+    {
+        "name": "sysml_define_stereotype",
+        "description": "Define a custom Stereotype with optional applies_to filter and typed tags.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name":       {"type": "string"},
+                "applies_to": {"type": "array", "items": {"type": "string"},
+                               "description": "List of metaclass names this stereotype may decorate"},
+                "tags":       {"type": "array",
+                               "items": {"type": "object",
+                                         "properties": {"name": {"type": "string"},
+                                                        "default": {}},
+                                         "required": ["name"]}},
+                "parent":     {"type": "string"},
+            },
+            "required": ["name"],
+        },
+        "handler": tool_define_stereotype,
+    },
+    {
+        "name": "sysml_apply_stereotype",
+        "description": "Apply a previously-defined Stereotype to a target element.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "stereotype": {"type": "string"},
+                "target":     {"type": "string"},
+                "values":     {"type": "object"},
+            },
+            "required": ["stereotype", "target"],
+        },
+        "handler": tool_apply_stereotype,
+    },
+    {
+        "name": "sysml_list_stereotypes",
+        "description": "List defined stereotypes, or applications on a specific target.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"target": {"type": "string"}},
+        },
+        "handler": tool_list_stereotypes,
+    },
+    {
+        "name": "sysml_export_graph",
+        "description": "Export the project as a knowledge graph (turtle / json-ld / graphml / cypher).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"format": {"type": "string",
+                                      "enum": ["turtle", "json-ld", "graphml", "cypher"]}},
+        },
+        "handler": tool_export_graph,
+    },
+    {
+        "name": "sysml_export_diagram",
+        "description": "Export a Graphviz DOT diagram (bdd / ibd / requirements).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind":   {"type": "string", "enum": ["bdd", "ibd", "requirements"]},
+                "target": {"type": "string",
+                           "description": "Required for ibd (PartDefinition qname/id); otherwise optional namespace root"},
+            },
+        },
+        "handler": tool_export_diagram,
     },
     {
         "name": "sysml_tree",

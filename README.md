@@ -40,6 +40,65 @@ specifications.
 python -m engine.cli examples/vehicle.sysml
 ```
 
+## Custom stereotypes & interfaces
+
+User-defined **stereotypes** and **interfaces** extend the metamodel
+without forking it:
+
+```python
+from kerml.stereotypes import Stereotype
+from sysmlv2 import PartDefinition, InterfaceDefinition
+
+safety = Stereotype(name="safetyCritical", applies_to=[PartDefinition])
+safety.define_tag("asilLevel", default="QM")
+project.own(safety)
+
+drivetrain = InterfaceDefinition(name="Drivetrain")
+project.own(drivetrain)
+
+safety.apply(vehicle, {"asilLevel": "D"})   # attaches a typed tag-bag
+```
+
+The GUI exposes Stereotypes › Define / Add tag / Apply menus; the MCP
+server exposes `sysml_define_stereotype`, `sysml_apply_stereotype`,
+`sysml_list_stereotypes`.
+
+## Visualization
+
+Three diagram domains are rendered:
+
+- **BDD** (Block Definition Diagram) — Definitions with stereotypes,
+  features, specialization and composition edges.
+- **IBD** (Internal Block Diagram) — internal parts and ports of a
+  single PartDefinition joined by connections.
+- **Requirements** — Requirement nodes with Satisfy/Verify/Refine/
+  Trace/Derive edges.
+
+Two surfaces:
+
+- **GUI Diagram tab** — interactive Tkinter Canvas, no extra deps.
+- **`engine.bdd / ibd / requirements`** — Graphviz DOT output, ready
+  for `dot -Tsvg` or any DOT-aware renderer.
+
+## Knowledge-graph export
+
+Export the project to any of four interoperable formats:
+
+| Format     | Function                          | Use with                      |
+|------------|-----------------------------------|-------------------------------|
+| Turtle/RDF | `export_knowledge_graph(r, "turtle")`  | Apache Jena, RDFLib, GraphDB, Stardog |
+| JSON-LD    | `export_knowledge_graph(r, "json-ld")` | RDFLib, Neo4j, JSON graph tools       |
+| GraphML    | `export_knowledge_graph(r, "graphml")` | Gephi, yEd, Cytoscape, NetworkX       |
+| Cypher     | `export_knowledge_graph(r, "cypher")`  | Neo4j browser / bolt clients          |
+
+Every Element becomes a typed node; every typed relationship
+(`specializes`, `subsets`, `redefines`, `typedBy`, `owns`,
+`stereotype`, `satisfies`, `verifies`, `refines`, `traces`,
+`derivesFrom`, `connects`, `imports`) becomes a labeled edge.
+
+The GUI exposes Export › Knowledge graph; the MCP server exposes
+`sysml_export_graph` and `sysml_export_diagram`.
+
 ## GUI
 
 A Tkinter desktop GUI is bundled — three panes (containment tree,
@@ -58,9 +117,13 @@ Features:
 - Tree: containment view of the project package, right-click to add or delete
 - Properties pane: edit name, short name, multiplicity, typing (by qualified
   name), `req_id` / `text` fields, documentation; "Apply changes" commits
-- Toolbar buttons add Package, Part Def/Usage, Attribute Def/Usage,
-  Port Def/Usage, Connection, Action Def/Usage, State Def/Usage,
-  Requirement Def/Usage, Constraint Def/Usage, Enum Def
+- **Diagram tab**: BDD / IBD / Requirements rendered live on a Tk Canvas
+  with stereotype labels, plus "Export DOT…" for Graphviz
+- Toolbar buttons add Package, Part / Attribute / Port / Interface /
+  Connection / Action / State / Requirement / Constraint / Enum Def +
+  Usages and Stereotype
+- Stereotypes menu: Define stereotype, Add tag, Apply to selection
+- Export menu: Knowledge graph (Turtle / JSON-LD / GraphML / Cypher)
 - F5 runs the validator, listing all issues in the bottom pane
 
 Run tests:
@@ -98,6 +161,11 @@ python -m mcp_server.server     # speaks JSON-RPC 2.0 over stdio
 | `sysml_verify`              | Verify traceability relationship                     |
 | `sysml_validate`            | run the well-formedness validator                    |
 | `sysml_tree`                | dump the containment tree as nested JSON             |
+| `sysml_define_stereotype`   | declare a custom stereotype with tags + applies_to   |
+| `sysml_apply_stereotype`    | apply a stereotype with tag values to a target       |
+| `sysml_list_stereotypes`    | list defined stereotypes / applications on a target  |
+| `sysml_export_diagram`      | export BDD / IBD / Requirements as Graphviz DOT      |
+| `sysml_export_graph`        | export Turtle / JSON-LD / GraphML / Cypher           |
 
 ### Resources exposed
 

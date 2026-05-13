@@ -17,10 +17,12 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
 from engine import Repository, parse, to_json, from_json
+from engine.graph_export import EXPORTERS, export_knowledge_graph
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
+from kerml.stereotypes import Stereotype, stereotypes_on
 from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
@@ -28,11 +30,13 @@ from sysmlv2 import (
     ConnectionUsage,
     ConstraintDefinition, ConstraintUsage,
     EnumerationDefinition,
+    InterfaceDefinition, InterfaceUsage,
     PartDefinition, PartUsage,
     PortDefinition, PortUsage,
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from .diagram_view import DiagramView
 
 
 # Order matters: shown left-to-right in toolbar.
@@ -44,6 +48,8 @@ ELEMENT_KINDS: list[tuple[str, type[Element]]] = [
     ("Attribute",     AttributeUsage),
     ("Port Def",      PortDefinition),
     ("Port",          PortUsage),
+    ("Interface Def", InterfaceDefinition),
+    ("Interface",     InterfaceUsage),
     ("Connection",    ConnectionUsage),
     ("Action Def",    ActionDefinition),
     ("Action",        ActionUsage),
@@ -54,6 +60,7 @@ ELEMENT_KINDS: list[tuple[str, type[Element]]] = [
     ("Constraint Def", ConstraintDefinition),
     ("Constraint",    ConstraintUsage),
     ("Enum Def",      EnumerationDefinition),
+    ("Stereotype",    Stereotype),
 ]
 
 
@@ -101,6 +108,20 @@ class SysMLApp(tk.Tk):
         model_menu.add_command(label="Expand all", command=lambda: self._expand_all(True))
         model_menu.add_command(label="Collapse all", command=lambda: self._expand_all(False))
 
+        stereo_menu = tk.Menu(menu)
+        menu.add_cascade(label="Stereotypes", menu=stereo_menu)
+        stereo_menu.add_command(label="Define stereotype…", command=self.cmd_define_stereotype)
+        stereo_menu.add_command(label="Apply to selection…", command=self.cmd_apply_stereotype)
+        stereo_menu.add_command(label="Define tag on stereotype…", command=self.cmd_add_stereotype_tag)
+
+        export_menu = tk.Menu(menu)
+        menu.add_cascade(label="Export", menu=export_menu)
+        for fmt in ("turtle", "json-ld", "graphml", "cypher"):
+            export_menu.add_command(
+                label=f"Knowledge graph: {fmt}…",
+                command=lambda f=fmt: self.cmd_export_graph(f),
+            )
+
         self.bind_all("<Control-n>", lambda _e: self.cmd_new())
         self.bind_all("<Control-o>", lambda _e: self.cmd_open_json())
         self.bind_all("<Control-s>", lambda _e: self.cmd_save_json())
@@ -143,12 +164,20 @@ class SysMLApp(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_select())
         self.tree.bind("<Button-3>", self._on_tree_context)
 
-        # --- right: properties + log ---
+        # --- right: notebook (props + diagram) + log ---
         right = ttk.PanedWindow(outer, orient="vertical")
-        outer.add(right, weight=2)
+        outer.add(right, weight=3)
 
-        self.props = PropertiesPane(right, on_apply=self._on_props_apply)
-        right.add(self.props, weight=3)
+        nb = ttk.Notebook(right)
+        right.add(nb, weight=4)
+
+        self.props = PropertiesPane(nb, on_apply=self._on_props_apply)
+        nb.add(self.props, text="Properties")
+
+        self.diagram = DiagramView(nb, get_root=lambda: self.repo.root_package,
+                                   log=self._log)
+        nb.add(self.diagram, text="Diagram")
+        self._notebook = nb
 
         log_frame = ttk.LabelFrame(right, text="Output / Validation")
         right.add(log_frame, weight=1)
@@ -190,6 +219,7 @@ class SysMLApp(tk.Tk):
         e = self._selected()
         if e is not None:
             self.props.show(e)
+            self.diagram.set_target(e)
             self.status.set(f"{e.kind}  {e.qualified_name}")
 
     def _on_tree_context(self, event) -> None:
@@ -355,6 +385,89 @@ class SysMLApp(tk.Tk):
         self.tree.delete(e.element_id)
         self.element_by_iid.pop(e.element_id, None)
         self._log(f"Deleted {e.qualified_name}")
+
+    # --- stereotype commands ------------------------------------------
+    def cmd_define_stereotype(self) -> None:
+        name = simpledialog.askstring("Define stereotype", "Stereotype name:")
+        if not name:
+            return
+        s = Stereotype(name=name)
+        self.repo.root_package.own(s)
+        self.repo.registry.register_tree(s)
+        self._insert_node(self.repo.root_package.element_id, s)
+        self._log(f"Defined stereotype «{name}»")
+
+    def cmd_add_stereotype_tag(self) -> None:
+        e = self._selected()
+        if not isinstance(e, Stereotype):
+            messagebox.showerror("Add tag", "Select a Stereotype in the tree first.")
+            return
+        name = simpledialog.askstring("Add tag", "Tag name:")
+        if not name:
+            return
+        default = simpledialog.askstring("Add tag", f"Default value for {name!r} (optional):") or None
+        e.define_tag(name, default=default)
+        self.repo.registry.register_tree(e)
+        self._refresh_tree()
+        self._select_in_tree(e)
+        self._log(f"Added tag {name!r} to stereotype «{e.name}»")
+
+    def cmd_apply_stereotype(self) -> None:
+        target = self._selected()
+        if target is None:
+            messagebox.showerror("Apply stereotype", "Select a target element in the tree.")
+            return
+        stereos = [e for e in self.repo.all_elements() if isinstance(e, Stereotype)]
+        if not stereos:
+            messagebox.showerror("Apply stereotype",
+                                 "No stereotypes defined. Use Stereotypes › Define first.")
+            return
+        names = [s.qualified_name for s in stereos]
+        choice = simpledialog.askstring(
+            "Apply stereotype",
+            "Stereotype qualified name:\n  " + "\n  ".join(names),
+            initialvalue=names[0],
+        )
+        if not choice:
+            return
+        sel = next((s for s in stereos if s.qualified_name == choice or s.name == choice), None)
+        if sel is None:
+            messagebox.showerror("Apply stereotype", f"No stereotype {choice!r}")
+            return
+        values: dict = {}
+        for tag in sel.all_tags():
+            v = simpledialog.askstring("Apply stereotype",
+                                       f"Value for tag {tag.name!r}:",
+                                       initialvalue=str(tag.default_value or ""))
+            if v is not None:
+                values[tag.name] = v
+        try:
+            sel.apply(target, values)
+        except Exception as ex:  # noqa: BLE001
+            messagebox.showerror("Apply stereotype", str(ex))
+            return
+        self._log(f"Applied «{sel.name}» to {target.qualified_name} {values}")
+        self.props.show(target)
+        self.diagram.refresh()
+
+    def cmd_export_graph(self, fmt: str) -> None:
+        ext = {"turtle": ".ttl", "json-ld": ".jsonld",
+               "graphml": ".graphml", "cypher": ".cypher"}.get(fmt, ".txt")
+        path = filedialog.asksaveasfilename(
+            title=f"Export as {fmt}",
+            defaultextension=ext,
+            filetypes=[(fmt, f"*{ext}"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            text = export_knowledge_graph(self.repo.root_package, fmt)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as ex:  # noqa: BLE001
+            messagebox.showerror("Export failed", str(ex))
+            return
+        self._log(f"Exported knowledge graph ({fmt}) to {path}")
 
     def cmd_validate(self) -> None:
         issues = Validator().validate(self.repo)
