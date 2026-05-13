@@ -111,6 +111,14 @@ Copy `mcp_server/claude_desktop_config.example.json` into your client's
 config (e.g. `~/Library/Application Support/Claude/claude_desktop_config.json`
 on macOS), fix the absolute paths, and restart the client.
 
+### Use with a local LLM in VS Code (Ollama + Continue/Cline/Copilot)
+
+The workspace ships a `.vscode/mcp.json` so MCP-aware VS Code
+extensions (GitHub Copilot Chat 1.95+, Continue, Cursor, Cline)
+auto-discover the server. Run a local LLM with Ollama and point the
+extension at it. See [docs/LOCAL_LLM_VSCODE.md](docs/LOCAL_LLM_VSCODE.md)
+for step-by-step setup.
+
 ## Mapping to Cameo SysML 1.6 concepts
 
 | Cameo / SysML 1.6        | This engine (SysML v2)              |
