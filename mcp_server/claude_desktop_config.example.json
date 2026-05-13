@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sysmlv2-core": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/absolute/path/to/REQUIREMENT-FORMALISER",
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/REQUIREMENT-FORMALISER"
+      }
+    }
+  }
+}

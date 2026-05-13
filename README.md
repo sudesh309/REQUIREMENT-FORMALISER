@@ -69,6 +69,48 @@ Run tests:
 python -m unittest discover -s tests -v
 ```
 
+## MCP server
+
+The engine ships an MCP (Model Context Protocol) server so any
+MCP-compatible AI agent — Claude Desktop, Claude Code, Cursor, custom
+agents — can drive it:
+
+```bash
+python -m mcp_server.server     # speaks JSON-RPC 2.0 over stdio
+```
+
+### Tools exposed
+
+| Tool                        | Purpose                                              |
+|-----------------------------|------------------------------------------------------|
+| `sysml_new_project`         | start a fresh project                                |
+| `sysml_open_project`        | load from JSON                                       |
+| `sysml_save_project`        | save to JSON                                         |
+| `sysml_parse_sysml`         | parse `.sysml` source into the model                 |
+| `sysml_list_elements`       | filter by kind / parent                              |
+| `sysml_get_element`         | fetch by UUID or qualified name                      |
+| `sysml_create_element`      | create any SysML v2 element (PartDefinition, ...)    |
+| `sysml_delete_element`      | delete and prune subtree                             |
+| `sysml_set_property`        | name, multiplicity, doc, req_id, text, abstract, ... |
+| `sysml_set_feature_type`    | bind/rebind a Feature's type                         |
+| `sysml_connect`             | create a ConnectionUsage between two ends            |
+| `sysml_satisfy`             | Satisfy traceability relationship                    |
+| `sysml_verify`              | Verify traceability relationship                     |
+| `sysml_validate`            | run the well-formedness validator                    |
+| `sysml_tree`                | dump the containment tree as nested JSON             |
+
+### Resources exposed
+
+- `sysml://project` — JSON snapshot of the active project
+- `sysml://library/kerml` — built-in KerML library
+- `sysml://library/sysml` — built-in SysML v2 library
+
+### Wire into Claude Desktop / Claude Code
+
+Copy `mcp_server/claude_desktop_config.example.json` into your client's
+config (e.g. `~/Library/Application Support/Claude/claude_desktop_config.json`
+on macOS), fix the absolute paths, and restart the client.
+
 ## Mapping to Cameo SysML 1.6 concepts
 
 | Cameo / SysML 1.6        | This engine (SysML v2)              |
