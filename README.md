@@ -34,6 +34,20 @@ specifications.
 - `engine/serializer.py` — JSON serialization round-trip.
 - `examples/` — Sample models that exercise the engine end-to-end.
 
+## Documentation
+
+- **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — visual, hands-on tour
+  of every capability (Definition/Usage, BDD/IBD/Requirements/SM
+  diagrams, requirements & parameters, typed links, stereotypes,
+  knowledge graph, MCP, GUI workflow, end-to-end LLM example, cheat
+  sheet). Rich with Mermaid diagrams.
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 11 Mermaid diagrams
+  covering layered overview, KerML metamodel, SysML v2 taxonomy,
+  link registry, engine data flow, GUI runtime, state-machine runtime,
+  MCP protocol, KG export, persistence format, module dependencies.
+- **[docs/LOCAL_LLM_VSCODE.md](docs/LOCAL_LLM_VSCODE.md)** — connect
+  Ollama / Continue / Cline / Copilot Chat to the MCP server.
+
 ## Quick start
 
 ```bash
