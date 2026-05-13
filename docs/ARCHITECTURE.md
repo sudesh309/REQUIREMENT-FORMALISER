@@ -228,16 +228,16 @@ flowchart TB
         MENU["File · Edit · Model · StateMachine · Links · Stereotypes · Export"]
         TOOL["Toolbar (Add: Part / Attribute / Port / ... / Parameter / Stereotype)"]
         TREE["Containment tree (ttk.Treeview)"]
-        subgraph NB[Right pane — Notebook]
+        subgraph NB["Right pane — Notebook"]
             PROPS["Properties tab"]
-            DIAGV["Diagram tab<br/>(BDD · IBD · Requirements · StateMachine)"]
+            DIAGV["Diagram tab<br/>BDD · IBD · Requirements · StateMachine"]
         end
         LOG["Output / Validation log"]
         STATUS["Status bar"]
         DLG["Dialogs: LinkDialog, RequirementDialog"]
     end
     USER((User)) --> MENU & TOOL & TREE & PROPS
-    MENU & TOOL --> CTRL[Controller methods<br/>(cmd_*)]
+    MENU & TOOL --> CTRL["Controller methods<br/>cmd_*"]
     TREE --> CTRL
     PROPS --> CTRL
     DLG --> CTRL
