@@ -18,6 +18,9 @@ from typing import Callable, Optional
 
 from engine import Repository, parse, to_json, from_json
 from engine.graph_export import EXPORTERS, export_knowledge_graph
+from engine.links import (
+    LINK_KINDS, create_link, describe_link, link_kind, links_of, list_link_kinds,
+)
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
@@ -27,10 +30,12 @@ from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
     AttributeDefinition, AttributeUsage,
+    CalculationDefinition, CalculationUsage,
     ConnectionUsage,
     ConstraintDefinition, ConstraintUsage,
     EnumerationDefinition,
     InterfaceDefinition, InterfaceUsage,
+    ParameterDefinition, ParameterUsage,
     PartDefinition, PartUsage,
     PortDefinition, PortUsage,
     RequirementDefinition, RequirementUsage,
@@ -61,6 +66,8 @@ ELEMENT_KINDS: list[tuple[str, type[Element]]] = [
     ("Constraint",    ConstraintUsage),
     ("Enum Def",      EnumerationDefinition),
     ("Stereotype",    Stereotype),
+    ("Parameter",     ParameterUsage),
+    ("Calc Def",      CalculationDefinition),
 ]
 
 
@@ -107,6 +114,21 @@ class SysMLApp(tk.Tk):
         model_menu.add_command(label="Validate", command=self.cmd_validate, accelerator="F5")
         model_menu.add_command(label="Expand all", command=lambda: self._expand_all(True))
         model_menu.add_command(label="Collapse all", command=lambda: self._expand_all(False))
+
+        link_menu = tk.Menu(menu)
+        menu.add_cascade(label="Links", menu=link_menu)
+        link_menu.add_command(label="Create link…", command=self.cmd_create_link,
+                              accelerator="Ctrl+L")
+        link_menu.add_command(label="Show links on selection",
+                              command=self.cmd_show_links)
+        link_menu.add_command(label="List all link kinds", command=self.cmd_list_link_kinds)
+        link_menu.add_separator()
+        link_menu.add_command(label="Add parameter to selection…",
+                              command=self.cmd_add_parameter)
+        link_menu.add_command(label="New requirement…",
+                              command=self.cmd_new_requirement)
+
+        self.bind_all("<Control-l>", lambda _e: self.cmd_create_link())
 
         stereo_menu = tk.Menu(menu)
         menu.add_cascade(label="Stereotypes", menu=stereo_menu)
@@ -386,6 +408,70 @@ class SysMLApp(tk.Tk):
         self.element_by_iid.pop(e.element_id, None)
         self._log(f"Deleted {e.qualified_name}")
 
+    # --- link & requirement commands ----------------------------------
+    def cmd_create_link(self) -> None:
+        src = self._selected()
+        if src is None:
+            messagebox.showerror("Create link", "Select the link source in the tree first.")
+            return
+        LinkDialog(self, source=src, repo=self.repo, on_create=self._on_link_created)
+
+    def _on_link_created(self, rel) -> None:
+        SESSION = None  # placeholder for readability
+        self.repo.registry.register(rel)
+        info = describe_link(rel)
+        self._log(f"Link «{info['kind']}»: {info['source']} → {info['target']}")
+        self.diagram.refresh()
+
+    def cmd_show_links(self) -> None:
+        e = self._selected()
+        if e is None:
+            return
+        self._log(f"--- Links on {e.qualified_name} ---")
+        for r in links_of(e, direction="both"):
+            d = describe_link(r)
+            arrow = "→" if r.source is e else "←"
+            other = d["target"] if r.source is e else d["source"]
+            self._log(f"  «{d['kind']}» {arrow} {other}")
+
+    def cmd_list_link_kinds(self) -> None:
+        self._log("--- Link kinds ---")
+        for lk in LINK_KINDS:
+            self._log(f"  {lk.name:20s} — {lk.description}")
+
+    def cmd_add_parameter(self) -> None:
+        owner = self._selected()
+        if owner is None:
+            messagebox.showerror("Add parameter", "Select a behavior-like element in the tree.")
+            return
+        name = simpledialog.askstring("Add parameter", "Parameter name:")
+        if not name:
+            return
+        kind = simpledialog.askstring(
+            "Add parameter",
+            "Parameter direction (in / out / inout / return):",
+            initialvalue="in",
+        ) or "in"
+        if kind not in {"in", "out", "inout", "return"}:
+            messagebox.showerror("Add parameter", f"Invalid direction {kind!r}")
+            return
+        p = ParameterUsage(name=name, parameter_kind=kind)
+        owner.own(p)
+        self.repo.registry.register_tree(p)
+        self._insert_node(owner.element_id, p)
+        self._select_in_tree(p)
+        self._log(f"Added {kind} parameter {name!r} to {owner.qualified_name}")
+
+    def cmd_new_requirement(self) -> None:
+        RequirementDialog(self, repo=self.repo, on_create=self._on_requirement_created)
+
+    def _on_requirement_created(self, req) -> None:
+        self.repo.registry.register_tree(req)
+        self._refresh_tree()
+        self._select_in_tree(req)
+        self._log(f"Created requirement {req.qualified_name} "
+                  f"(id={req.req_id!r})")
+
     # --- stereotype commands ------------------------------------------
     def cmd_define_stereotype(self) -> None:
         name = simpledialog.askstring("Define stereotype", "Stereotype name:")
@@ -592,6 +678,149 @@ class PropertiesPane(ttk.LabelFrame):
         if self._doc_widget is not None:
             fields["doc"] = self._doc_widget.get("1.0", "end").rstrip("\n")
         self._on_apply(self._element, fields)
+
+
+class LinkDialog(tk.Toplevel):
+    """Dialog for picking a target element and a link kind."""
+
+    def __init__(self, master, *, source, repo, on_create):
+        super().__init__(master)
+        self.title("Create link")
+        self.geometry("520x340")
+        self._source = source
+        self._repo = repo
+        self._on_create = on_create
+
+        ttk.Label(self, text=f"Source: {source.qualified_name}",
+                  font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
+
+        ttk.Label(self, text="Link kind:").pack(anchor="w", padx=10)
+        self._kind = tk.StringVar(value=list_link_kinds()[0])
+        cb = ttk.Combobox(self, textvariable=self._kind, values=list_link_kinds(),
+                          state="readonly", width=30)
+        cb.pack(anchor="w", padx=10, pady=2)
+
+        self._desc = tk.StringVar()
+        ttk.Label(self, textvariable=self._desc, foreground="#555", wraplength=480
+                  ).pack(anchor="w", padx=10, pady=(0, 8))
+        cb.bind("<<ComboboxSelected>>", lambda _e: self._refresh_desc())
+        self._refresh_desc()
+
+        ttk.Label(self, text="Target element (qualified name or UUID):"
+                  ).pack(anchor="w", padx=10)
+        self._target_var = tk.StringVar()
+        entry = ttk.Entry(self, textvariable=self._target_var, width=60)
+        entry.pack(anchor="w", padx=10, pady=2)
+
+        ttk.Label(self, text="Existing elements (double-click to fill):",
+                  foreground="#444").pack(anchor="w", padx=10, pady=(8, 2))
+        self._listbox = tk.Listbox(self, height=8)
+        self._listbox.pack(fill="both", expand=True, padx=10, pady=2)
+        for e in repo.all_elements():
+            if e.name and e is not source:
+                self._listbox.insert("end", e.qualified_name)
+        self._listbox.bind("<Double-Button-1>", self._pick)
+
+        btns = ttk.Frame(self); btns.pack(fill="x", pady=8, padx=10)
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=4)
+        ttk.Button(btns, text="Create", command=self._create).pack(side="right", padx=4)
+
+    def _refresh_desc(self) -> None:
+        lk = link_kind(self._kind.get())
+        self._desc.set(lk.description if lk else "")
+
+    def _pick(self, _event) -> None:
+        sel = self._listbox.curselection()
+        if sel:
+            self._target_var.set(self._listbox.get(sel[0]))
+
+    def _create(self) -> None:
+        tgt_ref = self._target_var.get().strip()
+        if not tgt_ref:
+            messagebox.showerror("Create link", "Enter a target.", parent=self)
+            return
+        tgt = self._repo.by_id(tgt_ref) or self._repo.resolve(tgt_ref)
+        if tgt is None:
+            messagebox.showerror("Create link", f"Target {tgt_ref!r} not found.", parent=self)
+            return
+        try:
+            rel = create_link(self._kind.get(), self._source, tgt)
+        except Exception as ex:  # noqa: BLE001
+            messagebox.showerror("Create link", str(ex), parent=self)
+            return
+        self._on_create(rel)
+        self.destroy()
+
+
+class RequirementDialog(tk.Toplevel):
+    """Dialog for creating a fully-specified Requirement."""
+
+    def __init__(self, master, *, repo, on_create):
+        super().__init__(master)
+        self.title("New requirement")
+        self.geometry("520x420")
+        self._repo = repo
+        self._on_create = on_create
+
+        form = ttk.Frame(self); form.pack(fill="both", expand=True, padx=10, pady=10)
+        form.columnconfigure(1, weight=1)
+
+        self._name = tk.StringVar()
+        self._req_id = tk.StringVar()
+        self._subject = tk.StringVar()
+        self._stakeholders = tk.StringVar()
+        self._actors = tk.StringVar()
+
+        rows = [
+            ("Name:",         self._name),
+            ("Requirement id:", self._req_id),
+            ("Subject (qname):", self._subject),
+            ("Stakeholders (comma qnames):", self._stakeholders),
+            ("Actors (comma qnames):",       self._actors),
+        ]
+        for i, (label, var) in enumerate(rows):
+            ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=4)
+            ttk.Entry(form, textvariable=var).grid(row=i, column=1, sticky="we", padx=4, pady=4)
+
+        ttk.Label(form, text="Text:").grid(row=len(rows), column=0, sticky="nw", padx=4, pady=4)
+        self._text = tk.Text(form, height=8, wrap="word")
+        self._text.grid(row=len(rows), column=1, sticky="nsew", padx=4, pady=4)
+        form.rowconfigure(len(rows), weight=1)
+
+        btns = ttk.Frame(self); btns.pack(fill="x", pady=8, padx=10)
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=4)
+        ttk.Button(btns, text="Create", command=self._create).pack(side="right", padx=4)
+
+    def _create(self) -> None:
+        name = self._name.get().strip()
+        if not name:
+            messagebox.showerror("New requirement", "Name is required.", parent=self)
+            return
+        r = RequirementDefinition(name=name)
+        r.req_id = self._req_id.get().strip() or None
+        r.text = self._text.get("1.0", "end").strip() or None
+        self._repo.root_package.own(r)
+        subj_qn = self._subject.get().strip()
+        if subj_qn:
+            s = self._repo.by_id(subj_qn) or self._repo.resolve(subj_qn)
+            if s is not None:
+                rel = create_link("subject", r, s)
+                self._repo.registry.register(rel)
+                r.subject = s
+        for ref in [x.strip() for x in self._stakeholders.get().split(",") if x.strip()]:
+            s = self._repo.by_id(ref) or self._repo.resolve(ref)
+            if s is not None:
+                rel = create_link("stakeholder", r, s)
+                self._repo.registry.register(rel)
+                r.stakeholders.append(s)
+        for ref in [x.strip() for x in self._actors.get().split(",") if x.strip()]:
+            a = self._repo.by_id(ref) or self._repo.resolve(ref)
+            if a is not None:
+                rel = create_link("actor", r, a)
+                self._repo.registry.register(rel)
+                r.actors.append(a)
+        self._on_create(r)
+        self.destroy()
 
 
 def main() -> None:

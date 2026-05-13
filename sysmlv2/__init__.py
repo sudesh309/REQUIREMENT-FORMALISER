@@ -26,11 +26,14 @@ from .definitions import (
     ViewpointDefinition, ViewpointUsage,
     ConcernDefinition, ConcernUsage,
     EnumerationDefinition, EnumerationUsage,
+    ParameterDefinition, ParameterUsage,
     MetadataDefinition, MetadataUsage,
     OccurrenceDefinition, OccurrenceUsage,
 )
 from .relationships import (
     Satisfy, Verify, Refine, Trace, DeriveRequirement, Copy,
+    Allocation, SubjectOf, StakeholderOf, ActorOf, FramedConcern,
+    ParameterBinding, AssumeConstraint, RequireConstraint, Exposes,
 )
 from .library import SYSML_LIBRARY, build_sysml_library
 
@@ -56,8 +59,11 @@ __all__ = [
     "ViewpointDefinition", "ViewpointUsage",
     "ConcernDefinition", "ConcernUsage",
     "EnumerationDefinition", "EnumerationUsage",
+    "ParameterDefinition", "ParameterUsage",
     "MetadataDefinition", "MetadataUsage",
     "OccurrenceDefinition", "OccurrenceUsage",
     "Satisfy", "Verify", "Refine", "Trace", "DeriveRequirement", "Copy",
+    "Allocation", "SubjectOf", "StakeholderOf", "ActorOf", "FramedConcern",
+    "ParameterBinding", "AssumeConstraint", "RequireConstraint", "Exposes",
     "SYSML_LIBRARY", "build_sysml_library",
 ]

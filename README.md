@@ -40,6 +40,63 @@ specifications.
 python -m engine.cli examples/vehicle.sysml
 ```
 
+## Requirements, parameters & typed links
+
+Authoring requirements, behavioral parameters, and traceability links is
+first-class:
+
+```python
+from engine import create_link, links_of, list_link_kinds
+from sysmlv2 import (
+    ActionDefinition, AttributeDefinition, ParameterUsage,
+    PartDefinition, RequirementDefinition, VerificationCaseDefinition,
+)
+
+# Behavior with directional parameters
+Real = AttributeDefinition(name="Real")
+accel = ActionDefinition(name="Accelerate")
+accel.own(ParameterUsage(name="speed",  parameter_kind="in",     typed_by=Real))
+accel.own(ParameterUsage(name="result", parameter_kind="return", typed_by=Real))
+
+# Requirement with subject / stakeholders / actors
+Vehicle = PartDefinition(name="Vehicle")
+Driver  = PartDefinition(name="Driver")
+req = RequirementDefinition(name="MaxSpeed", req_id="REQ-001",
+                            text="Speed shall not exceed 130 km/h.")
+create_link("subject",     req, Vehicle)
+create_link("actor",       req, Driver)
+create_link("satisfy",     Vehicle, req)
+create_link("verify",      VerificationCaseDefinition(name="VC1"), req)
+create_link("allocate",    accel, Vehicle)
+```
+
+All available link kinds (15) — usable by name in the GUI Link dialog,
+the parser, the MCP `sysml_link` tool, and the `create_link()` API:
+
+| Kind | Class | Notes |
+|------|-------|-------|
+| `satisfy`            | Satisfy             | populates `target.satisfied_by` |
+| `verify`             | Verify              | populates `target.verified_by`  |
+| `refine`             | Refine              | |
+| `trace`              | Trace               | non-committal traceability |
+| `derive`             | DeriveRequirement   | aliases: `derives_from` |
+| `copy`               | Copy                | textual copy |
+| `allocate`           | Allocation          | function→component / logical→physical |
+| `subject`            | SubjectOf           | requirement / case / view subject |
+| `stakeholder`        | StakeholderOf       | |
+| `actor`              | ActorOf             | requirement / use-case actor |
+| `framed_concern`     | FramedConcern       | concern framed by requirement / viewpoint |
+| `parameter_binding`  | ParameterBinding    | bind two parameters at invocation |
+| `assume`             | AssumeConstraint    | requirement assumes a constraint |
+| `require`            | RequireConstraint   | requirement requires a constraint |
+| `expose`             | Exposes             | view exposes elements |
+
+Query the graph: `links_of(element, direction='outgoing'|'incoming'|'both', kind='satisfy')`.
+
+GUI: **Links** menu → Create link… (Ctrl+L), New requirement…, Add
+parameter to selection. MCP: `sysml_link`, `sysml_list_links`,
+`sysml_link_kinds`, `sysml_add_parameter`, `sysml_create_requirement`.
+
 ## Custom stereotypes & interfaces
 
 User-defined **stereotypes** and **interfaces** extend the metamodel
@@ -166,6 +223,11 @@ python -m mcp_server.server     # speaks JSON-RPC 2.0 over stdio
 | `sysml_list_stereotypes`    | list defined stereotypes / applications on a target  |
 | `sysml_export_diagram`      | export BDD / IBD / Requirements as Graphviz DOT      |
 | `sysml_export_graph`        | export Turtle / JSON-LD / GraphML / Cypher           |
+| `sysml_link`                | create any of 15 typed links between two elements    |
+| `sysml_list_links`          | list links touching an element / project-wide        |
+| `sysml_link_kinds`          | describe every registered link kind                  |
+| `sysml_add_parameter`       | add a directional parameter to a behavior/constraint |
+| `sysml_create_requirement`  | create a Requirement and wire its subject/actors etc |
 
 ### Resources exposed
 

@@ -41,3 +41,51 @@ class DeriveRequirement(Relationship):
 
 class Copy(Relationship):
     kind = "Copy"
+
+
+class Allocation(Relationship):
+    """Generic allocation (logical -> physical, behavior -> structure, ...)."""
+    kind = "Allocation"
+
+    def __init__(self, source: Element, target: Element, **kwargs):
+        super().__init__(source=source, target=target, **kwargs)
+
+
+class SubjectOf(Relationship):
+    """Names the subject of a requirement / case / view."""
+    kind = "SubjectOf"
+
+
+class StakeholderOf(Relationship):
+    """Records a stakeholder for a requirement."""
+    kind = "StakeholderOf"
+
+
+class ActorOf(Relationship):
+    """Records an actor for a requirement / use case."""
+    kind = "ActorOf"
+
+
+class FramedConcern(Relationship):
+    """A Concern framed by a Requirement / Viewpoint."""
+    kind = "FramedConcern"
+
+
+class ParameterBinding(Relationship):
+    """Binds two parameters (matching their values across an invocation)."""
+    kind = "ParameterBinding"
+
+
+class AssumeConstraint(Relationship):
+    """Requirement assumes a Constraint."""
+    kind = "AssumeConstraint"
+
+
+class RequireConstraint(Relationship):
+    """Requirement requires a Constraint."""
+    kind = "RequireConstraint"
+
+
+class Exposes(Relationship):
+    """View exposes a model element."""
+    kind = "Exposes"

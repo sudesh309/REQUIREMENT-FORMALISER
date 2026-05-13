@@ -35,6 +35,9 @@ from typing import Any, Callable, Optional
 from engine import Repository, from_json, parse, to_json
 from engine.diagram import bdd as bdd_dot, ibd as ibd_dot, requirements as req_dot
 from engine.graph_export import EXPORTERS, export_knowledge_graph
+from engine.links import (
+    LINK_KINDS, create_link, describe_link, link_kind, links_of, list_link_kinds,
+)
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
@@ -44,11 +47,13 @@ from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
     AttributeDefinition, AttributeUsage,
+    CalculationDefinition, CalculationUsage,
     ConnectionDefinition, ConnectionUsage,
     ConstraintDefinition, ConstraintUsage,
     EnumerationDefinition,
     InterfaceDefinition, InterfaceUsage,
     ItemDefinition, ItemUsage,
+    ParameterDefinition, ParameterUsage,
     PartDefinition, PartUsage,
     PortDefinition, PortUsage,
     RequirementDefinition, RequirementUsage,
@@ -86,6 +91,10 @@ KIND_REGISTRY: dict[str, type[Element]] = {
     "RequirementDefinition": RequirementDefinition,
     "RequirementUsage":      RequirementUsage,
     "EnumerationDefinition": EnumerationDefinition,
+    "ParameterDefinition":   ParameterDefinition,
+    "ParameterUsage":        ParameterUsage,
+    "CalculationDefinition": CalculationDefinition,
+    "CalculationUsage":      CalculationUsage,
     "Stereotype":            Stereotype,
 }
 
@@ -273,26 +282,112 @@ def tool_connect(end_a: str, end_b: str,
     return _ok(SESSION.element_summary(cu))
 
 
-def tool_satisfy(satisfier: str, requirement: str) -> dict:
-    s = SESSION.find(satisfier); r = SESSION.find(requirement)
-    if s is None or r is None:
-        return _err("Both satisfier and requirement must be resolvable")
-    rel = Satisfy(s, r)
-    s.add_relationship(rel)
+def tool_link(kind: str, source: str, target: str) -> dict:
+    """Generic typed link between two elements. See `kind` enum."""
+    src = SESSION.find(source); tgt = SESSION.find(target)
+    if src is None or tgt is None:
+        return _err("Both source and target must be resolvable (UUID or qualified name)")
+    if link_kind(kind) is None:
+        return _err(f"Unknown link kind {kind!r}. Known: {list_link_kinds()}")
+    rel = create_link(kind, src, tgt)
     SESSION.repo.registry.register(rel)
-    return _ok({"satisfier": s.qualified_name, "requirement": r.qualified_name,
-                "relationship_id": rel.element_id})
+    return _ok(describe_link(rel))
 
 
-def tool_verify(verifier: str, requirement: str) -> dict:
-    v = SESSION.find(verifier); r = SESSION.find(requirement)
-    if v is None or r is None:
-        return _err("Both verifier and requirement must be resolvable")
-    rel = Verify(v, r)
-    v.add_relationship(rel)
-    SESSION.repo.registry.register(rel)
-    return _ok({"verifier": v.qualified_name, "requirement": r.qualified_name,
-                "relationship_id": rel.element_id})
+def tool_list_links(ref: Optional[str] = None,
+                    direction: str = "both",
+                    kind: Optional[str] = None) -> dict:
+    if ref is None:
+        # Project-wide scan.
+        rels = []
+        seen: set[str] = set()
+        for e in SESSION.repo.all_elements():
+            for r in links_of(e, direction="outgoing", kind=kind):
+                if r.element_id not in seen:
+                    rels.append(describe_link(r)); seen.add(r.element_id)
+        return _ok(rels)
+    e = SESSION.find(ref)
+    if e is None:
+        return _err(f"Element {ref!r} not found")
+    return _ok([describe_link(r) for r in links_of(e, direction=direction, kind=kind)])
+
+
+def tool_link_kinds() -> dict:
+    return _ok([
+        {"name": lk.name, "description": lk.description,
+         "aliases": list(lk.aliases), "class": lk.cls.__name__}
+        for lk in LINK_KINDS
+    ])
+
+
+def tool_add_parameter(owner: str, name: str,
+                       parameter_kind: str = "in",
+                       type_qname: Optional[str] = None,
+                       multiplicity: Optional[list] = None) -> dict:
+    """Add a ParameterUsage to an Action / Calculation / Constraint / Requirement."""
+    owner_el = SESSION.find(owner)
+    if owner_el is None:
+        return _err(f"Owner {owner!r} not found")
+    if parameter_kind not in {"in", "out", "inout", "return"}:
+        return _err(f"parameter_kind must be one of in/out/inout/return, got {parameter_kind!r}")
+    p = ParameterUsage(name=name, parameter_kind=parameter_kind)
+    if type_qname:
+        t = SESSION.find(type_qname)
+        if not isinstance(t, Type):
+            return _err(f"Type {type_qname!r} not found")
+        p.add_type(t)
+    if multiplicity is not None:
+        lo, up = multiplicity
+        up_v = None if up in (None, "*") else int(up)
+        p.multiplicity = MultiplicityRange(int(lo), up_v)
+    owner_el.own(p)
+    SESSION.repo.registry.register_tree(p)
+    return _ok(SESSION.element_summary(p))
+
+
+def tool_create_requirement(name: str,
+                            req_id: Optional[str] = None,
+                            text: Optional[str] = None,
+                            subject: Optional[str] = None,
+                            stakeholders: Optional[list[str]] = None,
+                            actors: Optional[list[str]] = None,
+                            parent: Optional[str] = None,
+                            as_usage: bool = False) -> dict:
+    """Create a RequirementDefinition (or RequirementUsage), wire up subject/stakeholders/actors."""
+    parent_el = SESSION.find(parent) if parent else SESSION.repo.root_package
+    if not isinstance(parent_el, Namespace):
+        return _err(f"Parent {parent!r} must be a Namespace")
+    cls = RequirementUsage if as_usage else RequirementDefinition
+    r = cls(name=name)
+    r.req_id = req_id
+    r.text = text
+    parent_el.own(r)
+    SESSION.repo.registry.register_tree(r)
+    if subject:
+        s = SESSION.find(subject)
+        if s is None:
+            return _err(f"Subject {subject!r} not found")
+        rel = create_link("subject", r, s)
+        SESSION.repo.registry.register(rel)
+        if hasattr(r, "subject"):
+            r.subject = s
+    for ref in stakeholders or []:
+        s = SESSION.find(ref)
+        if s is None:
+            return _err(f"Stakeholder {ref!r} not found")
+        rel = create_link("stakeholder", r, s)
+        SESSION.repo.registry.register(rel)
+        if hasattr(r, "stakeholders"):
+            r.stakeholders.append(s)
+    for ref in actors or []:
+        a = SESSION.find(ref)
+        if a is None:
+            return _err(f"Actor {ref!r} not found")
+        rel = create_link("actor", r, a)
+        SESSION.repo.registry.register(rel)
+        if hasattr(r, "actors"):
+            r.actors.append(a)
+    return _ok(SESSION.element_summary(r))
 
 
 def tool_validate() -> dict:
@@ -552,30 +647,83 @@ TOOLS: list[dict] = [
         "handler": tool_connect,
     },
     {
-        "name": "sysml_satisfy",
-        "description": "Create a Satisfy relationship from a part/behavior to a requirement.",
+        "name": "sysml_link",
+        "description": (
+            "Create a typed link between two model elements. `kind` is one of: "
+            + ", ".join(list_link_kinds()) + "."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "satisfier":   {"type": "string"},
-                "requirement": {"type": "string"},
+                "kind":   {"type": "string", "enum": list_link_kinds()},
+                "source": {"type": "string"},
+                "target": {"type": "string"},
             },
-            "required": ["satisfier", "requirement"],
+            "required": ["kind", "source", "target"],
         },
-        "handler": tool_satisfy,
+        "handler": tool_link,
     },
     {
-        "name": "sysml_verify",
-        "description": "Create a Verify relationship from a verification case to a requirement.",
+        "name": "sysml_list_links",
+        "description": "List typed links touching an element (or project-wide if no ref).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "verifier":    {"type": "string"},
-                "requirement": {"type": "string"},
+                "ref":       {"type": "string"},
+                "direction": {"type": "string", "enum": ["outgoing", "incoming", "both"]},
+                "kind":      {"type": "string", "enum": list_link_kinds()},
             },
-            "required": ["verifier", "requirement"],
         },
-        "handler": tool_verify,
+        "handler": tool_list_links,
+    },
+    {
+        "name": "sysml_link_kinds",
+        "description": "Describe every available link kind (name, class, description, aliases).",
+        "inputSchema": {"type": "object", "properties": {}},
+        "handler": tool_link_kinds,
+    },
+    {
+        "name": "sysml_add_parameter",
+        "description": (
+            "Add a ParameterUsage to a behavior-like element (Action / Calculation / "
+            "Constraint / Requirement Definition or Usage). parameter_kind is one of "
+            "in / out / inout / return."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "owner":          {"type": "string"},
+                "name":           {"type": "string"},
+                "parameter_kind": {"type": "string",
+                                   "enum": ["in", "out", "inout", "return"]},
+                "type_qname":     {"type": "string"},
+                "multiplicity":   {"type": "array", "minItems": 2, "maxItems": 2},
+            },
+            "required": ["owner", "name"],
+        },
+        "handler": tool_add_parameter,
+    },
+    {
+        "name": "sysml_create_requirement",
+        "description": (
+            "Create a Requirement (Definition or Usage) and optionally wire its "
+            "subject / stakeholders / actors via typed links."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name":         {"type": "string"},
+                "req_id":       {"type": "string"},
+                "text":         {"type": "string"},
+                "subject":      {"type": "string"},
+                "stakeholders": {"type": "array", "items": {"type": "string"}},
+                "actors":       {"type": "array", "items": {"type": "string"}},
+                "parent":       {"type": "string"},
+                "as_usage":     {"type": "boolean"},
+            },
+            "required": ["name"],
+        },
+        "handler": tool_create_requirement,
     },
     {
         "name": "sysml_validate",

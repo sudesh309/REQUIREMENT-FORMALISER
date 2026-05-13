@@ -230,6 +230,36 @@ class ConcernUsage(RequirementUsage):           kind = "ConcernUsage"
 class MetadataDefinition(Definition): kind = "MetadataDefinition"
 class MetadataUsage(Usage):           kind = "MetadataUsage"
 
+class ParameterDefinition(AttributeDefinition):
+    """SysML v2 parameter definition — typed input/output slot of a behavior."""
+    kind = "ParameterDefinition"
+
+
+class ParameterUsage(AttributeUsage):
+    """SysML v2 parameter usage — a directional, typed feature on Action /
+    Calculation / Constraint / Requirement definitions and usages.
+
+    `parameter_kind` is one of: 'in', 'out', 'inout', 'return'.
+    """
+    kind = "ParameterUsage"
+
+    def __init__(self, name: Optional[str] = None, *,
+                 parameter_kind: str = "in",
+                 typed_by: Optional[Type] = None,
+                 default_expression=None,
+                 **kwargs):
+        from kerml.features import FeatureDirection
+        dir_map = {"in":     FeatureDirection.IN,
+                   "out":    FeatureDirection.OUT,
+                   "inout":  FeatureDirection.INOUT,
+                   "return": FeatureDirection.OUT}
+        super().__init__(name=name,
+                         direction=dir_map.get(parameter_kind, FeatureDirection.IN),
+                         typed_by=typed_by, **kwargs)
+        self.parameter_kind = parameter_kind  # 'in' | 'out' | 'inout' | 'return'
+        self.default_expression = default_expression
+
+
 class EnumerationDefinition(AttributeDefinition):
     kind = "EnumerationDefinition"
     def __init__(self, *args, **kwargs):
