@@ -40,6 +40,49 @@ specifications.
 python -m engine.cli examples/vehicle.sysml
 ```
 
+## State machines per Part
+
+Every `PartDefinition` can own one or more state machines:
+
+```python
+from sysmlv2 import PartDefinition
+
+vehicle = PartDefinition(name="Vehicle")
+sm      = vehicle.attach_state_machine("VehicleSM")
+
+parked  = sm.add_state("Parked",  entry="lock()",   is_initial=True)
+driving = sm.add_state("Driving", entry="unlock()", do="monitor()", exit="brake()")
+off     = sm.add_state("Off", is_final=True)
+
+sm.add_transition(parked,  driving, trigger="start", effect="releaseBrake()")
+sm.add_transition(driving, parked,
+                  trigger="park",
+                  guard=lambda ctx: ctx.get("speed", 0) == 0)
+sm.add_transition(parked,  off,     trigger="shutdown")
+
+r = sm.runner()
+r.fire("start")              # → Driving
+r.fire("park", speed=10)     # blocked by guard, stays Driving
+r.fire("park", speed=0)      # → Parked
+r.fire("shutdown")           # → Off  (final)
+print(r.trace())
+```
+
+Guards may be callables `(ctx) -> bool` or Python expression strings
+(evaluated against the event payload). Effects and entry/do/exit
+actions may be callables or descriptor strings (string-form is recorded
+in the runner trace for codegen/inspection).
+
+GUI: **StateMachine** menu (Attach…, Add state…, Add transition…,
+Fire event Ctrl+E, Reset runner) and the Diagram tab gains a
+**StateMachine** mode rendering states (with entry/do/exit, initial
+filled, finals doubled), guards, and effects.
+
+MCP tools: `sysml_attach_state_machine`, `sysml_add_state`,
+`sysml_add_transition`, `sysml_fire_event`,
+`sysml_state_machine_status`, `sysml_reset_state_machine`. The
+`sysml_export_diagram` tool gains a `statemachine` kind.
+
 ## Requirements, parameters & typed links
 
 Authoring requirements, behavioral parameters, and traceability links is
@@ -228,6 +271,12 @@ python -m mcp_server.server     # speaks JSON-RPC 2.0 over stdio
 | `sysml_link_kinds`          | describe every registered link kind                  |
 | `sysml_add_parameter`       | add a directional parameter to a behavior/constraint |
 | `sysml_create_requirement`  | create a Requirement and wire its subject/actors etc |
+| `sysml_attach_state_machine`| attach a StateMachine to a PartDefinition            |
+| `sysml_add_state`           | add a state (entry/do/exit, initial/final flags)     |
+| `sysml_add_transition`      | add a transition (trigger / guard / effect)          |
+| `sysml_fire_event`          | step the state machine runner with an event          |
+| `sysml_state_machine_status`| introspect states, transitions, current, trace       |
+| `sysml_reset_state_machine` | reset the runner to the initial state                |
 
 ### Resources exposed
 

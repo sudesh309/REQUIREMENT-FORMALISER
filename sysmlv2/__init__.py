@@ -35,6 +35,10 @@ from .relationships import (
     Allocation, SubjectOf, StakeholderOf, ActorOf, FramedConcern,
     ParameterBinding, AssumeConstraint, RequireConstraint, Exposes,
 )
+from .state_machines import (
+    StateMachineDefinition, EventDefinition, EventUsage,
+    StateMachineRunner, attach_state_machine, state_machines_of,
+)
 from .library import SYSML_LIBRARY, build_sysml_library
 
 __all__ = [
@@ -65,5 +69,7 @@ __all__ = [
     "Satisfy", "Verify", "Refine", "Trace", "DeriveRequirement", "Copy",
     "Allocation", "SubjectOf", "StakeholderOf", "ActorOf", "FramedConcern",
     "ParameterBinding", "AssumeConstraint", "RequireConstraint", "Exposes",
+    "StateMachineDefinition", "EventDefinition", "EventUsage",
+    "StateMachineRunner", "attach_state_machine", "state_machines_of",
     "SYSML_LIBRARY", "build_sysml_library",
 ]

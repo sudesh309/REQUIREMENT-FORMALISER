@@ -60,6 +60,10 @@ from sysmlv2 import (
     StateDefinition, StateUsage,
 )
 from sysmlv2.relationships import Satisfy, Verify
+from sysmlv2.state_machines import (
+    StateMachineDefinition, StateMachineRunner, attach_state_machine,
+    state_machines_of,
+)
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "sysmlv2-core-engine"
@@ -106,6 +110,8 @@ class Session:
 
     def __init__(self) -> None:
         self.repo: Repository = Repository(name="UntitledProject")
+        # Active state-machine runners, keyed by SM element_id.
+        self.runners: dict[str, StateMachineRunner] = {}
 
     # -- resolution ----------------------------------------------------
     def find(self, ref: str) -> Optional[Element]:
@@ -481,6 +487,116 @@ def tool_export_diagram(kind: str = "bdd", target: Optional[str] = None) -> dict
     return _err(f"Unknown diagram kind {kind!r}")
 
 
+def _resolve_sm(ref: str) -> StateMachineDefinition | None:
+    e = SESSION.find(ref)
+    if isinstance(e, StateMachineDefinition):
+        return e
+    if isinstance(e, PartDefinition):
+        sms = state_machines_of(e)
+        return sms[0] if sms else None
+    return None
+
+
+def tool_attach_state_machine(part: str, name: str) -> dict:
+    p = SESSION.find(part)
+    if not isinstance(p, PartDefinition):
+        return _err(f"{part!r} is not a PartDefinition")
+    sm = attach_state_machine(p, name)
+    SESSION.repo.registry.register_tree(sm)
+    return _ok(SESSION.element_summary(sm))
+
+
+def tool_add_state(state_machine: str, name: str,
+                   entry: Optional[str] = None,
+                   do: Optional[str] = None,
+                   exit: Optional[str] = None,
+                   is_initial: bool = False,
+                   is_final: bool = False) -> dict:
+    sm = _resolve_sm(state_machine)
+    if sm is None:
+        return _err(f"State machine {state_machine!r} not found")
+    s = sm.add_state(name, entry=entry, do=do, exit=exit,
+                     is_initial=is_initial, is_final=is_final)
+    SESSION.repo.registry.register_tree(s)
+    return _ok(SESSION.element_summary(s))
+
+
+def tool_add_transition(state_machine: str, source: str, target: str,
+                        trigger: Optional[str] = None,
+                        guard: Optional[str] = None,
+                        effect: Optional[str] = None,
+                        name: Optional[str] = None) -> dict:
+    sm = _resolve_sm(state_machine)
+    if sm is None:
+        return _err(f"State machine {state_machine!r} not found")
+    # Resolve states by name within the SM, or globally.
+    def _find_state(ref: str):
+        for s in sm.states:
+            if s.name == ref or s.element_id == ref:
+                return s
+        e = SESSION.find(ref)
+        return e
+    src = _find_state(source); tgt = _find_state(target)
+    if src is None or tgt is None:
+        return _err(f"State {source!r} or {target!r} not found in SM")
+    t = sm.add_transition(src, tgt, trigger=trigger, guard=guard,
+                          effect=effect, name=name)
+    SESSION.repo.registry.register_tree(t)
+    return _ok(SESSION.element_summary(t))
+
+
+def tool_fire_event(state_machine: str, event: str,
+                    payload: Optional[dict] = None) -> dict:
+    sm = _resolve_sm(state_machine)
+    if sm is None:
+        return _err(f"State machine {state_machine!r} not found")
+    runner = SESSION.runners.get(sm.element_id)
+    if runner is None:
+        runner = sm.runner()
+        SESSION.runners[sm.element_id] = runner
+    new = runner.fire(event, **(payload or {}))
+    return _ok({
+        "fired": event,
+        "current_state": runner.current.name if runner.current else None,
+        "transitioned_to": new.name if new is not None else None,
+        "is_in_final": runner.is_in_final(),
+        "trace_tail": runner.trace()[-5:],
+    })
+
+
+def tool_state_machine_status(state_machine: str) -> dict:
+    sm = _resolve_sm(state_machine)
+    if sm is None:
+        return _err(f"State machine {state_machine!r} not found")
+    runner = SESSION.runners.get(sm.element_id)
+    return _ok({
+        "state_machine": sm.qualified_name,
+        "states": [s.name for s in sm.states],
+        "initial": sm.initial_state.name if sm.initial_state else None,
+        "finals": [s.name for s in sm.final_states],
+        "transitions": [
+            {"from": t.transition_source.name if t.transition_source else None,
+             "to":   t.transition_target.name if t.transition_target else None,
+             "trigger": t.trigger_event,
+             "guard": t.guard if isinstance(t.guard, str) else (None if t.guard is None else "λ"),
+             "effect": t.effect if isinstance(t.effect, str) else (None if t.effect is None else "λ")}
+            for t in sm.transitions
+        ],
+        "current": runner.current.name if runner and runner.current else None,
+        "trace": runner.trace() if runner else [],
+    })
+
+
+def tool_reset_state_machine(state_machine: str) -> dict:
+    sm = _resolve_sm(state_machine)
+    if sm is None:
+        return _err(f"State machine {state_machine!r} not found")
+    SESSION.runners[sm.element_id] = sm.runner()
+    r = SESSION.runners[sm.element_id]
+    return _ok({"reset": sm.qualified_name,
+                "current": r.current.name if r.current else None})
+
+
 def tool_tree(root: Optional[str] = None) -> dict:
     r = SESSION.find(root) if root else SESSION.repo.root_package
     if r is None:
@@ -786,16 +902,103 @@ TOOLS: list[dict] = [
     },
     {
         "name": "sysml_export_diagram",
-        "description": "Export a Graphviz DOT diagram (bdd / ibd / requirements).",
+        "description": "Export a Graphviz DOT diagram (bdd / ibd / requirements / statemachine).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "kind":   {"type": "string", "enum": ["bdd", "ibd", "requirements"]},
+                "kind":   {"type": "string",
+                           "enum": ["bdd", "ibd", "requirements", "statemachine"]},
                 "target": {"type": "string",
-                           "description": "Required for ibd (PartDefinition qname/id); otherwise optional namespace root"},
+                           "description": "Required for ibd/statemachine; optional namespace root otherwise"},
             },
         },
         "handler": tool_export_diagram,
+    },
+    {
+        "name": "sysml_attach_state_machine",
+        "description": "Attach a new StateMachine to a PartDefinition.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "part": {"type": "string"},
+                "name": {"type": "string"},
+            },
+            "required": ["part", "name"],
+        },
+        "handler": tool_attach_state_machine,
+    },
+    {
+        "name": "sysml_add_state",
+        "description": (
+            "Add a state to a state machine, with optional entry/do/exit "
+            "actions and initial/final flags."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state_machine": {"type": "string"},
+                "name":          {"type": "string"},
+                "entry":         {"type": "string"},
+                "do":            {"type": "string"},
+                "exit":          {"type": "string"},
+                "is_initial":    {"type": "boolean"},
+                "is_final":      {"type": "boolean"},
+            },
+            "required": ["state_machine", "name"],
+        },
+        "handler": tool_add_state,
+    },
+    {
+        "name": "sysml_add_transition",
+        "description": "Add a transition between two states with optional trigger/guard/effect.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state_machine": {"type": "string"},
+                "source":        {"type": "string"},
+                "target":        {"type": "string"},
+                "trigger":       {"type": "string"},
+                "guard":         {"type": "string", "description": "Python expression over the event payload"},
+                "effect":        {"type": "string", "description": "Action descriptor (string)"},
+                "name":          {"type": "string"},
+            },
+            "required": ["state_machine", "source", "target"],
+        },
+        "handler": tool_add_transition,
+    },
+    {
+        "name": "sysml_fire_event",
+        "description": "Fire an event into a state machine (creates a runner on first call).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state_machine": {"type": "string"},
+                "event":         {"type": "string"},
+                "payload":       {"type": "object"},
+            },
+            "required": ["state_machine", "event"],
+        },
+        "handler": tool_fire_event,
+    },
+    {
+        "name": "sysml_state_machine_status",
+        "description": "Inspect a state machine: states, transitions, current state, trace.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"state_machine": {"type": "string"}},
+            "required": ["state_machine"],
+        },
+        "handler": tool_state_machine_status,
+    },
+    {
+        "name": "sysml_reset_state_machine",
+        "description": "Reset a state machine's runner back to the initial state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"state_machine": {"type": "string"}},
+            "required": ["state_machine"],
+        },
+        "handler": tool_reset_state_machine,
     },
     {
         "name": "sysml_tree",

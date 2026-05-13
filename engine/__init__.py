@@ -3,7 +3,7 @@ from .repository import Repository, ElementRegistry
 from .validator import Validator, ValidationIssue, Severity
 from .serializer import to_dict, to_json, from_dict, from_json
 from .parser import parse, ParseError
-from .diagram import bdd, ibd, requirements, diagram
+from .diagram import bdd, ibd, requirements, state_machine, diagram
 from .graph_export import export_knowledge_graph, EXPORTERS
 from .links import (
     LINK_KINDS, LinkKind, create_link, link_kind, links_of, describe_link,
@@ -15,7 +15,7 @@ __all__ = [
     "Validator", "ValidationIssue", "Severity",
     "to_dict", "to_json", "from_dict", "from_json",
     "parse", "ParseError",
-    "bdd", "ibd", "requirements", "diagram",
+    "bdd", "ibd", "requirements", "state_machine", "diagram",
     "export_knowledge_graph", "EXPORTERS",
     "LINK_KINDS", "LinkKind", "create_link", "link_kind",
     "links_of", "describe_link", "list_link_kinds",

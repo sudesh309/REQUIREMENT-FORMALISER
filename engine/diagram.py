@@ -182,6 +182,52 @@ def requirements(root: Namespace) -> str:
     return "\n".join(lines)
 
 
+def state_machine(sm) -> str:
+    """State machine diagram (states + transitions + entry/do/exit hooks)."""
+    from sysmlv2.state_machines import StateMachineDefinition
+    if not isinstance(sm, StateMachineDefinition):
+        raise TypeError("state_machine requires a StateMachineDefinition target")
+    lines = [f"digraph SM_{_node_id(sm)} {{",
+             f'  label="StateMachine: {_escape(sm.name or "")}"; labelloc=t;',
+             '  rankdir=LR;',
+             '  node [shape=box, style="rounded,filled", fillcolor="#fef9e7",'
+             ' fontname="Helvetica"];',
+             '  start [shape=circle, label="", style=filled, fillcolor=black, width=0.2];']
+    if sm.initial_state is not None:
+        lines.append(f'  start -> {_node_id(sm.initial_state)};')
+    for s in sm.states:
+        rows = [f"<<state>>\\n{s.name or '?'}"]
+        for kind, attr in (("entry", "entry_action"),
+                           ("do",    "do_action"),
+                           ("exit",  "exit_action")):
+            val = getattr(s, attr, None)
+            if val:
+                rows.append(f"{kind}/ {val}")
+        label = "\\n".join(_escape(r) for r in rows)
+        shape = "doublecircle" if getattr(s, "is_final", False) else "box"
+        if getattr(s, "is_final", False):
+            lines.append(f'  {_node_id(s)} [shape={shape}, label="", fillcolor=black, width=0.25];')
+            lines.append(f'  {_node_id(s)}_lbl [shape=plain, label="{label}"];')
+        else:
+            lines.append(f'  {_node_id(s)} [label="{label}"];')
+    for t in sm.transitions:
+        src, tgt = t.transition_source, t.transition_target
+        if src is None or tgt is None:
+            continue
+        bits = []
+        if t.trigger_event: bits.append(t.trigger_event)
+        if t.guard is not None:
+            bits.append("[" + (t.guard if isinstance(t.guard, str) else "λ") + "]")
+        if t.effect is not None:
+            bits.append("/ " + (t.effect if isinstance(t.effect, str) else "λ"))
+        lbl = " ".join(bits)
+        lines.append(
+            f'  {_node_id(src)} -> {_node_id(tgt)} [label="{_escape(lbl)}"];'
+        )
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def diagram(kind: str, target: Element) -> str:
     """Dispatch entry point."""
     if kind == "bdd":
@@ -196,4 +242,6 @@ def diagram(kind: str, target: Element) -> str:
         if not isinstance(target, Namespace):
             raise TypeError("requirements requires a Namespace target")
         return requirements(target)
+    if kind in ("statemachine", "state", "sm"):
+        return state_machine(target)
     raise ValueError(f"Unknown diagram kind {kind!r}")

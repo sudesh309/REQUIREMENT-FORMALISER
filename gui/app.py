@@ -41,6 +41,9 @@ from sysmlv2 import (
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from sysmlv2.state_machines import (
+    StateMachineDefinition, attach_state_machine, state_machines_of,
+)
 from .diagram_view import DiagramView
 
 
@@ -81,6 +84,7 @@ class SysMLApp(tk.Tk):
         self.repo: Repository = Repository(name="UntitledProject")
         self.current_path: Optional[str] = None
         self.element_by_iid: dict[str, Element] = {}
+        self._sm_runners: dict = {}
 
         self._build_menu()
         self._build_toolbar()
@@ -114,6 +118,18 @@ class SysMLApp(tk.Tk):
         model_menu.add_command(label="Validate", command=self.cmd_validate, accelerator="F5")
         model_menu.add_command(label="Expand all", command=lambda: self._expand_all(True))
         model_menu.add_command(label="Collapse all", command=lambda: self._expand_all(False))
+
+        sm_menu = tk.Menu(menu)
+        menu.add_cascade(label="StateMachine", menu=sm_menu)
+        sm_menu.add_command(label="Attach to selected Part…",
+                            command=self.cmd_attach_state_machine)
+        sm_menu.add_command(label="Add state…",       command=self.cmd_add_state)
+        sm_menu.add_command(label="Add transition…",  command=self.cmd_add_transition)
+        sm_menu.add_separator()
+        sm_menu.add_command(label="Fire event…",      command=self.cmd_fire_event,
+                            accelerator="Ctrl+E")
+        sm_menu.add_command(label="Reset runner",     command=self.cmd_reset_state_machine)
+        self.bind_all("<Control-e>", lambda _e: self.cmd_fire_event())
 
         link_menu = tk.Menu(menu)
         menu.add_cascade(label="Links", menu=link_menu)
@@ -407,6 +423,125 @@ class SysMLApp(tk.Tk):
         self.tree.delete(e.element_id)
         self.element_by_iid.pop(e.element_id, None)
         self._log(f"Deleted {e.qualified_name}")
+
+    # --- state machine commands ---------------------------------------
+    def _find_sm(self):
+        e = self._selected()
+        if isinstance(e, StateMachineDefinition):
+            return e
+        if isinstance(e, PartDefinition):
+            sms = state_machines_of(e)
+            return sms[0] if sms else None
+        return None
+
+    def cmd_attach_state_machine(self) -> None:
+        e = self._selected()
+        if not isinstance(e, PartDefinition):
+            messagebox.showerror("Attach state machine",
+                                 "Select a PartDefinition in the tree first.")
+            return
+        name = simpledialog.askstring("Attach state machine",
+                                      "State machine name:",
+                                      initialvalue=f"{e.name}SM")
+        if not name:
+            return
+        sm = attach_state_machine(e, name)
+        self.repo.registry.register_tree(sm)
+        self._refresh_tree()
+        self._select_in_tree(sm)
+        self._log(f"Attached state machine {sm.qualified_name}")
+
+    def cmd_add_state(self) -> None:
+        sm = self._find_sm()
+        if sm is None:
+            messagebox.showerror("Add state", "Select a StateMachine (or a Part owning one).")
+            return
+        name = simpledialog.askstring("Add state", "State name:")
+        if not name:
+            return
+        entry = simpledialog.askstring("Add state", "Entry action (optional):") or None
+        do    = simpledialog.askstring("Add state", "Do action (optional):") or None
+        ext   = simpledialog.askstring("Add state", "Exit action (optional):") or None
+        flags = simpledialog.askstring("Add state",
+                                       "Flags: initial / final / both / none",
+                                       initialvalue="none") or "none"
+        s = sm.add_state(name, entry=entry, do=do, exit=ext,
+                         is_initial=flags in {"initial", "both"},
+                         is_final=flags in {"final", "both"})
+        self.repo.registry.register_tree(s)
+        self._refresh_tree()
+        self._select_in_tree(sm)
+        self.diagram.set_target(sm)
+        self._log(f"Added state {name!r} to {sm.qualified_name}")
+
+    def cmd_add_transition(self) -> None:
+        sm = self._find_sm()
+        if sm is None:
+            messagebox.showerror("Add transition", "Select a StateMachine first.")
+            return
+        names = [s.name for s in sm.states]
+        if len(names) < 2:
+            messagebox.showerror("Add transition", "Need at least 2 states.")
+            return
+        src_name = simpledialog.askstring("Add transition",
+                                          f"Source state: {names}", initialvalue=names[0])
+        tgt_name = simpledialog.askstring("Add transition",
+                                          f"Target state: {names}", initialvalue=names[1])
+        if not src_name or not tgt_name:
+            return
+        src = next((s for s in sm.states if s.name == src_name), None)
+        tgt = next((s for s in sm.states if s.name == tgt_name), None)
+        if src is None or tgt is None:
+            messagebox.showerror("Add transition", "Source/target not found.")
+            return
+        trigger = simpledialog.askstring("Add transition", "Trigger event (optional):") or None
+        guard   = simpledialog.askstring("Add transition",
+                                         "Guard (Python expression over payload, optional):") or None
+        effect  = simpledialog.askstring("Add transition",
+                                         "Effect (action descriptor, optional):") or None
+        t = sm.add_transition(src, tgt, trigger=trigger, guard=guard, effect=effect)
+        self.repo.registry.register_tree(t)
+        self._refresh_tree()
+        self.diagram.set_target(sm)
+        self._log(f"Transition {src.name}→{tgt.name} on {trigger or '∅'}")
+
+    def cmd_fire_event(self) -> None:
+        sm = self._find_sm()
+        if sm is None:
+            messagebox.showerror("Fire event", "Select a StateMachine first.")
+            return
+        event = simpledialog.askstring("Fire event", "Event name:")
+        if not event:
+            return
+        payload_str = simpledialog.askstring("Fire event",
+                                             "Payload (key=value, comma separated, optional):") or ""
+        payload: dict = {}
+        for part in [p for p in payload_str.split(",") if "=" in p]:
+            k, _, v = part.partition("=")
+            v = v.strip()
+            try:
+                payload[k.strip()] = int(v)
+            except ValueError:
+                try:
+                    payload[k.strip()] = float(v)
+                except ValueError:
+                    payload[k.strip()] = v
+        runner = self._sm_runners.setdefault(sm.element_id, sm.runner())
+        new = runner.fire(event, **payload)
+        cur = runner.current.name if runner.current else "?"
+        if new is None:
+            self._log(f"event '{event}' — no transition (still in {cur})")
+        else:
+            self._log(f"event '{event}' → {new.name}")
+        self.diagram.refresh()
+
+    def cmd_reset_state_machine(self) -> None:
+        sm = self._find_sm()
+        if sm is None:
+            return
+        self._sm_runners[sm.element_id] = sm.runner()
+        self._log(f"Reset {sm.qualified_name}")
+        self.diagram.refresh()
 
     # --- link & requirement commands ----------------------------------
     def cmd_create_link(self) -> None:

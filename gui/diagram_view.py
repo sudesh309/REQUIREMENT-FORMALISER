@@ -15,13 +15,15 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Iterable, Optional
 
-from engine import bdd, requirements as req_dot, ibd as ibd_dot
+from engine import bdd, requirements as req_dot, ibd as ibd_dot, state_machine as sm_dot
 from kerml.elements import Element
 from kerml.namespaces import Namespace
 from kerml.stereotypes import stereotypes_on
 from sysmlv2.definitions import (
-    ConnectionUsage, Definition, PartDefinition, PortUsage, RequirementDefinition, Usage,
+    ConnectionUsage, Definition, PartDefinition, PortUsage, RequirementDefinition,
+    StateUsage, TransitionUsage, Usage,
 )
+from sysmlv2.state_machines import StateMachineDefinition, state_machines_of
 
 
 NODE_W, NODE_H = 170, 80
@@ -48,7 +50,7 @@ class DiagramView(ttk.Frame):
 
         bar = ttk.Frame(self); bar.pack(side="top", fill="x")
         self._mode = tk.StringVar(value="BDD")
-        for label in ("BDD", "IBD", "Requirements"):
+        for label in ("BDD", "IBD", "Requirements", "StateMachine"):
             ttk.Radiobutton(bar, text=label, value=label,
                             variable=self._mode, command=self.refresh
                             ).pack(side="left", padx=4)
@@ -71,8 +73,16 @@ class DiagramView(ttk.Frame):
     # --- API ----------------------------------------------------------
     def set_target(self, element: Element) -> None:
         self._element_target = element
-        if isinstance(element, PartDefinition):
-            self._mode.set("IBD")
+        if isinstance(element, StateMachineDefinition):
+            self._mode.set("StateMachine")
+        elif isinstance(element, PartDefinition):
+            # If the part owns a state machine, default to that view.
+            sms = state_machines_of(element)
+            if sms:
+                self._element_target = sms[0]
+                self._mode.set("StateMachine")
+            else:
+                self._mode.set("IBD")
         self.refresh()
 
     def refresh(self) -> None:
@@ -89,6 +99,17 @@ class DiagramView(ttk.Frame):
             self.canvas.create_text(20, 20, anchor="nw",
                                     text="Select a PartDefinition in the tree to render its IBD.",
                                     fill="#666")
+        elif mode == "StateMachine":
+            sm = self._element_target if isinstance(self._element_target, StateMachineDefinition) else None
+            if sm is None and isinstance(self._element_target, PartDefinition):
+                sms = state_machines_of(self._element_target)
+                sm = sms[0] if sms else None
+            if sm is None:
+                self.canvas.create_text(20, 20, anchor="nw",
+                                        text="Select a Part with a state machine, or a StateMachineDefinition.",
+                                        fill="#666")
+            else:
+                self._draw_state_machine(sm)
         else:
             self._draw_requirements(root)
 
@@ -217,6 +238,55 @@ class DiagramView(ttk.Frame):
                 self._arrow(coords[src.element_id], coords[tgt_id],
                             label=f"«{pred}»", dashed=True)
 
+    # --- StateMachine -------------------------------------------------
+    def _draw_state_machine(self, sm: StateMachineDefinition) -> None:
+        self.canvas.create_text(20, 20, anchor="nw",
+                                text=f"StateMachine: {sm.qualified_name}",
+                                font=("Helvetica", 11, "bold"))
+        coords: dict[str, tuple[int, int]] = {}
+        states = sm.states
+        for i, s in enumerate(states):
+            row, col = divmod(i, 3)
+            x = 30 + col * (NODE_W + H_GAP)
+            y = 50 + row * (NODE_H + V_GAP)
+            rows = [f"«state»", s.name or "?"]
+            for kind, attr in (("entry", "entry_action"), ("do", "do_action"),
+                               ("exit", "exit_action")):
+                val = getattr(s, attr, None)
+                if val:
+                    rows.append(f"{kind}/ {val}")
+            label = "\n".join(rows)
+            fill = "#fef9e7"
+            if s is sm.initial_state:
+                fill = "#d6eaf8"
+            if getattr(s, "is_final", False):
+                fill = "#fadbd8"
+            self.canvas.create_rectangle(x, y, x + NODE_W, y + NODE_H + 20,
+                                         fill=fill, outline="#444", width=1)
+            self.canvas.create_text(x + NODE_W // 2, y + (NODE_H + 20) // 2,
+                                    text=label, font=("Helvetica", 9),
+                                    width=NODE_W - 12, justify="center")
+            coords[s.element_id] = (x + NODE_W // 2, y + (NODE_H + 20) // 2)
+        # Initial marker.
+        if sm.initial_state and sm.initial_state.element_id in coords:
+            cx, cy = coords[sm.initial_state.element_id]
+            self.canvas.create_oval(20, cy - 6, 32, cy + 6, fill="black")
+            self.canvas.create_line(32, cy, cx - NODE_W // 2, cy, arrow="last", fill="#333")
+        # Transitions.
+        for t in sm.transitions:
+            src, tgt = t.transition_source, t.transition_target
+            if src is None or tgt is None: continue
+            if src.element_id not in coords or tgt.element_id not in coords:
+                continue
+            bits = []
+            if t.trigger_event: bits.append(t.trigger_event)
+            if t.guard is not None:
+                bits.append("[" + (t.guard if isinstance(t.guard, str) else "λ") + "]")
+            if t.effect is not None:
+                bits.append("/ " + (t.effect if isinstance(t.effect, str) else "λ"))
+            self._arrow(coords[src.element_id], coords[tgt.element_id],
+                        label=" ".join(bits))
+
     # --- Export ------------------------------------------------------
     def _export_dot(self) -> None:
         from tkinter import filedialog, messagebox
@@ -229,6 +299,15 @@ class DiagramView(ttk.Frame):
                 dot = bdd(root)
             elif mode == "IBD" and isinstance(self._element_target, PartDefinition):
                 dot = ibd_dot(self._element_target)
+            elif mode == "StateMachine":
+                sm = self._element_target if isinstance(self._element_target, StateMachineDefinition) else (
+                    state_machines_of(self._element_target)[0]
+                    if isinstance(self._element_target, PartDefinition)
+                    and state_machines_of(self._element_target) else None
+                )
+                if sm is None:
+                    raise ValueError("Select a state machine first")
+                dot = sm_dot(sm)
             else:
                 dot = req_dot(root)
         except Exception as ex:  # noqa: BLE001
