@@ -1,0 +1,55 @@
+/* Tailwind via CDN; this stylesheet adds component classes via @apply equivalents
+   written as plain CSS so we don't need a build step. */
+
+.btn-primary   { background:#2563eb; color:#fff; padding:.4rem .8rem; border-radius:.375rem; font-weight:500; }
+.btn-primary:hover { background:#1d4ed8; }
+.btn-primary[disabled] { opacity:.5; cursor:not-allowed; }
+
+.btn-secondary { background:#fff; color:#374151; border:1px solid #d1d5db; padding:.4rem .8rem; border-radius:.375rem; }
+.btn-secondary:hover { background:#f3f4f6; }
+
+.btn-ghost     { background:transparent; color:#cbd5e1; padding:.25rem .6rem; border-radius:.375rem; font-size:.85rem; }
+.btn-ghost:hover { background:#1e293b; color:#fff; }
+
+.btn-ghost-dark { background:transparent; color:#cbd5e1; padding:.1rem .4rem; border-radius:.25rem; font-size:.75rem; }
+.btn-ghost-dark:hover { background:#1e293b; }
+
+.btn-add       { background:#eef2ff; color:#3730a3; border:1px solid #e0e7ff; padding:.2rem .5rem; border-radius:.25rem; font-size:.75rem; }
+.btn-add:hover { background:#e0e7ff; }
+
+.btn-action    { background:#fff; color:#475569; border:1px solid #e2e8f0; padding:.2rem .55rem; border-radius:.25rem; font-size:.75rem; }
+.btn-action:hover { background:#f1f5f9; }
+
+.tab           { padding:.55rem 1rem; color:#475569; border-bottom:2px solid transparent; cursor:pointer; }
+.tab:hover     { color:#0f172a; }
+.tab-active    { color:#1d4ed8; border-bottom-color:#1d4ed8; font-weight:500; }
+
+.tab-pane      { display:flex; }
+.tab-pane.hidden { display:none; }
+
+.diag-mode     { padding:.2rem .6rem; border:1px solid #e2e8f0; border-radius:.25rem; font-size:.8rem; color:#475569; cursor:pointer; }
+.diag-mode:hover { background:#f1f5f9; }
+.diag-active   { background:#dbeafe; color:#1d4ed8; border-color:#bfdbfe; }
+
+.input         { border:1px solid #cbd5e1; border-radius:.375rem; padding:.35rem .55rem; width:100%; font-size:.875rem; }
+.input:focus   { outline:none; border-color:#2563eb; box-shadow:0 0 0 3px rgb(37 99 235 / .15); }
+
+#tree li.tree-node > .row { display:flex; align-items:center; padding:.15rem .25rem; cursor:pointer; border-radius:.25rem; }
+#tree li.tree-node > .row:hover { background:#f1f5f9; }
+#tree li.tree-node.selected > .row { background:#dbeafe; color:#1d4ed8; }
+#tree .twisty { width:1rem; display:inline-block; text-align:center; color:#94a3b8; }
+#tree .twisty.empty { color:transparent; }
+#tree .kind  { color:#94a3b8; font-size:.7rem; margin-left:.4rem; }
+#tree ul { padding-left:1rem; }
+
+/* Modal */
+.modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; z-index:50; }
+.modal { background:#fff; border-radius:.5rem; box-shadow:0 25px 50px -12px rgba(0,0,0,.25); width:min(540px, 92vw); max-height:90vh; overflow:auto; padding:1.25rem; }
+.modal h3 { font-size:1rem; font-weight:600; margin-bottom:.75rem; }
+.modal .actions { display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem; }
+
+/* Log severity styling */
+.log-error   { color:#fca5a5; }
+.log-warning { color:#fde68a; }
+.log-info    { color:#bae6fd; }
+.log-ok      { color:#bbf7d0; }

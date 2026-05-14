@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SysML v2 Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: false, theme: "neutral",
+                          themeVariables: { fontFamily: "ui-sans-serif" }});
+    window.mermaid = mermaid;
+  </script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="h-screen flex flex-col bg-slate-50 text-slate-900">
+
+  <!-- Header -->
+  <header class="bg-slate-900 text-white px-4 py-2 flex items-center gap-3 shadow">
+    <div class="font-semibold tracking-tight">SysML v2 Studio</div>
+    <span class="text-xs text-slate-400" id="project-name">UntitledProject</span>
+    <div class="flex-1"></div>
+    <button class="btn-ghost" data-cmd="new">New</button>
+    <button class="btn-ghost" data-cmd="load">Load JSON…</button>
+    <button class="btn-ghost" data-cmd="save">Save JSON</button>
+    <button class="btn-ghost" data-cmd="import-sysml">Import .sysml…</button>
+    <button class="btn-ghost" data-cmd="validate" title="F5">Validate</button>
+    <div class="relative">
+      <button class="btn-ghost" data-cmd="export-menu">Export ▾</button>
+      <div id="export-menu" class="hidden absolute right-0 top-9 bg-white text-slate-900 shadow-lg rounded-md py-1 min-w-[180px] z-10 text-sm">
+        <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="turtle">Knowledge graph · Turtle</a>
+        <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="json-ld">Knowledge graph · JSON-LD</a>
+        <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="graphml">Knowledge graph · GraphML</a>
+        <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="cypher">Knowledge graph · Cypher</a>
+        <hr class="my-1" />
+        <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="dot">Current diagram · Graphviz DOT</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="bg-white border-b border-slate-200 px-3 py-2 flex flex-wrap items-center gap-1 text-sm">
+    <span class="text-slate-500 mr-2">Add:</span>
+    <button class="btn-add" data-kind="Package">Package</button>
+    <button class="btn-add" data-kind="PartDefinition">Part Def</button>
+    <button class="btn-add" data-kind="PartUsage">Part</button>
+    <button class="btn-add" data-kind="AttributeDefinition">Attr Def</button>
+    <button class="btn-add" data-kind="AttributeUsage">Attribute</button>
+    <button class="btn-add" data-kind="PortDefinition">Port Def</button>
+    <button class="btn-add" data-kind="PortUsage">Port</button>
+    <button class="btn-add" data-kind="InterfaceDefinition">Interface Def</button>
+    <button class="btn-add" data-kind="ConnectionUsage">Connection</button>
+    <button class="btn-add" data-kind="ActionDefinition">Action Def</button>
+    <button class="btn-add" data-kind="StateDefinition">State Def</button>
+    <button class="btn-add" data-kind="RequirementDefinition">Req Def</button>
+    <button class="btn-add" data-kind="ConstraintDefinition">Constraint Def</button>
+    <button class="btn-add" data-kind="ParameterUsage">Parameter</button>
+    <button class="btn-add" data-kind="Stereotype">Stereotype</button>
+    <span class="mx-2 border-l h-5 border-slate-300"></span>
+    <button class="btn-action" data-cmd="link" title="Ctrl+L">Link…</button>
+    <button class="btn-action" data-cmd="define-stereotype">Define stereotype…</button>
+    <button class="btn-action" data-cmd="apply-stereotype">Apply stereotype…</button>
+    <span class="mx-2 border-l h-5 border-slate-300"></span>
+    <span class="text-slate-500">SM:</span>
+    <button class="btn-action" data-cmd="sm-attach">Attach</button>
+    <button class="btn-action" data-cmd="sm-state">+State</button>
+    <button class="btn-action" data-cmd="sm-transition">+Transition</button>
+    <button class="btn-action" data-cmd="sm-fire" title="Ctrl+E">Fire event</button>
+  </div>
+
+  <!-- Body -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- Tree -->
+    <aside class="w-72 bg-white border-r border-slate-200 overflow-auto">
+      <div class="px-3 py-2 text-xs uppercase tracking-wider text-slate-500 border-b">Containment tree</div>
+      <ul id="tree" class="text-sm py-1"></ul>
+    </aside>
+
+    <!-- Right pane (tabs) -->
+    <section class="flex-1 flex flex-col">
+      <div class="bg-white border-b border-slate-200 flex text-sm">
+        <button class="tab tab-active" data-tab="properties">Properties</button>
+        <button class="tab" data-tab="diagram">Diagram</button>
+        <button class="tab" data-tab="links">Links</button>
+        <button class="tab" data-tab="parser">Parser</button>
+      </div>
+
+      <div class="flex-1 overflow-hidden relative">
+
+        <!-- Properties tab -->
+        <div id="tab-properties" class="tab-pane absolute inset-0 p-4 overflow-auto">
+          <div id="props-placeholder" class="text-slate-500 italic">Select an element in the tree to edit its properties.</div>
+          <form id="props-form" class="hidden space-y-3 max-w-2xl">
+            <div class="flex items-baseline gap-2">
+              <span id="props-kind" class="text-lg font-semibold"></span>
+              <span id="props-qname" class="text-xs text-slate-500 font-mono"></span>
+            </div>
+            <div id="props-stereotypes" class="text-xs text-purple-700"></div>
+            <div class="grid grid-cols-[140px_1fr] gap-2 items-center">
+              <label>Name</label>            <input class="input" name="name" />
+              <label>Short name</label>      <input class="input" name="short_name" />
+              <label>Abstract</label>        <input type="checkbox" name="is_abstract" />
+
+              <label data-feature>Multiplicity</label>
+              <div data-feature class="flex gap-1 items-center">
+                <input class="input w-20" name="mult_lower" placeholder="0" />
+                <span>..</span>
+                <input class="input w-20" name="mult_upper" placeholder="*" />
+              </div>
+
+              <label data-feature>Typed by</label>
+              <input class="input" data-feature name="typed_by" placeholder="qualified name" />
+
+              <label data-attr="req_id">Req id</label>
+              <input class="input" data-attr="req_id" name="req_id" />
+
+              <label data-attr="text">Text</label>
+              <textarea class="input h-16" data-attr="text" name="text"></textarea>
+
+              <label data-attr="parameter_kind">Parameter</label>
+              <select class="input" data-attr="parameter_kind" name="parameter_kind">
+                <option value="">—</option>
+                <option>in</option><option>out</option><option>inout</option><option>return</option>
+              </select>
+
+              <label class="self-start">Documentation</label>
+              <textarea class="input h-24" name="doc"></textarea>
+            </div>
+            <div class="flex gap-2 justify-end pt-2">
+              <button type="button" class="btn-secondary" data-cmd="delete-element">Delete</button>
+              <button type="submit" class="btn-primary">Apply changes</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Diagram tab -->
+        <div id="tab-diagram" class="tab-pane absolute inset-0 hidden flex-col">
+          <div class="px-3 py-2 border-b bg-white flex gap-1 text-sm items-center">
+            <button class="diag-mode diag-active" data-mode="bdd">BDD</button>
+            <button class="diag-mode" data-mode="ibd">IBD</button>
+            <button class="diag-mode" data-mode="requirements">Requirements</button>
+            <button class="diag-mode" data-mode="statemachine">StateMachine</button>
+            <span class="flex-1"></span>
+            <button class="btn-action" data-cmd="diagram-refresh">Refresh</button>
+            <button class="btn-action" data-cmd="diagram-export-dot">Export DOT</button>
+          </div>
+          <div id="diagram" class="flex-1 overflow-auto p-4 bg-white"></div>
+        </div>
+
+        <!-- Links tab -->
+        <div id="tab-links" class="tab-pane absolute inset-0 hidden p-4 overflow-auto">
+          <div class="text-sm">
+            <div class="font-semibold mb-2">Links</div>
+            <table class="w-full text-sm border-collapse">
+              <thead class="text-xs uppercase text-slate-500"><tr>
+                <th class="text-left p-1">Kind</th>
+                <th class="text-left p-1">Source</th>
+                <th class="text-left p-1">Target</th>
+              </tr></thead>
+              <tbody id="links-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Parser tab -->
+        <div id="tab-parser" class="tab-pane absolute inset-0 hidden p-4 flex flex-col gap-2">
+          <p class="text-sm text-slate-600">Paste SysML v2 textual source and parse it into the current project.</p>
+          <textarea id="parser-source" class="input flex-1 font-mono text-sm" placeholder="package Demo {
+    part def Vehicle;
+}"></textarea>
+          <div class="flex gap-2 justify-end">
+            <button class="btn-primary" data-cmd="parse">Parse</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Output log -->
+  <footer class="bg-slate-900 text-slate-100 text-xs h-32 flex flex-col">
+    <div class="px-3 py-1 border-b border-slate-700 flex items-center gap-2">
+      <span class="font-semibold tracking-wider uppercase">Output / Validation</span>
+      <span id="status" class="text-slate-400"></span>
+      <span class="flex-1"></span>
+      <button class="btn-ghost-dark" data-cmd="clear-log">Clear</button>
+    </div>
+    <pre id="log" class="flex-1 overflow-auto p-2 font-mono whitespace-pre-wrap"></pre>
+  </footer>
+
+  <!-- Modal mount point -->
+  <div id="modal-root"></div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
