@@ -213,6 +213,30 @@ Every Element becomes a typed node; every typed relationship
 The GUI exposes Export › Knowledge graph; the MCP server exposes
 `sysml_export_graph` and `sysml_export_diagram`.
 
+## Web frontend
+
+A modern browser-based UI ships in `webapp/` — same capabilities as the
+Tkinter GUI but with **zero dependencies** (stdlib HTTP backend, Tailwind
++ Mermaid via CDN, no `pip install`, no `npm`):
+
+```bash
+python -m webapp.server
+# → SysML v2 web frontend ready at http://127.0.0.1:8765
+```
+
+Then open the URL in any browser. Use this if Tkinter isn't available on
+your machine (or you simply prefer a browser workflow).
+
+Features:
+
+- Tree (left) · tabbed right pane (Properties · Diagram · Links · Parser) · log (bottom)
+- Toolbar: one-click add for every SysML v2 element kind + Stereotype + Parameter
+- Diagrams rendered live by Mermaid: BDD, IBD, Requirements, StateMachine
+- Modal dialogs: Link (with all 15 kinds), Stereotype define/apply, StateMachine attach/state/transition/fire
+- One-click knowledge-graph export: Turtle / JSON-LD / GraphML / Cypher
+- F5 validate · Ctrl+L link · Ctrl+E fire event · Del delete
+- Save / Load JSON, Import `.sysml`, Export current DOT diagram
+
 ## GUI
 
 A Tkinter desktop GUI is bundled — three panes (containment tree,

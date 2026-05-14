@@ -50,26 +50,29 @@ mindmap
 ```bash
 git clone <repo>
 cd REQUIREMENT-FORMALISER
-python -m unittest discover -s tests -v     # 43 tests, all pass
+python -m unittest discover -s tests -v     # 51 tests, all pass
 
-# Three surfaces, pick any:
+# Four surfaces, pick any:
 python -m engine.cli examples/vehicle.sysml  # parse + validate + print
+python -m webapp.server                      # web GUI (browser; no deps)
 python -m gui.app                            # desktop GUI (needs Tk)
-python -m mcp_server.server                  # MCP over stdio
+python -m mcp_server.server                  # MCP over stdio (for AI agents)
 ```
 
 ```mermaid
 flowchart LR
     DEV([You]) -->|edit files| SRC[.sysml / Python]
+    DEV -->|browser| WEB[webapp.server]
     DEV -->|click| GUI
     DEV -->|chat| AGENT[AI agent<br/>Claude / local LLM]
     SRC --> CLI[engine.cli]
     GUI[gui.app]
     AGENT -->|MCP| MCP[mcp_server.server]
-    CLI & GUI & MCP --> ENG((Engine<br/>+ Repository))
+    CLI & GUI & WEB & MCP --> ENG((Engine<br/>+ Repository))
     ENG --> JSON[(project.json)]
     ENG --> KG[(Turtle / JSON-LD /<br/>GraphML / Cypher)]
     ENG --> DOT[(Graphviz DOT)]
+    ENG --> MERMAID[(Mermaid)]
 ```
 
 ---
@@ -112,7 +115,51 @@ flowchart LR
 
 ---
 
-## 3. The GUI in 60 seconds
+## 3. Two GUIs — desktop and web
+
+You can drive the engine through a **desktop** GUI (Tkinter) or a
+**browser** GUI (web frontend). Both expose the same capabilities.
+
+### 3a. Web frontend (recommended if Tk isn't installed)
+
+```bash
+python -m webapp.server          # listens on http://127.0.0.1:8765
+```
+
+Open the URL in any browser — Chrome, Firefox, Edge, Safari. The
+backend is stdlib-only (no `pip install`); the frontend is Tailwind +
+Mermaid via CDN (no `npm`).
+
+```mermaid
+flowchart TB
+    subgraph Browser["Browser SPA"]
+        direction LR
+        HD["Header<br/>New · Load · Save · Import · Validate · Export ▾"]
+        TB["Toolbar<br/>Add: Package · Part Def · Part · ... · Stereotype · Parameter | Link · Stereotype · SM ops"]
+        subgraph Body
+            direction LR
+            TREE["Containment tree"]
+            subgraph Right["Tabbed right pane"]
+                direction TB
+                P1["Properties"]
+                P2["Diagram (Mermaid)<br/>BDD · IBD · Requirements · StateMachine"]
+                P3["Links"]
+                P4["Parser"]
+            end
+        end
+        LOG["Output / Validation log"]
+    end
+    Browser <-->|fetch + JSON| API["webapp.server<br/>stdlib http.server"]
+    API <--> ENG((Engine))
+```
+
+Shortcuts: **F5** validate · **Ctrl+L** create link · **Ctrl+E** fire event · **Del** delete.
+
+### 3b. Desktop GUI (Tkinter)
+
+```bash
+python -m gui.app
+```
 
 ```mermaid
 flowchart TB
@@ -134,7 +181,12 @@ flowchart TB
     end
 ```
 
-**Workflow**
+If Tkinter is missing, install it (`sudo apt install python3-tk` on
+Debian/Ubuntu, `brew install python-tk` on macOS, or re-run the
+Windows Python installer with *tcl/tk and IDLE* checked) — or just use
+the web frontend, it has no Tk dependency.
+
+**Workflow** (identical in both GUIs):
 
 ```mermaid
 sequenceDiagram
@@ -596,9 +648,10 @@ API.
 
 ## 15. Cheat sheet
 
-| Task                            | Python                                   | GUI                          | MCP tool                       |
+| Task                            | Python                                   | GUI / Web                    | MCP tool                       |
 |---------------------------------|------------------------------------------|------------------------------|--------------------------------|
-| New project                     | `Repository("X")`                        | File ▸ New                   | `sysml_new_project`            |
+| Launch UI                       | —                                        | `python -m gui.app` / `python -m webapp.server` | —                          |
+| New project                     | `Repository("X")`                        | File ▸ New / header *New*    | `sysml_new_project`            |
 | Open / Save JSON                | `Repository.load/save`                   | File ▸ Open/Save             | `sysml_open_project / save`    |
 | Parse `.sysml`                  | `engine.parse(src, into=...)`            | File ▸ Import .sysml         | `sysml_parse_sysml`            |
 | Add element                     | `Repository.add(cls(name=…))`            | Toolbar ▸ Kind               | `sysml_create_element`         |
