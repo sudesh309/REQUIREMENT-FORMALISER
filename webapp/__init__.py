@@ -5,6 +5,4 @@ Run with:
 
 Then open http://localhost:8765 in your browser.
 """
-from .server import main
-
-__all__ = ["main"]
+# `server` is not imported here so `python -m webapp.server` loads it only once.

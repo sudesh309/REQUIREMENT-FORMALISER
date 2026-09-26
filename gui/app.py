@@ -552,7 +552,6 @@ class SysMLApp(tk.Tk):
         LinkDialog(self, source=src, repo=self.repo, on_create=self._on_link_created)
 
     def _on_link_created(self, rel) -> None:
-        SESSION = None  # placeholder for readability
         self.repo.registry.register(rel)
         info = describe_link(rel)
         self._log(f"Link «{info['kind']}»: {info['source']} → {info['target']}")

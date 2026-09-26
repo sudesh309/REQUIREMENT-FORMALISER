@@ -64,8 +64,23 @@ class Repository:
         return element
 
     def remove(self, element: Element) -> None:
+        removed = {id(e) for e in element.walk()}
+        # Drop relationships elsewhere in the project that point into the removed subtree,
+        # so diagrams, link queries and exports never see a dangling target.
+        for e in self.root_package.walk():
+            if id(e) in removed:
+                continue
+            for rel in [r for r in e.owned_relationships
+                        if id(r.target) in removed or id(r.source) in removed]:
+                e.owned_relationships.remove(rel)
+                self.registry.unregister(rel)
+                if isinstance(e, Namespace):
+                    e.memberships = [m for m in e.memberships if m is not rel]
+                    e.imports = [i for i in e.imports if i is not rel]
         for e in element.walk():
             self.registry.unregister(e)
+            for rel in e.owned_relationships:
+                self.registry.unregister(rel)
         if element.owner is not None:
             element.owner.owned_elements.remove(element)
             if isinstance(element.owner, Namespace):

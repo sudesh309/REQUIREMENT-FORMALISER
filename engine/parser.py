@@ -239,7 +239,7 @@ class _Parser:
             defn.add_annotation(Documentation(body=doc))
         owner.own(defn)
         for s in supers:
-            sup = owner.resolve(s) or owner.root().resolve(s) if hasattr(owner, "resolve") else None
+            sup = _resolve_in_scope(owner, s)
             if sup is not None:
                 defn.specialize(sup)  # type: ignore[arg-type]
 

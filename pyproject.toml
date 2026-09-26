@@ -14,5 +14,14 @@ dependencies = []
 [project.optional-dependencies]
 test = ["pytest>=7"]
 
+[project.scripts]
+sysml-cli = "engine.cli:main"
+sysml-web = "webapp.server:main"
+sysml-mcp = "mcp_server.server:main"
+sysml-gui = "gui.app:main"
+
 [tool.setuptools.packages.find]
-include = ["kerml*", "sysmlv2*", "engine*"]
+include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*"]
+
+[tool.setuptools.package-data]
+webapp = ["static/*"]

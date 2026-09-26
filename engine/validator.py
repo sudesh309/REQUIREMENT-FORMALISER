@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from kerml.elements import Element
 from kerml.features import Feature
+from kerml.stereotypes import StereotypeTag
 from kerml.types import Type
 from sysmlv2.definitions import (
     ConnectionUsage,
@@ -19,6 +20,8 @@ from sysmlv2.definitions import (
     PortUsage,
     RequirementDefinition,
     RequirementUsage,
+    StateUsage,
+    TransitionUsage,
     Usage,
 )
 
@@ -92,6 +95,9 @@ class Validator:
 
     def _rule_feature_typed(self, f: Feature) -> list[ValidationIssue]:
         if f.is_abstract or f.feature_typings:
+            return []
+        # States, transitions and stereotype tags are legitimately untyped.
+        if isinstance(f, (StateUsage, TransitionUsage, StereotypeTag)):
             return []
         if isinstance(f, Type) and f.specializations:
             return []

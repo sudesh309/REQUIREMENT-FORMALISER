@@ -51,8 +51,20 @@ specifications.
 ## Quick start
 
 ```bash
-python -m engine.cli examples/vehicle.sysml
+pip install -e .                             # no third-party dependencies
+sysml-cli examples/vehicle.sysml             # or: python -m engine.cli ...
+sysml-web                                    # web UI on http://127.0.0.1:8765
+sysml-gui                                    # desktop UI (needs Tk)
+sysml-mcp                                    # MCP server over stdio
+python examples/build_vehicle.py             # Python API example
 ```
+
+Saved projects (`.json`) keep elements, typed links, stereotype
+applications, parameters, documentation and state machines. Guards,
+effects and entry/do/exit actions persist only when given as strings;
+Python callables are runtime-only. Guard strings are evaluated by a
+restricted expression evaluator (names from the event payload,
+literals, comparisons, `and`/`or`/`not`, arithmetic) — never `eval`.
 
 ## State machines per Part
 
@@ -295,8 +307,6 @@ python -m mcp_server.server     # speaks JSON-RPC 2.0 over stdio
 | `sysml_set_property`        | name, multiplicity, doc, req_id, text, abstract, ... |
 | `sysml_set_feature_type`    | bind/rebind a Feature's type                         |
 | `sysml_connect`             | create a ConnectionUsage between two ends            |
-| `sysml_satisfy`             | Satisfy traceability relationship                    |
-| `sysml_verify`              | Verify traceability relationship                     |
 | `sysml_validate`            | run the well-formedness validator                    |
 | `sysml_tree`                | dump the containment tree as nested JSON             |
 | `sysml_define_stereotype`   | declare a custom stereotype with tags + applies_to   |

@@ -29,6 +29,8 @@ Example
 """
 from __future__ import annotations
 
+import ast
+import operator
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -126,6 +128,71 @@ class EventUsage(Usage):
     kind = "EventUsage"
 
 
+# --- guard expressions -------------------------------------------------------
+#
+# Guards arrive as text from the GUI, the web API and MCP clients, so they are
+# never passed to eval(). Only literals, payload names, comparisons, boolean
+# logic and arithmetic are allowed — no attribute access, calls or subscripts.
+
+class GuardError(ValueError):
+    """Raised for a guard expression outside the allowed subset."""
+
+
+_BIN_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+}
+_CMP_OPS = {
+    ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
+    ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
+    ast.In: lambda a, b: a in b, ast.NotIn: lambda a, b: a not in b,
+}
+_CONSTANT_NAMES = {"True": True, "False": False, "None": None,
+                   "true": True, "false": False}
+
+
+def evaluate_guard(expression: str, payload: dict) -> Any:
+    """Evaluate a guard such as ``speed == 0 and not locked`` against `payload`."""
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError as ex:
+        raise GuardError(f"Invalid guard {expression!r}: {ex.msg}") from ex
+    return _eval_node(tree.body, payload)
+
+
+def _eval_node(node: ast.AST, payload: dict) -> Any:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id in payload:
+            return payload[node.id]
+        if node.id in _CONSTANT_NAMES:
+            return _CONSTANT_NAMES[node.id]
+        raise GuardError(f"Unknown name {node.id!r} in guard")
+    if isinstance(node, ast.BoolOp):
+        values = (_eval_node(v, payload) for v in node.values)
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    if isinstance(node, ast.UnaryOp):
+        operand = _eval_node(node.operand, payload)
+        if isinstance(node.op, ast.Not):  return not operand
+        if isinstance(node.op, ast.USub): return -operand
+        if isinstance(node.op, ast.UAdd): return +operand
+    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
+        return _BIN_OPS[type(node.op)](_eval_node(node.left, payload),
+                                       _eval_node(node.right, payload))
+    if isinstance(node, ast.Compare):
+        left = _eval_node(node.left, payload)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = _eval_node(comparator, payload)
+            if type(op) not in _CMP_OPS or not _CMP_OPS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return [_eval_node(e, payload) for e in node.elts]
+    raise GuardError(f"Unsupported construct {type(node).__name__} in guard")
+
+
 # --- execution engine --------------------------------------------------------
 
 @dataclass
@@ -184,8 +251,8 @@ class StateMachineRunner:
             return bool(guard(payload))
         if isinstance(guard, str):
             try:
-                return bool(eval(guard, {"__builtins__": {}}, payload))  # noqa: S307
-            except Exception:  # pragma: no cover
+                return bool(evaluate_guard(guard, payload))
+            except (GuardError, ArithmeticError, TypeError):
                 return False
         return bool(guard)
 

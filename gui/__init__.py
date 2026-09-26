@@ -12,8 +12,5 @@ Layout (Cameo-inspired):
 
 Run with:  python -m gui.app
 """
-from __future__ import annotations
-
-from .app import main
-
-__all__ = ["main"]
+# `app` is not imported here: doing so would double-load it under
+# `python -m gui.app` and force a tkinter import on any `gui.*` import.
