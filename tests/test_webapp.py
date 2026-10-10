@@ -42,7 +42,7 @@ class WebAppTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Reset session before each test class.
-        web.SESSION = web.Session()
+        web.reset_session()
         cls.httpd = _start_server(PORT)
         time.sleep(0.05)
 

@@ -53,3 +53,8 @@
 .log-warning { color:#fde68a; }
 .log-info    { color:#bae6fd; }
 .log-ok      { color:#bbf7d0; }
+
+/* Plugin UI */
+.tree-badge { font-size:.65rem; margin-left:.35rem; padding:0 .3rem; border-radius:.25rem; background:#f1f5f9; color:#475569; }
+.inspector-section { border-top:1px solid #e2e8f0; padding-top:.75rem; }
+.inspector-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:#64748b; margin-bottom:.5rem; font-weight:600; }

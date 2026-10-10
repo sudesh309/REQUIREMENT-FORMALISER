@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 from kerml.elements import Documentation, Element, Relationship
 from kerml.features import Feature, MultiplicityRange
@@ -29,6 +29,59 @@ def _fqcn(obj: object) -> str:
 def _resolve_class(fqcn: str) -> type:
     mod, _, name = fqcn.rpartition(".")
     return getattr(importlib.import_module(mod), name)
+
+
+# -- extension codecs ----------------------------------------------------
+#
+# Feature modules persist extra state without editing this file:
+#
+#   register_codec("variants", encode, decode)
+#       encode(element) -> JSON-able data, or None when the element has nothing to save
+#       decode(element, data, by_id) runs after every element, link and stereotype
+#       application is restored; by_id maps saved ids to restored elements.
+#
+#   register_repo_codec("allocations", encode, decode)
+#       project-level state: encode(repo) -> data|None, decode(repo, data, by_id).
+#
+# The registering module's name is saved next to the data and imported on load,
+# so a project loads correctly even if that module was not imported yet.
+
+_CODECS: dict[str, tuple[str, Callable, Callable]] = {}
+_REPO_CODECS: dict[str, tuple[str, Callable, Callable]] = {}
+
+
+def register_codec(name: str, encode: Callable[[Element], Any],
+                   decode: Callable[[Element, Any, dict], None]) -> None:
+    _CODECS[name] = (encode.__module__, encode, decode)
+
+
+def register_repo_codec(name: str, encode: Callable[["Repository"], Any],
+                        decode: Callable[["Repository", Any, dict], None]) -> None:
+    _REPO_CODECS[name] = (encode.__module__, encode, decode)
+
+
+def _encode_ext(codecs: dict, target: Any) -> dict:
+    out = {}
+    for name, (module, encode, _decode) in codecs.items():
+        data = encode(target)
+        if data is not None:
+            out[name] = {"module": module, "data": data}
+    return out
+
+
+def _decode_ext(codecs: dict, ext: dict, target: Any, by_id: dict) -> None:
+    for name, entry in ext.items():
+        if name not in codecs:
+            importlib.import_module(entry["module"])
+        codecs[name][2](target, entry["data"], by_id)
+
+
+def _json_safe(value: Any) -> bool:
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 # -- encode ---------------------------------------------------------------
@@ -99,6 +152,13 @@ def _encode_element(e: Element) -> dict:
             "initial": e.initial_state.element_id if e.initial_state else None,
             "finals": [s.element_id for s in e.final_states],
         }
+    # UI state such as canvas layout; only JSON-able entries are kept.
+    tool_data = {k: v for k, v in e.tool_data.items() if _json_safe(v)}
+    if tool_data:
+        payload["tool_data"] = tool_data
+    ext = _encode_ext(_CODECS, e)
+    if ext:
+        payload["ext"] = ext
     return payload
 
 
@@ -138,6 +198,7 @@ def to_dict(repo: "Repository") -> dict:
         "root": repo.root_package.element_id,
         "elements": elements,
         "links": links,
+        "ext": _encode_ext(_REPO_CODECS, repo),
     }
 
 
@@ -237,6 +298,8 @@ def from_dict(data: dict) -> "Repository":
             inst.transition_source = by_id.get(t["source"])
             inst.transition_target = by_id.get(t["target"])
             inst.trigger_event, inst.guard, inst.effect = t["trigger"], t["guard"], t["effect"]
+        if r.get("tool_data"):
+            inst.tool_data = dict(r["tool_data"])
         if isinstance(inst, Stereotype):
             inst.applies_to = [_resolve_class(c) for c in r.get("applies_to", [])]
             inst.base = by_id.get(r.get("base"))
@@ -262,6 +325,13 @@ def from_dict(data: dict) -> "Repository":
         rel = _resolve_class(link["class"])(src, tgt, element_id=link["id"])
         src.add_relationship(rel)
         _replay_link_side_effects(rel, src, tgt)
+
+    # Pass 4: extension codecs, once the core model is complete.
+    repo.registry.register_tree(repo.root_package)
+    for r in raw:
+        if r.get("ext"):
+            _decode_ext(_CODECS, r["ext"], by_id[r["id"]], by_id)
+    _decode_ext(_REPO_CODECS, data.get("ext") or {}, repo, by_id)
 
     repo.registry.register_tree(repo.root_package)
     return repo

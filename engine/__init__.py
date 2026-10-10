@@ -11,8 +11,11 @@ from .diagram_mermaid import (
 from .graph_export import export_knowledge_graph, EXPORTERS
 from .links import (
     LINK_KINDS, LinkKind, create_link, link_kind, links_of, describe_link,
-    list_link_kinds,
+    list_link_kinds, register_link_kind,
 )
+from .serializer import register_codec, register_repo_codec
+from .validator import register_rule, register_repo_rule
+from .graph_export import register_edge_source
 
 __all__ = [
     "Repository", "ElementRegistry",
@@ -25,4 +28,7 @@ __all__ = [
     "export_knowledge_graph", "EXPORTERS",
     "LINK_KINDS", "LinkKind", "create_link", "link_kind",
     "links_of", "describe_link", "list_link_kinds",
+    # extension points for feature modules
+    "register_link_kind", "register_codec", "register_repo_codec",
+    "register_rule", "register_repo_rule", "register_edge_source",
 ]

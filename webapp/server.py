@@ -9,6 +9,7 @@ Endpoints
 GET    /                      → SPA shell (static/index.html)
 GET    /static/<path>         → static assets
 
+GET    /api/plugins           → frontend plugin modules to load
 GET    /api/state             → repo name + counts
 POST   /api/new               → new project    {name}
 POST   /api/parse             → parse .sysml   {source}
@@ -40,6 +41,9 @@ POST   /api/sm/fire           → {state_machine, event, payload}
 GET    /api/sm/status/<ref>   → current state, trace, structure
 
 GET    /api/export/<format>   → knowledge graph (turtle, json-ld, graphml, cypher)
+
+Feature routes live in ``webapp/routes/*.py`` and register through
+``webapp.core.route``; see ``webapp/core.py``.
 """
 from __future__ import annotations
 
@@ -93,142 +97,16 @@ from sysmlv2.state_machines import (
     StateMachineDefinition, StateMachineRunner,
     attach_state_machine, state_machines_of,
 )
+from webapp import routes as _route_plugins
+from webapp.core import (
+    KIND_REGISTRY, PLUGIN_ROUTES, SESSION, Body, Session, apply_props, reset_session,
+    summarize, tree,
+)
+from webapp.core import err as _err, ok as _ok
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-
-
-KIND_REGISTRY: dict[str, type[Element]] = {
-    "Package": Package,
-    "PartDefinition": PartDefinition, "PartUsage": PartUsage,
-    "ItemDefinition": ItemDefinition, "ItemUsage": ItemUsage,
-    "AttributeDefinition": AttributeDefinition, "AttributeUsage": AttributeUsage,
-    "PortDefinition": PortDefinition, "PortUsage": PortUsage,
-    "InterfaceDefinition": InterfaceDefinition, "InterfaceUsage": InterfaceUsage,
-    "ConnectionDefinition": ConnectionDefinition, "ConnectionUsage": ConnectionUsage,
-    "ActionDefinition": ActionDefinition, "ActionUsage": ActionUsage,
-    "CalculationDefinition": CalculationDefinition, "CalculationUsage": CalculationUsage,
-    "StateDefinition": StateDefinition, "StateUsage": StateUsage,
-    "ConstraintDefinition": ConstraintDefinition, "ConstraintUsage": ConstraintUsage,
-    "RequirementDefinition": RequirementDefinition, "RequirementUsage": RequirementUsage,
-    "ParameterDefinition": ParameterDefinition, "ParameterUsage": ParameterUsage,
-    "EnumerationDefinition": EnumerationDefinition,
-    "Stereotype": Stereotype,
-}
-
-
-# ---------------------------------------------------------------------------
-# Session — single shared repo + SM runners.
-# ---------------------------------------------------------------------------
-
-class Session:
-    def __init__(self) -> None:
-        self.repo = Repository(name="UntitledProject")
-        self.runners: dict[str, StateMachineRunner] = {}
-
-    def find(self, ref: str) -> Optional[Element]:
-        if not ref:
-            return None
-        return self.repo.by_id(ref) or self.repo.resolve(ref)
-
-
-SESSION = Session()
-
-
-# ---------------------------------------------------------------------------
-# Serialization helpers.
-# ---------------------------------------------------------------------------
-
-def summarize(e: Element) -> dict:
-    d = {
-        "id": e.element_id,
-        "kind": e.kind,
-        "name": e.name,
-        "short_name": e.short_name,
-        "qualified_name": e.qualified_name,
-        "owner_id": e.owner.element_id if e.owner else None,
-        "is_abstract": getattr(e, "is_abstract", False),
-        "doc": next((a.body for a in e.annotations if isinstance(a, Documentation)), ""),
-        "stereotypes": [
-            {"name": app.stereotype.name, "values": app.values}
-            for app in stereotypes_on(e)
-        ],
-    }
-    if isinstance(e, Feature):
-        up = e.multiplicity.upper
-        d["multiplicity"] = [e.multiplicity.lower, "*" if up is None else up]
-        d["direction"] = e.direction.value
-        d["typed_by"] = [t.qualified_name for t in e.types]
-    for attr in ("req_id", "text", "parameter_kind"):
-        v = getattr(e, attr, None)
-        if v is not None:
-            d[attr] = v
-    if hasattr(e, "ends"):
-        d["ends"] = [f.qualified_name for f in getattr(e, "ends", []) if f]
-    if isinstance(e, StateMachineDefinition):
-        d["sm"] = {
-            "states": [s.name for s in e.states],
-            "initial": e.initial_state.name if e.initial_state else None,
-            "finals":  [s.name for s in e.final_states],
-            "transitions": [
-                {"from": t.transition_source.name if t.transition_source else None,
-                 "to":   t.transition_target.name if t.transition_target else None,
-                 "trigger": t.trigger_event,
-                 "guard":  t.guard if isinstance(t.guard, str) else (None if t.guard is None else "λ"),
-                 "effect": t.effect if isinstance(t.effect, str) else (None if t.effect is None else "λ")}
-                for t in e.transitions
-            ],
-            "current": (SESSION.runners.get(e.element_id).current.name
-                        if SESSION.runners.get(e.element_id) and
-                        SESSION.runners[e.element_id].current else None),
-        }
-    return d
-
-
-def tree(e: Element) -> dict:
-    return {**summarize(e), "children": [tree(c) for c in e.owned_elements]}
-
-
-def apply_props(e: Element, props: dict) -> None:
-    for k, v in props.items():
-        if k == "name":               e.name = v or None
-        elif k == "short_name":       e.short_name = v or None
-        elif k == "is_abstract" and hasattr(e, "is_abstract"):
-            e.is_abstract = bool(v)
-        elif k == "multiplicity" and isinstance(e, Feature):
-            lo, up = v
-            up_v = None if up in (None, "*") else int(up)
-            e.multiplicity = MultiplicityRange(int(lo), up_v)
-        elif k == "doc":
-            for a in list(e.annotations):
-                if isinstance(a, Documentation):
-                    e.annotations.remove(a)
-            if v:
-                e.add_annotation(Documentation(body=str(v)))
-        elif k == "typed_by" and isinstance(e, Feature):
-            qname = v if isinstance(v, str) else (v[0] if v else None)
-            if qname:
-                t = SESSION.find(qname)
-                if isinstance(t, Type):
-                    e.feature_typings = []
-                    e.add_type(t)
-        elif hasattr(e, k):
-            setattr(e, k, v)
-
-
-# ---------------------------------------------------------------------------
-# Route handlers (return a (status, body) tuple).
-# ---------------------------------------------------------------------------
-
-Body = tuple[int, Any]
-
-
-def _ok(payload: Any = None) -> Body:
-    return (200, payload if payload is not None else {"ok": True})
-
-
-def _err(message: str, status: int = 400) -> Body:
-    return (status, {"error": message})
+PLUGIN_DIR = STATIC_DIR / "plugins"
 
 
 def api_state(_req: dict) -> Body:
@@ -240,8 +118,7 @@ def api_state(_req: dict) -> Body:
 
 def api_new(req: dict) -> Body:
     body = req.get("body") or {}
-    SESSION.repo = Repository(name=body.get("name") or "UntitledProject")
-    SESSION.runners.clear()
+    SESSION.set_repo(Repository(name=body.get("name") or "UntitledProject"))
     return _ok({"name": SESSION.repo.name,
                 "root_id": SESSION.repo.root_package.element_id})
 
@@ -259,8 +136,7 @@ def api_save(_req: dict) -> Body:
 
 def api_load(req: dict) -> Body:
     text = (req.get("body") or {}).get("text", "")
-    SESSION.repo = from_json(text)
-    SESSION.runners.clear()
+    SESSION.set_repo(from_json(text))
     return _ok({"name": SESSION.repo.name,
                 "element_count": len(list(SESSION.repo.all_elements()))})
 
@@ -517,7 +393,14 @@ def api_sm_status(_req: dict, ref: str) -> Body:
 # Tiny router.
 # ---------------------------------------------------------------------------
 
+def api_plugins(_req: dict) -> Body:
+    """Frontend plugin modules the SPA should import, in load order."""
+    files = sorted(f.name for f in PLUGIN_DIR.glob("*.js")) if PLUGIN_DIR.is_dir() else []
+    return _ok([f"/static/plugins/{name}" for name in files])
+
+
 ROUTES: list[tuple[str, str, Callable]] = [
+    ("GET",    r"^/api/plugins$",                  api_plugins),
     ("GET",    r"^/api/state$",                    api_state),
     ("POST",   r"^/api/new$",                      api_new),
     ("POST",   r"^/api/parse$",                    api_parse),
@@ -542,6 +425,10 @@ ROUTES: list[tuple[str, str, Callable]] = [
     ("POST",   r"^/api/sm/fire$",                  api_sm_fire),
     ("GET",    r"^/api/sm/status/(?P<ref>[^/]+)$", api_sm_status),
 ]
+
+
+# Route plugins register themselves into PLUGIN_ROUTES on import.
+_route_plugins.load_plugins()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -577,7 +464,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_static("index.html"); return
         if method == "GET" and path.startswith("/static/"):
             self._serve_static(path[len("/static/"):]); return
-        for verb, pattern, fn in ROUTES:
+        for verb, pattern, fn in [*ROUTES, *PLUGIN_ROUTES]:
             if verb != method:
                 continue
             m = re.match(pattern, path)

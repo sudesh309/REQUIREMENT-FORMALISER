@@ -70,109 +70,18 @@ SERVER_NAME = "sysmlv2-core-engine"
 SERVER_VERSION = "0.1.0"
 
 
-# --- kind registry -------------------------------------------------------
-
-KIND_REGISTRY: dict[str, type[Element]] = {
-    "Package":               Package,
-    "PartDefinition":        PartDefinition,
-    "PartUsage":             PartUsage,
-    "ItemDefinition":        ItemDefinition,
-    "ItemUsage":             ItemUsage,
-    "AttributeDefinition":   AttributeDefinition,
-    "AttributeUsage":        AttributeUsage,
-    "PortDefinition":        PortDefinition,
-    "PortUsage":             PortUsage,
-    "InterfaceDefinition":   InterfaceDefinition,
-    "InterfaceUsage":        InterfaceUsage,
-    "ConnectionDefinition":  ConnectionDefinition,
-    "ConnectionUsage":       ConnectionUsage,
-    "ActionDefinition":      ActionDefinition,
-    "ActionUsage":           ActionUsage,
-    "StateDefinition":       StateDefinition,
-    "StateUsage":            StateUsage,
-    "ConstraintDefinition":  ConstraintDefinition,
-    "ConstraintUsage":       ConstraintUsage,
-    "RequirementDefinition": RequirementDefinition,
-    "RequirementUsage":      RequirementUsage,
-    "EnumerationDefinition": EnumerationDefinition,
-    "ParameterDefinition":   ParameterDefinition,
-    "ParameterUsage":        ParameterUsage,
-    "CalculationDefinition": CalculationDefinition,
-    "CalculationUsage":      CalculationUsage,
-    "Stereotype":            Stereotype,
-}
-
-
-# --- session -------------------------------------------------------------
-
-class Session:
-    """Holds the active repository for the duration of the MCP connection."""
-
-    def __init__(self) -> None:
-        self.repo: Repository = Repository(name="UntitledProject")
-        # Active state-machine runners, keyed by SM element_id.
-        self.runners: dict[str, StateMachineRunner] = {}
-
-    # -- resolution ----------------------------------------------------
-    def find(self, ref: str) -> Optional[Element]:
-        """Find an element by UUID first, then by qualified name."""
-        if not ref:
-            return None
-        hit = self.repo.by_id(ref)
-        if hit is not None:
-            return hit
-        return self.repo.resolve(ref)
-
-    # -- serialization helpers -----------------------------------------
-    def element_summary(self, e: Element) -> dict[str, Any]:
-        out = {
-            "id": e.element_id,
-            "kind": e.kind,
-            "name": e.name,
-            "qualified_name": e.qualified_name,
-            "owner_id": e.owner.element_id if e.owner else None,
-            "is_abstract": getattr(e, "is_abstract", False),
-        }
-        if isinstance(e, Feature):
-            up = e.multiplicity.upper
-            out["multiplicity"] = [e.multiplicity.lower, "*" if up is None else up]
-            out["typed_by"] = [t.qualified_name for t in e.types]
-        for attr in ("req_id", "text"):
-            if hasattr(e, attr):
-                v = getattr(e, attr)
-                if v is not None:
-                    out[attr] = v
-        if hasattr(e, "ends"):
-            out["ends"] = [f.qualified_name for f in getattr(e, "ends", []) if f]
-        return out
-
-    def tree(self, e: Element) -> dict[str, Any]:
-        node = self.element_summary(e)
-        node["children"] = [self.tree(c) for c in e.owned_elements]
-        return node
-
-
-SESSION = Session()
-
-
-# --- tool implementations ------------------------------------------------
-
-def _ok(payload: Any) -> dict:
-    return {"ok": True, "result": payload}
-
-
-def _err(message: str) -> dict:
-    return {"ok": False, "error": message}
+from mcp_server import tools as _tool_plugins
+from mcp_server.core import KIND_REGISTRY, SESSION, Session, _err, _ok
 
 
 def tool_new_project(name: str = "UntitledProject") -> dict:
-    SESSION.repo = Repository(name=name)
+    SESSION.set_repo(Repository(name=name))
     return _ok({"name": name, "root_id": SESSION.repo.root_package.element_id})
 
 
 def tool_open_project(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
-        SESSION.repo = from_json(f.read())
+        SESSION.set_repo(from_json(f.read()))
     return _ok({"loaded": path, "element_count": len(list(SESSION.repo.all_elements()))})
 
 
@@ -1012,6 +921,8 @@ TOOLS: list[dict] = [
 ]
 
 
+# Tool plugins (mcp_server/tools/*.py) each define a TOOLS list in the same format.
+TOOLS.extend(_tool_plugins.load_tools())
 TOOL_BY_NAME: dict[str, dict] = {t["name"]: t for t in TOOLS}
 
 

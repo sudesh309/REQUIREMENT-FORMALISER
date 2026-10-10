@@ -10,7 +10,26 @@ const state = {
   diagramMode: "bdd",
   tab: "properties",
   treeIndex: new Map(),   // id → node summary
+  selected: null,         // full summary of the selected element (GET /api/element/<id>)
 };
+
+/* ---------- plugin event bus + registries (see the `studio` API at the bottom) ---------- */
+
+const listeners = new Map();   // event name → Set<callback>
+function on(event, cb) {
+  if (!listeners.has(event)) listeners.set(event, new Set());
+  listeners.get(event).add(cb);
+  return () => listeners.get(event).delete(cb);
+}
+function emit(event, payload) {
+  for (const cb of listeners.get(event) || []) {
+    try { cb(payload); } catch (e) { console.error(e); log(`plugin ${event} handler: ${e}`, "error"); }
+  }
+}
+const tabs = new Map();              // plugin tab id → spec
+const inspectorSections = [];        // {id, title, order, render}
+const treeBadges = [];               // fn(node) → string | null
+const shortcuts = [];                // {key, ctrl, shift, alt, handler}
 
 /* ---------- API ---------- */
 
@@ -52,6 +71,7 @@ async function refreshTree() {
   state.treeIndex.clear();
   $("#tree").innerHTML = "";
   $("#tree").appendChild(renderTreeNode(tree, 0));
+  emit("model-changed", tree);
 }
 
 function renderTreeNode(node, depth) {
@@ -76,6 +96,15 @@ function renderTreeNode(node, depth) {
     nm.appendChild(stereo);
   }
   row.appendChild(nm);
+  for (const badge of treeBadges) {
+    let text = null;
+    try { text = badge(node); } catch (e) { console.error(e); }
+    if (text) {
+      const b = document.createElement("span");
+      b.className = "tree-badge"; b.textContent = text;
+      row.appendChild(b);
+    }
+  }
   const k = document.createElement("span"); k.className = "kind"; k.textContent = node.kind;
   row.appendChild(k);
 
@@ -98,10 +127,35 @@ async function selectElement(id) {
   const li = document.querySelector(`#tree .tree-node[data-id="${id}"]`);
   if (li) li.classList.add("selected");
   const el = await api("GET", `/api/element/${id}`);
+  state.selected = el;
   fillProperties(el);
+  renderInspectorSections(el);
   renderLinksTab(el.links || []);
   if (state.tab === "diagram") refreshDiagram();
   setStatus(`${el.kind}  ${el.qualified_name}`);
+  emit("select", el);
+}
+
+function renderInspectorSections(el) {
+  const host = $("#inspector-sections");
+  host.innerHTML = "";
+  for (const sec of [...inspectorSections].sort((a, b) => a.order - b.order)) {
+    const box = document.createElement("section");
+    box.className = "inspector-section";
+    box.dataset.section = sec.id;
+    if (sec.title) {
+      const h = document.createElement("h4");
+      h.className = "inspector-title"; h.textContent = sec.title;
+      box.appendChild(h);
+    }
+    const body = document.createElement("div");
+    box.appendChild(body);
+    host.appendChild(box);
+    try {
+      // A section may return false to hide itself for this element.
+      if (sec.render(el, body) === false) box.remove();
+    } catch (e) { console.error(e); body.textContent = `Error: ${e}`; }
+  }
 }
 
 function fillProperties(e) {
@@ -233,12 +287,20 @@ document.addEventListener("click", async (e) => {
 
 /* ---------- tabs ---------- */
 
-$$(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+$("#tab-bar").addEventListener("click", (e) => {
+  const t = e.target.closest(".tab");
+  if (t) switchTab(t.dataset.tab);
+});
 function switchTab(name) {
   state.tab = name;
   $$(".tab").forEach(t => t.classList.toggle("tab-active", t.dataset.tab === name));
   $$(".tab-pane").forEach(p => p.classList.toggle("hidden", p.id !== `tab-${name}`));
   if (name === "diagram") refreshDiagram();
+  const spec = tabs.get(name);
+  if (spec?.onShow) {
+    try { spec.onShow(state.selected); } catch (e) { console.error(e); log(String(e), "error"); }
+  }
+  emit("tab-shown", name);
 }
 
 /* ---------- diagrams ---------- */
@@ -474,9 +536,97 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Delete" && state.selectedId) {
     document.querySelector('[data-cmd="delete-element"]')?.click();
   }
+  else {
+    for (const sc of shortcuts) {
+      if (e.key.toLowerCase() === sc.key.toLowerCase() && !!sc.ctrl === (e.ctrlKey || e.metaKey)
+          && !!sc.shift === e.shiftKey && !!sc.alt === e.altKey) {
+        e.preventDefault(); sc.handler(e); break;
+      }
+    }
+  }
 });
+
+/* ---------- plugin API ---------- */
+//
+// Frontend plugins are ES modules in webapp/static/plugins/*.js, loaded in
+// file-name order. Each default-exports `function install(studio) {...}`.
+
+function registerTab({ id, title, order = 100, mount, onShow }) {
+  if (tabs.has(id)) throw new Error(`tab ${id} already registered`);
+  tabs.set(id, { id, title, order, mount, onShow });
+  const btn = document.createElement("button");
+  btn.className = "tab"; btn.dataset.tab = id; btn.dataset.order = order; btn.textContent = title;
+  const bar = $("#tab-bar");
+  const after = [...bar.children].find(b => Number(b.dataset.order ?? 0) > order);
+  bar.insertBefore(btn, after || null);
+  const pane = document.createElement("div");
+  pane.id = `tab-${id}`;
+  pane.className = "tab-pane absolute inset-0 hidden flex-col overflow-hidden";
+  $("#tab-panes").appendChild(pane);
+  mount?.(pane);
+  return pane;
+}
+
+function registerToolbarButton({ id, label, title = "", group = "", onClick }) {
+  const host = $("#toolbar-plugins");
+  let grp = group ? host.querySelector(`[data-group="${group}"]`) : host;
+  if (!grp) {
+    grp = document.createElement("span");
+    grp.dataset.group = group;
+    grp.className = "flex items-center gap-1";
+    grp.innerHTML = `<span class="mx-2 border-l h-5 border-slate-300"></span><span class="text-slate-500">${escapeHtml(group)}:</span>`;
+    host.appendChild(grp);
+  }
+  const btn = document.createElement("button");
+  btn.className = "btn-action"; btn.textContent = label; btn.title = title;
+  if (id) btn.dataset.pluginButton = id;
+  btn.addEventListener("click", (e) => { e.stopPropagation(); onClick(e); });
+  grp.appendChild(btn);
+  return btn;
+}
+
+function registerInspectorSection({ id, title, order = 100, render }) {
+  inspectorSections.push({ id, title, order, render });
+}
+
+function registerTreeBadge(fn) { treeBadges.push(fn); }
+
+function registerShortcut({ key, ctrl = false, shift = false, alt = false, handler }) {
+  shortcuts.push({ key, ctrl, shift, alt, handler });
+}
+
+const studio = {
+  // data + backend
+  api, state,
+  get selected() { return state.selected; },
+  refreshTree, selectElement, switchTab, refreshDiagram,
+  // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id)
+  on, emit,
+  // UI helpers
+  log, setStatus, escapeHtml, modal, download, openFile,
+  // registries
+  registerTab, registerToolbarButton, registerInspectorSection, registerTreeBadge, registerShortcut,
+};
+window.studio = studio;
+
+async function loadPlugins() {
+  let urls = [];
+  try { urls = await api("GET", "/api/plugins"); } catch { return; }
+  for (const url of urls) {
+    try {
+      const mod = await import(url);
+      await mod.default?.(studio);
+    } catch (e) {
+      console.error(e);
+      log(`Plugin ${url} failed to load: ${e}`, "error");
+    }
+  }
+}
 
 /* ---------- boot ---------- */
 
-refreshTree().catch(e => log(String(e), "error"));
-log("SysML v2 Studio ready.", "ok");
+(async () => {
+  await loadPlugins();
+  try { await refreshTree(); } catch (e) { log(String(e), "error"); }
+  log("SysML v2 Studio ready.", "ok");
+})();

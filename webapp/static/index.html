@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <title>SysML v2 Studio</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  <!-- Vendored locally (see static/vendor/README.md) so the UI works offline. -->
+  <script src="/static/vendor/tailwindcss-browser-4.3.3.js"></script>
+  <script src="/static/vendor/mermaid-10.9.8.min.js"></script>
+  <script>
     mermaid.initialize({ startOnLoad: false, theme: "neutral",
-                          themeVariables: { fontFamily: "ui-sans-serif" }});
-    window.mermaid = mermaid;
+                         themeVariables: { fontFamily: "ui-sans-serif" }});
   </script>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
@@ -66,6 +66,8 @@
     <button class="btn-action" data-cmd="sm-state">+State</button>
     <button class="btn-action" data-cmd="sm-transition">+Transition</button>
     <button class="btn-action" data-cmd="sm-fire" title="Ctrl+E">Fire event</button>
+    <!-- Plugin toolbar buttons are inserted here, grouped by their `group` name. -->
+    <span id="toolbar-plugins" class="flex flex-wrap items-center gap-1"></span>
   </div>
 
   <!-- Body -->
@@ -79,14 +81,14 @@
 
     <!-- Right pane (tabs) -->
     <section class="flex-1 flex flex-col">
-      <div class="bg-white border-b border-slate-200 flex text-sm">
+      <div id="tab-bar" class="bg-white border-b border-slate-200 flex text-sm">
         <button class="tab tab-active" data-tab="properties">Properties</button>
         <button class="tab" data-tab="diagram">Diagram</button>
         <button class="tab" data-tab="links">Links</button>
         <button class="tab" data-tab="parser">Parser</button>
       </div>
 
-      <div class="flex-1 overflow-hidden relative">
+      <div id="tab-panes" class="flex-1 overflow-hidden relative">
 
         <!-- Properties tab -->
         <div id="tab-properties" class="tab-pane absolute inset-0 p-4 overflow-auto">
@@ -132,6 +134,8 @@
               <button type="submit" class="btn-primary">Apply changes</button>
             </div>
           </form>
+          <!-- Plugin inspector sections (stereotype properties, interfaces, ...) -->
+          <div id="inspector-sections" class="space-y-4 max-w-2xl mt-6"></div>
         </div>
 
         <!-- Diagram tab -->

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from kerml.elements import Element
 from kerml.features import Feature
@@ -46,6 +46,20 @@ class ValidationIssue:
         return f"[{self.severity.value.upper()}] {self.rule}: {self.message} ({self.element.qualified_name})"
 
 
+# Feature modules add checks with register_rule(fn(element) -> iterable of
+# ValidationIssue) or register_repo_rule(fn(repo) -> iterable of ValidationIssue).
+_ELEMENT_RULES: list[Callable[[Element], Iterable["ValidationIssue"]]] = []
+_REPO_RULES: list[Callable[["Repository"], Iterable["ValidationIssue"]]] = []
+
+
+def register_rule(fn: Callable[[Element], Iterable["ValidationIssue"]]) -> None:
+    _ELEMENT_RULES.append(fn)
+
+
+def register_repo_rule(fn: Callable[["Repository"], Iterable["ValidationIssue"]]) -> None:
+    _REPO_RULES.append(fn)
+
+
 class Validator:
     """Run a sequence of rules on a Repository and collect issues."""
 
@@ -53,6 +67,10 @@ class Validator:
         issues: list[ValidationIssue] = []
         for elem in repo.all_elements():
             issues.extend(self._check_element(elem))
+            for rule in _ELEMENT_RULES:
+                issues.extend(rule(elem) or [])
+        for rule in _REPO_RULES:
+            issues.extend(rule(repo) or [])
         return issues
 
     # --- per-element rules -------------------------------------------

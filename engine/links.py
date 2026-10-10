@@ -110,6 +110,14 @@ for lk in LINK_KINDS:
         _BY_NAME[alias] = lk
 
 
+def register_link_kind(lk: LinkKind) -> None:
+    """Add a link kind (e.g. from a feature module); usable everywhere by name."""
+    LINK_KINDS.append(lk)
+    _BY_NAME[lk.name] = lk
+    for alias in lk.aliases:
+        _BY_NAME[alias] = lk
+
+
 def list_link_kinds() -> list[str]:
     return [lk.name for lk in LINK_KINDS]
 
