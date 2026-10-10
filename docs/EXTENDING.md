@@ -75,10 +75,10 @@ the project changes. `PATCH /api/element/<id>` with
 
 Plugins are ES modules in `webapp/static/plugins/`, loaded in file-name order
 (use a numeric prefix, e.g. `20-canvas.js`). Each default-exports an install
-function:
+function (it may be async; it is awaited before the next plugin loads):
 
 ```js
-export default function install(studio) {
+export default async function install(studio) {
   const pane = studio.registerTab({ id: "variants", title: "Variants", order: 30,
                                     mount(pane) { ... }, onShow(selected) { ... } });
   studio.registerToolbarButton({ id: "add-variant", label: "Variant", group: "Arch",
