@@ -1,5 +1,5 @@
 """Engine layer: repository, parser, validator, serializer."""
-from .repository import Repository, ElementRegistry
+from .repository import Repository, ElementRegistry, register_removal_hook
 from .validator import Validator, ValidationIssue, Severity
 from .serializer import to_dict, to_json, from_dict, from_json
 from .parser import parse, ParseError
@@ -31,4 +31,5 @@ __all__ = [
     # extension points for feature modules
     "register_link_kind", "register_codec", "register_repo_codec",
     "register_rule", "register_repo_rule", "register_edge_source",
+    "register_removal_hook",
 ]

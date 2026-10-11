@@ -173,7 +173,11 @@ def api_create_element(req: dict) -> Body:
     parent.own(elem)
     SESSION.repo.registry.register_tree(elem)
     if body.get("properties"):
-        apply_props(elem, body["properties"])
+        try:
+            apply_props(elem, body["properties"])
+        except ValueError as ex:
+            SESSION.repo.remove(elem)
+            return _err(str(ex))
     return _ok(summarize(elem))
 
 
@@ -181,7 +185,10 @@ def api_update_element(req: dict, eid: str) -> Body:
     e = SESSION.find(eid)
     if e is None:
         return _err(f"{eid!r} not found", 404)
-    apply_props(e, (req.get("body") or {}).get("props") or {})
+    try:
+        apply_props(e, (req.get("body") or {}).get("props") or {})
+    except ValueError as ex:
+        return _err(str(ex))
     return _ok(summarize(e))
 
 

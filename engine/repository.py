@@ -8,12 +8,48 @@ Plays the role of Cameo's project / containment-tree:
 """
 from __future__ import annotations
 
-from typing import Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
-from kerml.elements import Element
+from kerml.elements import Element, Relationship
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
 from sysmlv2.library import SYSML_LIBRARY
+
+
+# Feature modules clean their own references to deleted elements with
+# register_removal_hook(fn(repo, removed_ids)); removed_ids holds id() values.
+_REMOVAL_HOOKS: list[Callable[["Repository", set[int]], None]] = []
+
+
+def register_removal_hook(fn: Callable[["Repository", set[int]], None]) -> None:
+    _REMOVAL_HOOKS.append(fn)
+
+
+def _with_dependents(root: Element, element: Element) -> list[Element]:
+    """`element` plus connectors/transitions elsewhere that would dangle without it."""
+    doomed = [element]
+    removed = {id(x) for x in element.walk()}
+    changed = True
+    while changed:
+        changed = False
+        for e in root.walk():
+            if id(e) in removed:
+                continue
+            anchors = list(getattr(e, "ends", None) or [])
+            anchors += [getattr(e, "transition_source", None), getattr(e, "transition_target", None)]
+            if any(a is not None and id(a) in removed for a in anchors):
+                doomed.append(e)
+                removed |= {id(x) for x in e.walk()}
+                changed = True
+    return doomed
+
+
+def _detach_relationship(owner: Element, rel: Relationship) -> None:
+    """Remove `rel` from `owner` and from every list on it that tracks relationships."""
+    owner.owned_relationships = [r for r in owner.owned_relationships if r is not rel]
+    for attr, value in list(vars(owner).items()):
+        if isinstance(value, list) and any(v is rel for v in value):
+            setattr(owner, attr, [v for v in value if v is not rel])
 
 
 class ElementRegistry:
@@ -64,30 +100,42 @@ class Repository:
         return element
 
     def remove(self, element: Element) -> None:
-        removed = {id(e) for e in element.walk()}
-        # Drop relationships elsewhere in the project that point into the removed subtree,
-        # so diagrams, link queries and exports never see a dangling target.
+        """Delete `element`, its subtree, and everything that only made sense with it.
+
+        Cascades to connectors attached to a removed feature and transitions to or
+        from a removed state; drops relationships (links, typings, specializations,
+        memberships) and stereotype applications that point into the removed set;
+        and clears every other attribute or list entry referring to it. Feature
+        modules clean their own references via ``register_removal_hook``.
+        """
+        doomed = _with_dependents(self.root_package, element)
+        removed = {id(x) for d in doomed for x in d.walk()}
+        is_removed = lambda v: isinstance(v, Element) and id(v) in removed  # noqa: E731
+
         for e in self.root_package.walk():
             if id(e) in removed:
                 continue
-            for rel in [r for r in e.owned_relationships
-                        if id(r.target) in removed or id(r.source) in removed]:
-                e.owned_relationships.remove(rel)
+            for rel in [r for r in e.owned_relationships if is_removed(r.source) or is_removed(r.target)]:
+                _detach_relationship(e, rel)
                 self.registry.unregister(rel)
-                if isinstance(e, Namespace):
-                    e.memberships = [m for m in e.memberships if m is not rel]
-                    e.imports = [i for i in e.imports if i is not rel]
-        for e in element.walk():
-            self.registry.unregister(e)
-            for rel in e.owned_relationships:
-                self.registry.unregister(rel)
-        if element.owner is not None:
-            element.owner.owned_elements.remove(element)
-            if isinstance(element.owner, Namespace):
-                element.owner.memberships = [
-                    m for m in element.owner.memberships if m.member is not element
-                ]
-        element.owner = None
+            e.annotations = [a for a in e.annotations if not is_removed(getattr(a, "stereotype", None))]
+            for attr, value in list(vars(e).items()):
+                if attr == "owner":
+                    continue
+                if isinstance(value, list) and any(is_removed(v) for v in value):
+                    setattr(e, attr, [v for v in value if not is_removed(v)])
+                elif is_removed(value):
+                    setattr(e, attr, None)
+
+        for hook in _REMOVAL_HOOKS:
+            hook(self, removed)
+
+        for d in doomed:
+            for x in d.walk():
+                self.registry.unregister(x)
+                for rel in x.owned_relationships:
+                    self.registry.unregister(rel)
+            d.owner = None
 
     # --- queries ------------------------------------------------------
     def by_id(self, element_id: str) -> Optional[Element]:

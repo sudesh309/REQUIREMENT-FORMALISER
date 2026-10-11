@@ -38,6 +38,7 @@ from engine.graph_export import EXPORTERS, export_knowledge_graph
 from engine.links import (
     LINK_KINDS, create_link, describe_link, link_kind, links_of, list_link_kinds,
 )
+from engine.properties import set_properties
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
@@ -142,7 +143,11 @@ def tool_create_element(kind: str, name: str,
     parent_el.own(elem)
     SESSION.repo.registry.register_tree(elem)
     if properties:
-        _apply_properties(elem, properties)
+        try:
+            _apply_properties(elem, properties)
+        except ValueError as ex:
+            SESSION.repo.remove(elem)
+            return _err(str(ex))
     return _ok(SESSION.element_summary(elem))
 
 
@@ -160,7 +165,10 @@ def tool_set_property(ref: str, key: str, value: Any) -> dict:
     e = SESSION.find(ref)
     if e is None:
         return _err(f"Element {ref!r} not found")
-    _apply_properties(e, {key: value})
+    try:
+        _apply_properties(e, {key: value})
+    except ValueError as ex:
+        return _err(str(ex))
     return _ok(SESSION.element_summary(e))
 
 
@@ -514,25 +522,8 @@ def tool_tree(root: Optional[str] = None) -> dict:
 
 
 def _apply_properties(e: Element, props: dict) -> None:
-    for k, v in props.items():
-        if k == "name":
-            e.name = v
-        elif k == "short_name":
-            e.short_name = v
-        elif k == "is_abstract" and hasattr(e, "is_abstract"):
-            e.is_abstract = bool(v)
-        elif k == "multiplicity" and isinstance(e, Feature):
-            lo, up = v
-            up_v = None if up in (None, "*") else int(up)
-            e.multiplicity = MultiplicityRange(int(lo), up_v)
-        elif k == "doc":
-            for a in list(e.annotations):
-                if isinstance(a, Documentation):
-                    e.annotations.remove(a)
-            if v:
-                e.add_annotation(Documentation(body=str(v)))
-        elif hasattr(e, k):
-            setattr(e, k, v)
+    """Raises ValueError for invalid keys or values (see engine.properties)."""
+    set_properties(e, props, SESSION.find)
 
 
 # --- tool schema (MCP) ---------------------------------------------------

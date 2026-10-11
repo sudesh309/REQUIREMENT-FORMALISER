@@ -20,11 +20,11 @@ from __future__ import annotations
 from typing import Any, Callable, Optional
 
 from engine import Repository
+from engine.properties import set_property
 from kerml.elements import Documentation, Element
-from kerml.features import Feature, MultiplicityRange
+from kerml.features import Feature
 from kerml.namespaces import Package
 from kerml.stereotypes import Stereotype, stereotypes_on
-from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
     AttributeDefinition, AttributeUsage,
@@ -182,35 +182,11 @@ def tree(e: Element) -> dict:
 
 
 def apply_props(e: Element, props: dict) -> None:
+    """Apply a PATCH ``props`` dict; raises ValueError for invalid keys or values."""
     for k, v in props.items():
         if any(hook(e, k, v) for hook in _PROP_HOOKS):
             continue
-        if k == "name":               e.name = v or None
-        elif k == "short_name":       e.short_name = v or None
-        elif k == "is_abstract" and hasattr(e, "is_abstract"):
-            e.is_abstract = bool(v)
-        elif k == "multiplicity" and isinstance(e, Feature):
-            lo, up = v
-            up_v = None if up in (None, "*") else int(up)
-            e.multiplicity = MultiplicityRange(int(lo), up_v)
-        elif k == "doc":
-            for a in list(e.annotations):
-                if isinstance(a, Documentation):
-                    e.annotations.remove(a)
-            if v:
-                e.add_annotation(Documentation(body=str(v)))
-        elif k == "typed_by" and isinstance(e, Feature):
-            qname = v if isinstance(v, str) else (v[0] if v else None)
-            if qname:
-                t = SESSION.find(qname)
-                if isinstance(t, Type):
-                    e.feature_typings = []
-                    e.add_type(t)
-        elif k == "tool_data" and isinstance(v, dict):
-            # Merge so independent UI features (layout, colors, ...) don't clobber each other.
-            e.tool_data.update(v)
-        elif hasattr(e, k):
-            setattr(e, k, v)
+        set_property(e, k, v, SESSION.find)
 
 
 # --- plugin routes ------------------------------------------------------
