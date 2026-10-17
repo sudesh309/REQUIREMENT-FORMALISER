@@ -247,6 +247,14 @@ class InterfacesHttpTests(WebAppTestCase):
         port = self.call("GET", f"/api/element/{out['id']}")
         self.assertEqual(port["interface"]["name"], "AirData")
 
+    def test_frontend_plugin_is_served(self):
+        self.assertIn("/static/plugins/20-interfaces.js", self.call("GET", "/api/plugins"))
+        js = self.get_text("/static/plugins/20-interfaces.js")
+        for name in ("registerTab", "registerInspectorSection", "registerToolbarButton"):
+            self.assertIn(name, js)
+        for forbidden in ("window.prompt", "alert(", "confirm("):
+            self.assertNotIn(forbidden, js)
+
 
 if __name__ == "__main__":
     unittest.main()
