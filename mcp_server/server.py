@@ -94,7 +94,7 @@ def tool_save_project(path: str) -> dict:
 
 
 def tool_parse_sysml(source: str) -> dict:
-    parse(source, into=SESSION.repo.root_package)
+    parse(source, into=SESSION.repo.root_package, repo=SESSION.repo)
     SESSION.repo.registry.register_tree(SESSION.repo.root_package)
     return _ok({"element_count": len(list(SESSION.repo.all_elements()))})
 
