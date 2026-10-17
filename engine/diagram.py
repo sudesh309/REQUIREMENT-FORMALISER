@@ -90,47 +90,66 @@ def bdd(root: Namespace) -> str:
     return "\n".join(lines)
 
 
+def _port_label(p: PortUsage) -> str:
+    kind = getattr(p, "port_kind", "data")
+    if kind != "data":
+        return f"{p.name or '?'} [{kind}]"
+    arrow = {"in": "▸ ", "out": "", "inout": "◂▸ "}.get(p.direction.value, "")
+    tail = " ▸" if p.direction.value == "out" else ""
+    return f"{arrow}{p.name or '?'}{tail}"
+
+
+def ibd_end_node(part: Element, ctx: Optional[Element], end: Element) -> str:
+    """Node id of a connector end in the IBD of `part` (shared by the DOT and Mermaid views):
+    a sub-component's port is drawn once per component usage, a boundary port on the frame."""
+    if ctx is not None:
+        return f"{_node_id(ctx)}_{_node_id(end)}"
+    if isinstance(end, PortUsage):
+        return _node_id(end)
+    return f"{_node_id(end)}_anchor"      # a part-to-part connector end
+
+
 def ibd(part: PartDefinition) -> str:
-    """Internal Block Diagram for one PartDefinition."""
+    """Internal Block Diagram for one PartDefinition (or component usage)."""
+    from .structure import components_of, connector_ends, connectors_of, ports_of
     lines = [f"digraph IBD_{_node_id(part)} {{",
              f'  label="IBD: {_escape(part.name or "")}"; labelloc=t;',
              '  node [shape=box, style=rounded, fontname="Helvetica"];',
              '  rankdir=LR;']
-    # Inner part usages as subgraphs/clusters; ports as nodes on the cluster.
-    for u in part.owned_features:
-        if isinstance(u, ConnectionUsage):
-            continue
-        cluster_id = f"cluster_{_node_id(u)}"
-        lines.append(f"  subgraph {cluster_id} {{")
-        type_name = ", ".join(t.name or "?" for t in u.types) or "?"
-        lines.append(f'    label="{_escape(u.name or "?")} : {_escape(type_name)}";')
+    # Boundary ports of the composition, inputs on the left and outputs on the right.
+    boundary = ports_of(part)
+    for p in boundary:
+        lines.append(f'  {_node_id(p)} [label="{_escape(_port_label(p))}", shape=box, '
+                     f'style="filled", fillcolor="#e0f2fe", width=0.3, height=0.3];')
+    ins = [_node_id(p) for p in boundary if p.direction.value == "in"]
+    outs = [_node_id(p) for p in boundary if p.direction.value == "out"]
+    if ins:
+        lines.append("  { rank=source; " + "; ".join(ins) + "; }")
+    if outs:
+        lines.append("  { rank=sink; " + "; ".join(outs) + "; }")
+    # Sub-components as clusters with their ports (own and definition ports).
+    for u in components_of(part):
+        lines.append(f"  subgraph cluster_{_node_id(u)} {{")
+        type_name = ", ".join(t.name or "?" for t in u.types)
+        title = (u.name or "?") + (f" : {type_name}" if type_name else "")
+        lines.append(f'    label="{_escape(title)}";')
         lines.append('    style="rounded,filled"; fillcolor="#f4f4f4";')
-        for sub in u.owned_elements:
-            if isinstance(sub, PortUsage):
-                lines.append(
-                    f'    {_node_id(sub)} [label="{_escape(sub.name or "?")}", '
-                    f'shape=square, width=0.3, height=0.3];'
-                )
-        # If the usage's type is a Definition, surface its ports too.
-        for t in getattr(u, "types", []):
-            if isinstance(t, Definition):
-                for sub in t.owned_features:
-                    if isinstance(sub, PortUsage):
-                        nid = f"{_node_id(u)}_{_node_id(sub)}"
-                        lines.append(
-                            f'    {nid} [label="{_escape(sub.name or "?")}", '
-                            f'shape=square, width=0.3, height=0.3];'
-                        )
+        lines.append(f'    {_node_id(u)}_anchor [shape=point, style=invis, width=0.01];')
+        for p in ports_of(u):
+            lines.append(f'    {ibd_end_node(part, u, p)} [label="{_escape(_port_label(p))}", '
+                         f'shape=square, width=0.3, height=0.3];')
         lines.append("  }")
-    # ConnectionUsage edges
-    for c in part.owned_features:
-        if not isinstance(c, ConnectionUsage) or len(c.ends) < 2:
+    # Connectors between the drawn port nodes.
+    for c in connectors_of(part):
+        ends = connector_ends(c, part)
+        if len(ends) < 2:
             continue
-        a, b = c.ends[0], c.ends[1]
-        lines.append(
-            f'  {_node_id(a)} -> {_node_id(b)} '
-            f'[dir=none, label="{_escape(c.name or "")}"];'
-        )
+        a = ibd_end_node(part, *ends[0])
+        b = ibd_end_node(part, *ends[1])
+        kinds = {getattr(p, "port_kind", "data") for _, p in ends}
+        directed = all(isinstance(p, PortUsage) for _, p in ends) and "physical" not in kinds
+        attrs = ("" if directed else "dir=none, ") + f'label="{_escape(c.name or "")}"'
+        lines.append(f'  {a} -> {b} [{attrs}];')
     lines.append("}")
     return "\n".join(lines)
 
