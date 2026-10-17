@@ -347,7 +347,9 @@ def convert(value: Number, from_unit: str, to_unit: str) -> float:
         raise UnitError(f"cannot convert {src.symbol} ({src.quantity}) to {dst.symbol} ({dst.quantity})")
     if src.symbol == dst.symbol:
         return float(value)
-    return dst.from_si(src.to_si(float(value)))
+    out = dst.from_si(src.to_si(float(value)))
+    # 15 significant digits: drops binary noise such as 1360.7771099999998.
+    return float(f"{out:.15g}") if math.isfinite(out) else out
 
 
 def compatible_units(symbol: str) -> list[str]:
