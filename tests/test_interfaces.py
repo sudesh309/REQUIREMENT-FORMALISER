@@ -496,6 +496,29 @@ class DictionaryExchangeTests(_Base):
                           if i.rule in ("feature.typed", "usage.typing")], [])
 
 
+class StereotypeTests(_Base):
+
+    def test_stereotypes_apply_to_interfaces_and_elements_and_persist(self):
+        from kerml.stereotypes import Stereotype, stereotypes_on
+        bus = Stereotype("A429Bus", applies_to=[I.DataInterface])
+        bus.define_tag("speed", default="high")
+        sig = Stereotype("Signal", applies_to=[I.DataElement])
+        sig.define_tag("label")
+        self.repo.add(bus)
+        self.repo.add(sig)
+        ad = self.air_data()
+        bus.apply(ad, {"speed": "low"})
+        sig.apply(I.find_element(ad, "alt"), {"label": "203"})
+        with self.assertRaises(TypeError):
+            sig.apply(ad)                                   # not an element
+        r2 = from_json(to_json(self.repo))
+        ad2 = r2.resolve("Interfaces::AirData")
+        self.assertEqual([(a.stereotype.name, a.values) for a in stereotypes_on(ad2)],
+                         [("A429Bus", {"speed": "low"})])
+        self.assertEqual(stereotypes_on(I.find_element(ad2, "alt"))[0].values, {"label": "203"})
+        self.assertEqual(r2.resolve("Signal").applies_to, [I.DataElement])
+
+
 class SummaryTests(_Base):
 
     def test_port_badge_style_and_categories(self):

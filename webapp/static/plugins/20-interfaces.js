@@ -599,13 +599,20 @@ export default function install(studio) {
       for (const w of r.warnings || []) studio.log(`${d.name}.${r.element.name}: ${w}`, "warning");
       S.nested.clear();
       await renderTable();
-      updateToolstrip();
+      syncAround();
       if ("name" in fields || "type" in fields) { await refreshTreeQuietly(); await reload({ keepTable: true }); }
     } catch (e) {
       await renderTable();
       const cell = tableWrap.querySelector(`tr[data-key="${CSS.escape(el.id)}"] [data-field="${field}"]`);
       if (cell) { cell.classList.add("ifc-err"); cell.title = e.message; }
     }
+  }
+
+  // Header (enumeration default literal) and usage pane follow element edits.
+  function syncAround() {
+    if (S.detail?.kind === "Enumeration") renderHeader();
+    renderUsage();
+    updateToolstrip();
   }
 
   async function patchItem(fields) {
@@ -655,6 +662,7 @@ export default function install(studio) {
         await refreshTreeQuietly();
         await reload({ keepTable: true });
         await renderTable();
+        syncAround();
         const n = tableWrap.querySelector(`tr[data-key="${CSS.escape(r.element.id)}"] [data-field="name"]`);
         if (n) { n.focus(); n.select(); }
         return;
@@ -672,7 +680,7 @@ export default function install(studio) {
         const r = await api("POST", `/api/interfaces/item/${encodeURIComponent(d.id)}/elements/${encodeURIComponent(S.sel)}/move`,
                             { delta: name === "up" ? -1 : 1 });
         S.detail = r.interface;
-        await refreshTreeQuietly(); await reload({ keepTable: true }); await renderTable();
+        await refreshTreeQuietly(); await reload({ keepTable: true }); await renderTable(); syncAround();
         tableWrap.querySelector(`tr[data-key="${CSS.escape(S.sel)}"] [data-field="name"]`)?.focus();
         return;
       }
