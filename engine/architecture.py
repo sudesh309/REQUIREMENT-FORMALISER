@@ -1563,6 +1563,27 @@ def component_view(c: PartUsage, composition: Element, decorate: Optional[Callab
     }
 
 
+def connector_interfaces(conn: ConnectionUsage, composition: Optional[Element] = None) -> list[str]:
+    """Interface names on a connector: its own type, then its end ports' types."""
+    ends = connector_ends(conn, composition)
+    out: list[str] = []
+    for t in list(conn.types) + [t for _, p in ends if isinstance(p, Feature) for t in p.types]:
+        if t.name and t.name not in out:
+            out.append(t.name)
+    return out
+
+
+def connector_label(conn: ConnectionUsage, composition: Optional[Element] = None) -> str:
+    """Text drawn on a connector line: the interface name(s), as System Composer does,
+    prefixed SysML-style by a name the user gave it (``drive : Mech``); auto-generated
+    names (Connector, Connector1, connect_a_b) are not drawn."""
+    ifaces = ", ".join(connector_interfaces(conn, composition))
+    named = bool(conn.name) and not _DEFAULT_CONNECTOR_NAME.match(conn.name)
+    if named and ifaces:
+        return f"{conn.name} : {ifaces}"
+    return conn.name if named else ifaces
+
+
 def connector_view(conn: ConnectionUsage, composition: Element,
                    decorate: Optional[Callable] = None) -> dict:
     ends = connector_ends(conn, composition)
@@ -1575,14 +1596,9 @@ def connector_view(conn: ConnectionUsage, composition: Element,
             return {"component_id": p.element_id, "port_id": None}
         return {"component_id": ctx.element_id if ctx is not None else None, "port_id": p.element_id}
 
-    ifaces: list[str] = []
-    for t in list(conn.types) + [t for _, p in ends if isinstance(p, Feature) for t in p.types]:
-        if t.name and t.name not in ifaces:
-            ifaces.append(t.name)
+    ifaces = connector_interfaces(conn, composition)
     pts = conn.tool_data.get("points")
-    # Like System Composer: show the interface on the line; a user-given name otherwise.
-    default_name = not conn.name or bool(_DEFAULT_CONNECTOR_NAME.match(conn.name))
-    label = ", ".join(ifaces) if ifaces else ("" if default_name else conn.name)
+    label = connector_label(conn, composition)
     return {
         "id": conn.element_id, "name": conn.name, "label": label,
         "kind": connector_kind(composition, conn),

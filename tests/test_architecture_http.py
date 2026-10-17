@@ -224,6 +224,22 @@ class EditingHttpTests(_ArchHttp):
         self.call("POST", "/api/arch/delete", {"ids": []}, expect=400)
         self.call("POST", "/api/arch/delete", {"ids": ["missing"]}, expect=404)
 
+    def test_copy_paste_into_another_composition(self):
+        adc, fms, disp = self.three()
+        self.connect(fms, "route", disp, "route")
+        pasted = self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"], disp["id"]],
+                                                           "target": adc["id"]})["components"]
+        self.assertEqual([c["owner_id"] for c in pasted], [adc["id"], adc["id"]])
+        inside = self.view(adc)
+        self.assertEqual(sorted(c["name"] for c in inside["components"]), ["Display", "FMS"])
+        self.assertEqual(len(inside["connectors"]), 1)
+        self.assertEqual(inside["connectors"][0]["issues"], [])
+        self.assertIn("composite", self.call("GET", f"/api/element/{adc['id']}")["badges"])
+        # One undo step removes the whole paste.
+        self.call("POST", "/api/undo")
+        self.assertEqual(self.view(adc)["components"], [])
+        self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"]], "target": "missing"}, expect=404)
+
     def test_layout_auto_layout_and_tree(self):
         adc, fms, disp = self.three()
         self.connect(fms, "route", disp, "route")

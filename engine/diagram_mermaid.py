@@ -89,6 +89,7 @@ def _port_text(p: PortUsage) -> str:
 def ibd_mermaid(part: PartDefinition) -> str:
     """Internal block diagram: boundary ports on the frame, sub-components with their ports,
     connectors between the drawn port nodes (directed for data and client/server)."""
+    from .architecture import connector_label
     from .structure import components_of, connector_ends, connectors_of, ports_of
     lines = ["flowchart LR"]
     lines.append(f"    subgraph {_nid(part)}[\"{_safe(part.name or '?')}\"]")
@@ -115,7 +116,8 @@ def ibd_mermaid(part: PartDefinition) -> str:
         kinds = {getattr(p, "port_kind", "data") for _, p in ends}
         directed = all(isinstance(p, PortUsage) for _, p in ends) and "physical" not in kinds
         link = "-->" if directed else "---"
-        label = f'|"{_safe(c.name)}"|' if c.name else ""
+        text = connector_label(c, part)
+        label = f'|"{_safe(text)}"|' if text else ""
         lines.append(f"    {a} {link}{label} {b}")
     return "\n".join(lines)
 

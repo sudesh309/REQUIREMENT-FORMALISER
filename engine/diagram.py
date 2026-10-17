@@ -111,6 +111,7 @@ def ibd_end_node(part: Element, ctx: Optional[Element], end: Element) -> str:
 
 def ibd(part: PartDefinition) -> str:
     """Internal Block Diagram for one PartDefinition (or component usage)."""
+    from .architecture import connector_label
     from .structure import components_of, connector_ends, connectors_of, ports_of
     lines = [f"digraph IBD_{_node_id(part)} {{",
              f'  label="IBD: {_escape(part.name or "")}"; labelloc=t;',
@@ -148,7 +149,7 @@ def ibd(part: PartDefinition) -> str:
         b = ibd_end_node(part, *ends[1])
         kinds = {getattr(p, "port_kind", "data") for _, p in ends}
         directed = all(isinstance(p, PortUsage) for _, p in ends) and "physical" not in kinds
-        attrs = ("" if directed else "dir=none, ") + f'label="{_escape(c.name or "")}"'
+        attrs = ("" if directed else "dir=none, ") + f'label="{_escape(connector_label(c, part))}"'
         lines.append(f'  {a} -> {b} [{attrs}];')
     lines.append("}")
     return "\n".join(lines)

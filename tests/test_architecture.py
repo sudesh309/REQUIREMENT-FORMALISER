@@ -387,6 +387,29 @@ class EditingOperationTests(unittest.TestCase):
         self.assertEqual(_issues(repo), [])
         from_json(to_json(repo))
 
+    def test_paste_into_another_composition(self):
+        repo, root, adc, fms, disp = _arch()
+        A.connect(repo, root, _ep(fms, "route"), _ep(disp, "route"))
+        # Copy FMS + Display and paste them inside ADC: the connector between them comes along.
+        f2, d2 = A.duplicate(repo, [fms, disp], target=adc)
+        self.assertEqual((f2.owner, d2.owner), (adc, adc))
+        self.assertEqual((f2.name, d2.name), ("FMS", "Display"))     # free names in ADC
+        inner = connectors_of(adc)
+        self.assertEqual(len(inner), 1)
+        self.assertEqual(connector_ends(inner[0], adc), [(f2, ports_of(f2)[1]), (d2, ports_of(d2)[0])])
+        self.assertEqual(len(connectors_of(root)), 1)                  # the original is untouched
+        # Pasting into a reference component lands in its shared definition.
+        Lru = A.save_as_reference(repo, adc, "Lru")
+        spare = A.add_component(repo, root, "Spare", Lru)
+        (f3,) = A.duplicate(repo, [fms], target=spare)
+        self.assertIs(f3.owner, Lru)
+        self.assertEqual(f3.name, "FMS1")
+        self.assertEqual(len(components_of(adc)), 3)                   # every usage shows it
+        # A copy may not contain a reference to the definition it is pasted into.
+        with self.assertRaises(A.ArchitectureError):
+            A.duplicate(repo, [spare], target=spare)
+        self.assertEqual(_issues(repo), [])
+
     def test_group_and_expand(self):
         repo, root, adc, fms, disp = _arch()
         A.connect(repo, root, _ep(adc, "airData"), _ep(fms, "airData"))
@@ -523,6 +546,15 @@ class LayoutAndViewTests(unittest.TestCase):
         Air = repo.add(PortDefinition(name="AirData"))
         A.update_port(repo, ports_of(adc)[0], interface=Air)
         self.assertEqual(A.view(repo, root)["connectors"][0]["label"], "AirData")
+        A.rename(repo, c, "airBus")                                            # a user-given name
+        self.assertEqual(A.view(repo, root)["connectors"][0]["label"], "airBus : AirData")
+        self.assertIn('|"airBus : AirData"|', ibd_mermaid(root))
+        self.assertIn('label="airBus : AirData"', ibd(root))
+        A.update_port(repo, ports_of(adc)[0], interface=None)
+        self.assertEqual(A.connector_label(c), "airBus")
+        A.rename(repo, c, "Connector7")                                        # auto-style names are not drawn
+        self.assertEqual(A.connector_label(c), "")
+        self.assertNotIn("Connector7", ibd_mermaid(root))
         self.assertFalse(comps["aoa"]["from_definition"])
         inner = A.add_component(repo, s, "core")
         self.assertTrue(A.view(repo, s)["components"][0]["from_definition"])

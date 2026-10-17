@@ -17,6 +17,12 @@ reusable as reference components, and undoable at every step.
 | MCP tools | `mcp_server/tools/architecture.py` |
 | Tests | `tests/test_architecture*.py`, `tests/ui/scenarios/10_canvas_architecture.mjs` |
 
+Core files touched (small, additive): `webapp/core.py` (`register_mutation_hook`
+/ `begin_mutation` for undo snapshots), `webapp/server.py` (dispatch calls
+`begin_mutation` for non-GET requests; `api_new` accepts `type`; `api_parse`
+passes `repo=` so parsed elements reach `notify_created`), `mcp_server/server.py`
+(`sysml_parse` passes `repo=` for the same reason).
+
 ## Concepts
 
 System Composer terms map onto SysML v2 as follows (the cross-feature contract
@@ -108,11 +114,17 @@ component selected in the tree)
 | Change a port | edit name / direction / kind / interface in the Ports table, or select the port in the tree; changes that would break connectors are refused |
 | Connect | *Connect…*, pick the two ends (boundary ports and the sub-components' ports are listed); direction is fixed automatically |
 | Delete | × on a port or connector row; *Delete* / *Delete selected* for components (a confirmation dialog; undo with Ctrl+Z) |
-| Duplicate / copy | *Duplicate* (this component) or tick rows and *Duplicate selected*: deep copy with new names; connectors between the copied components come along |
+| Duplicate | *Duplicate* (this component) or tick rows and *Duplicate selected*: deep copy with new names; connectors between the copied components come along |
+| Copy / paste | tick rows, *Copy*; open any architecture or component (also a reference component: the copy goes into its shared definition) and press *Paste (n)*. Paste can be repeated; each paste is one undo step |
 | Create component from selection | tick rows, *Group selected…* |
 | Expand (decompose) | *Expand* on an inline component with children |
 | Save as reference / inline | *Save as reference…* on an inline component; *Inline* on a reference component |
 | Arrange | *Arrange*: left-to-right layers following the data flow |
+
+Ticked rows are the studio's shared multi-selection (`studio.setSelection`), so
+they survive re-renders (rename, undo) and a selection made on the canvas shows
+up ticked here; the copy buffer (`canvas/common.js` `clipboard`) is shared with
+the canvas too.
 
 Selecting a port or connector in the tree shows its own editor (direction,
 kind, interface; endpoints, kind, problems, delete). Broken connectors are
@@ -187,6 +199,11 @@ Element JSON (`GET /api/element/<id>`) gains `badges` (`ref`/`inline`,
                   "interfaces": ["AirData"], "points": null, "issues": []}]
 }
 ```
+
+A connector's `label` is what System Composer draws on the line: its interface
+name(s), prefixed SysML-style by a name you gave it (`airBus : AirData`);
+auto-generated names (`Connector1`, `connect_a_b`) are not drawn. The IBD in
+the Diagram tab uses the same label (`engine.architecture.connector_label`).
 
 Components without a stored layout get a deterministic grid position; ports
 without one go inputs left, outputs right (clients right, servers and physical
@@ -300,7 +317,7 @@ package Avionics {
 | Feature id | Status | Notes |
 |------------|--------|-------|
 | architecture-model-types | closed | `system` / `software` per project, persisted; `POST /api/new {type}`; allowed port kinds per type; *Function* elements are out of scope |
-| component-blocks | closed | create / rename / delete with unique sibling names and auto-numbering; deep duplicate and copy-paste (`duplicate` with `target`); badges `ref` / `inline` / `leaf` / `composite` / `SM` |
+| component-blocks | closed | create / rename / delete with unique sibling names and auto-numbering; deep duplicate and copy-paste into any composition (inspector *Copy* / *Paste*, `duplicate` with `target`); badges `ref` / `inline` / `leaf` / `composite` / `SM` |
 | directional-ports | closed | in / out / inout plus port kind data / physical / client / server; unique names; parser `in port` / `out port` / `inout port` and `connect a.b to c.d` in part defs |
 | architecture-boundary-ports | closed | a composition's ports are its boundary ports when viewed from inside; added from the inspector or `POST /api/arch/port`; reference definition ports appear on every usage |
 | draw-connectors | closed (API + inspector) | dialog-based connecting with automatic orientation and `can-connect` feedback; drawing by dragging on the canvas comes with the canvas editor |
