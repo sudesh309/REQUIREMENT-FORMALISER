@@ -11,6 +11,7 @@ const state = {
   tab: "properties",
   treeIndex: new Map(),   // id → node summary
   selected: null,         // full summary of the selected element (GET /api/element/<id>)
+  selection: [],          // multi-selection ids (canvas, tables); defaults to [selectedId]
 };
 
 /* ---------- plugin event bus + registries (see the `studio` API at the bottom) ---------- */
@@ -96,10 +97,12 @@ function renderTreeNode(node, depth) {
     nm.appendChild(stereo);
   }
   row.appendChild(nm);
+  const badgeTexts = [...(node.badges || [])];
   for (const badge of treeBadges) {
-    let text = null;
-    try { text = badge(node); } catch (e) { console.error(e); }
-    if (text) {
+    try { const t = badge(node); if (t) badgeTexts.push(t); } catch (e) { console.error(e); }
+  }
+  for (const text of badgeTexts) {
+    {
       const b = document.createElement("span");
       b.className = "tree-badge"; b.textContent = text;
       row.appendChild(b);
@@ -595,10 +598,26 @@ function registerShortcut({ key, ctrl = false, shift = false, alt = false, handl
   shortcuts.push({ key, ctrl, shift, alt, handler });
 }
 
+function getSelection() {
+  return state.selection.length ? [...state.selection] : (state.selectedId ? [state.selectedId] : []);
+}
+function setSelection(ids) {
+  state.selection = [...ids];
+  emit("selection-changed", getSelection());
+}
+
+// Cross-feature events (any plugin may emit or listen):
+//   navigate  {id}                      show an element: tree + inspector select it, canvas opens its parent
+//   highlight {ids, color?, reason?}    emphasize elements on the canvas; null clears
+//   canvas-filter {ids, label?}         canvas shows only these components (views); null clears
+//   selection-changed [ids]             multi-selection changed
+on("navigate", ({ id }) => { if (id) selectElement(id); });
+
 const studio = {
   // data + backend
   api, state,
   get selected() { return state.selected; },
+  getSelection, setSelection,
   refreshTree, selectElement, switchTab, refreshDiagram,
   // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id)
   on, emit,

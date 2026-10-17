@@ -143,6 +143,11 @@ def summarize(e: Element) -> dict:
             for app in stereotypes_on(e)
         ],
         "tool_data": e.tool_data,
+        # Cross-feature display contract: summary hooks append short labels to
+        # `badges` and set keys in `style` (fill, stroke, text, dash, icon);
+        # the tree and the architecture canvas render both.
+        "badges": [],
+        "style": {},
     }
     if isinstance(e, Feature):
         up = e.multiplicity.upper

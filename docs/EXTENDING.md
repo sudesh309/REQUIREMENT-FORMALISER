@@ -129,3 +129,34 @@ TOOLS = [{"name": "sysml_set_active_choice", "description": "...",
   default-exports `async ({page, api, fresh, waitReady, expect}) => {...}`;
   any browser console error fails the scenario. Run one with
   `UI_FILTER=<name> python -m unittest tests.test_ui_browser`.
+
+## Cross-feature contracts
+
+These keep independently built features consistent.
+
+**Architecture structure** (`engine/structure.py`): an architecture is a
+`PartDefinition`; a component is a `PartUsage` (reference component when
+typed by a `PartDefinition`, inline component otherwise); a port is a
+`PortUsage` (direction = `Feature.direction`, interface = its type); a
+connector is a `ConnectionUsage` owned by the composition it wires, with
+`ends[0]` = source port and `ends[1]` = destination port. Use
+`components_of`, `ports_of`, `connectors_of`, `component_tree`,
+`definition_of` instead of walking `owned_elements` yourself.
+
+**Element JSON display fields**: every summary has `badges` (list of short
+strings) and `style` (dict with optional `fill`, `stroke`, `text`, `dash`,
+`icon`). Summary hooks *append* badges and *set* style keys; the tree shows
+badges, the canvas uses both.
+
+**Frontend events** (`studio.emit` / `studio.on`):
+
+| Event | Payload | Meaning |
+|-------|---------|---------|
+| `navigate` | `{id}` | show an element (tree + inspector select it; canvas opens its parent) |
+| `highlight` | `{ids, color?, reason?}` or `null` | emphasize elements on the canvas |
+| `canvas-filter` | `{ids, label?}` or `null` | canvas shows only these components (views) |
+| `selection-changed` | `[ids]` | multi-selection changed; read with `studio.getSelection()` |
+| `select` / `model-changed` / `tab-shown` | see above | core events |
+
+`studio.setSelection(ids)` sets the multi-selection (canvas rubber band,
+table rows); `studio.getSelection()` falls back to the selected element.
