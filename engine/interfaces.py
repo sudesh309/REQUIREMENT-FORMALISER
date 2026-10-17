@@ -2404,7 +2404,16 @@ def handle_property(repo, e: Element, key: str, value: Any, resolve: Optional[Re
     """
     if isinstance(e, PortUsage) and key == "typed_by":
         ref = value if isinstance(value, str) or value is None else (value[0] if value else None)
-        assign_interface(repo, e, ref, resolve=resolve)
+        if ref is None or ref.strip().lower() in ("", "<empty>", "owned", "<owned>"):
+            assign_interface(repo, e, ref, resolve=resolve)
+            return True
+        current = interface_of(e)
+        if current is not None and ref in (current.qualified_name, current.element_id):
+            return True
+        target = find_item(repo, ref, resolve, (PortDefinition, ValueType))
+        if target is None:
+            return False                # not an interface: the core handles other types
+        assign_interface(repo, e, target, resolve=resolve)
         return True
     if isinstance(e, ConnectionUsage) and key in ("source_element", "target_element"):
         set_connector_elements(e, **{key: value})
