@@ -121,7 +121,7 @@ def set_model_type(repo, new_type: str, *, force: bool = False) -> str:
     return new_type
 
 
-def _check_port_kind(repo, kind: str) -> None:
+def check_port_kind(repo, kind: str) -> None:
     if kind not in PORT_KINDS:
         raise ArchitectureError(f"port kind must be one of {list(PORT_KINDS)}, not {kind!r}")
     if kind not in allowed_port_kinds(repo):
@@ -175,7 +175,7 @@ def member_names(composition: Element, exclude: Optional[Element] = None) -> set
     return _names_in(internal_owners(composition), exclude)
 
 
-def _sibling_names(e: Element) -> set[str]:
+def sibling_names(e: Element) -> set[str]:
     owner = e.owner
     if owner is None:
         return set()
@@ -195,7 +195,7 @@ def _usages_of(repo, definition: Element) -> list[PartUsage]:
 # Ownership helpers
 # ---------------------------------------------------------------------------
 
-def _require_composition(e: Optional[Element], what: str = "composition") -> Element:
+def require_composition(e: Optional[Element], what: str = "composition") -> Element:
     if e is None:
         raise _not_found(what)
     if not isinstance(e, (PartDefinition, PartUsage)):
@@ -203,7 +203,7 @@ def _require_composition(e: Optional[Element], what: str = "composition") -> Ele
     return e
 
 
-def _require_component(e: Optional[Element], what: str = "component") -> PartUsage:
+def require_component(e: Optional[Element], what: str = "component") -> PartUsage:
     if e is None:
         raise _not_found(what)
     if not is_component(e):
@@ -344,7 +344,7 @@ def add_component(repo, composition: Element, name: Optional[str] = None,
                   definition: Optional[Element] = None,
                   layout: Optional[dict] = None) -> PartUsage:
     """Add a component (inline, or a reference when `definition` is given)."""
-    comp = _require_composition(composition)
+    comp = require_composition(composition)
     taken = member_names(comp)
     if name:
         name = check_name(name)
@@ -375,7 +375,7 @@ def rename(repo, element: Element, name: str) -> Element:
     name = check_name(name)
     if name == element.name:
         return element
-    if name in _sibling_names(element):
+    if name in sibling_names(element):
         owner = element.owner.name if element.owner else "the model"
         raise _conflict(f"{owner} already has a member named {name!r}")
     if isinstance(element, PortUsage) and isinstance(element.owner, PartDefinition):
@@ -387,16 +387,36 @@ def rename(repo, element: Element, name: str) -> Element:
 
 
 def set_definition(repo, component: Element, definition: Optional[Element]) -> PartUsage:
-    """Retype a component: make it a reference to `definition`, or clear the typing (None)."""
-    c = _require_component(component)
+    """Retype a component: make it a reference to `definition`, or clear the typing (None).
+
+    Connectors that reached the old definition's ports through this component are
+    re-attached to the new definition's ports of the same name; the others stay
+    and show up as broken (validator / view ``issues``), as in System Composer.
+    """
+    c = require_component(component)
+    old = definition_of(c)
     if definition is not None:
         if not isinstance(definition, PartDefinition):
             raise ArchitectureError(f"{definition.qualified_name} is not a PartDefinition")
         _check_no_cycle(c.owner, definition)
+    affected = []
+    if old is not None and old is not definition:
+        for conn in [x for x in repo.root_package.walk() if isinstance(x, ConnectionUsage)]:
+            ends = connector_ends(conn)
+            if any(ctx is c and p.owner is old for ctx, p in ends):
+                affected.append((conn, ends))
     c.feature_typings = []
     c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
     if definition is not None:
         c.add_type(definition)
+    for conn, ends in affected:
+        new_ends = []
+        for ctx, p in ends:
+            if ctx is c and p.owner is old and definition is not None:
+                p = next((q for q in ports_of(definition) if q.name == p.name), p)
+            new_ends.append((ctx, p))
+        conn.ends = [p for _, p in new_ends]
+        conn.end_contexts = tuple(ctx for ctx, _ in new_ends)
     return c
 
 
@@ -434,7 +454,7 @@ def _check_interface(interface: Optional[Element]) -> Optional[Type]:
     return interface
 
 
-def _normalize_direction(direction: Optional[str], kind: str) -> FeatureDirection:
+def normalize_direction(direction: Optional[str], kind: str) -> FeatureDirection:
     if kind != "data":
         return FeatureDirection.INOUT      # physical and client/server ports are non-directional
     d = direction or "in"
@@ -452,10 +472,10 @@ def add_port(repo, owner: Element, name: Optional[str] = None, direction: Option
     reference component the port goes to the definition (so every usage shows it)
     unless ``usage_only`` is set.
     """
-    comp = _require_composition(owner, "port owner")
+    comp = require_composition(owner, "port owner")
     kind = kind or "data"
-    _check_port_kind(repo, kind)
-    fdir = _normalize_direction(direction, kind)
+    check_port_kind(repo, kind)
+    fdir = normalize_direction(direction, kind)
     iface = _check_interface(interface)
     target = comp if usage_only else edit_owner(comp)
     taken = member_names(comp)
@@ -497,14 +517,14 @@ def update_port(repo, port: Element, *, name: Optional[str] = None, direction: O
     new_name = port.name
     if name is not None and name != port.name:
         new_name = check_name(name)
-        if new_name in _sibling_names(port):
+        if new_name in sibling_names(port):
             raise _conflict(f"{port.owner.name} already has a member named {new_name!r}")
     new_kind = kind or port.port_kind
     if kind is not None:
-        _check_port_kind(repo, kind)
+        check_port_kind(repo, kind)
     if direction is not None or kind is not None:
         current = port.direction.value if port.direction is not FeatureDirection.NONE else "in"
-        new_dir = _normalize_direction(direction or current, new_kind)
+        new_dir = normalize_direction(direction or current, new_kind)
     else:
         new_dir = port.direction
     new_types = list(port.types)
@@ -713,7 +733,7 @@ def can_connect(composition: Element, src: Endpoint, dst: Endpoint) -> dict:
 # Connecting (including cross-hierarchy punch-through)
 # ---------------------------------------------------------------------------
 
-def _resolve_port(owner: Element, port: Any) -> PortUsage:
+def resolve_port(owner: Element, port: Any) -> PortUsage:
     if isinstance(port, PortUsage):
         return port
     if isinstance(port, str) and port:
@@ -778,10 +798,10 @@ def _endpoint(repo, composition: Element, spec: Any, created: list[Element]) -> 
     else:
         component, port = spec
     if component is None:
-        return (None, _resolve_port(composition, port))
+        return (None, resolve_port(composition, port))
     if not isinstance(component, PartUsage):
         raise ArchitectureError(f"{getattr(component, 'qualified_name', component)} is not a component")
-    p = _resolve_port(component, port)
+    p = resolve_port(component, port)
     if any(component is c for c in components_of(composition)):
         return (component, p)
     chain = _chain(composition, component)
@@ -798,7 +818,7 @@ def connect(repo, composition: Element, source: Any, target: Any, name: Optional
     (cross-hierarchy connection). Data connectors are oriented output -> input
     and client -> server automatically.
     """
-    comp = _require_composition(composition)
+    comp = require_composition(composition)
     if name is not None:
         name = check_name(name)
         if name in member_names(comp):
@@ -954,13 +974,13 @@ def duplicate(repo, components: list[Element], target: Optional[Element] = None,
     """Deep-copy components (ports, sub-components, internal connectors, stereotypes,
     tool_data) into `target` (default: their own composition) with fresh names.
     Connectors between the copied components are copied too (copy-paste)."""
-    comps = [_require_component(c) for c in components]
+    comps = [require_component(c) for c in components]
     if not comps:
         raise ArchitectureError("select at least one component to duplicate")
     src_owner = comps[0].owner
     if any(c.owner is not src_owner for c in comps):
         raise ArchitectureError("components to duplicate must share one parent")
-    dest = _require_composition(target) if target is not None else src_owner
+    dest = require_composition(target) if target is not None else src_owner
     for c in comps:
         _check_no_cycle(dest, c)      # a copy may not contain (a reference to) its new container
     copies, mapping, apps = clone_forest(comps)
@@ -1004,8 +1024,8 @@ def group(repo, composition: Element, components: list[Element], name: Optional[
     re-routes every connector that crossed the selection boundary through new
     boundary ports of that component.
     """
-    comp = _require_composition(composition)
-    comps = [_require_component(c) for c in components]
+    comp = require_composition(composition)
+    comps = [require_component(c) for c in components]
     if not comps:
         raise ArchitectureError("select at least one component")
     direct = components_of(comp)
@@ -1106,7 +1126,7 @@ def group(repo, composition: Element, components: list[Element], name: Optional[
 def expand(repo, component: Element) -> list[PartUsage]:
     """Inverse of :func:`group`: move an inline component's sub-components up one level,
     merge connectors through its boundary ports and delete the now-empty component."""
-    g = _require_component(component)
+    g = require_component(component)
     if definition_of(g) is not None:
         raise ArchitectureError(f"{g.name} is a reference to {definition_of(g).name}; inline it first")
     parent = g.owner
@@ -1179,7 +1199,7 @@ def _capitalized(name: str) -> str:
 def save_as_reference(repo, component: Element, name: Optional[str] = None,
                       package: Optional[Element] = None) -> PartDefinition:
     """Turn an inline component into a reusable PartDefinition and type the component by it."""
-    c = _require_component(component)
+    c = require_component(component)
     if definition_of(c) is not None:
         raise ArchitectureError(f"{c.name} already references {definition_of(c).name}")
     pkg = package if package is not None else model_package(c)
@@ -1205,7 +1225,7 @@ def save_as_reference(repo, component: Element, name: Optional[str] = None,
 
 def inline_component(repo, component: Element) -> PartUsage:
     """Copy a reference component's definition internals into this usage only and drop the typing."""
-    c = _require_component(component)
+    c = require_component(component)
     d = definition_of(c)
     if d is None:
         raise ArchitectureError(f"{c.name} is already an inline component")
@@ -1253,7 +1273,7 @@ SIDES = ("left", "right", "top", "bottom")
 _GRID_X0, _GRID_Y0, _GAP_X, _GAP_Y = 160, 60, 110, 70
 
 
-def _num(v: Any, what: str) -> float:
+def number(v: Any, what: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
         raise ArchitectureError(f"{what} must be a finite number")
     return float(v) if isinstance(v, float) and not v.is_integer() else int(v)
@@ -1262,10 +1282,10 @@ def _num(v: Any, what: str) -> float:
 def clean_box(item: dict) -> dict:
     if not isinstance(item, dict):
         raise ArchitectureError("layout must be an object")
-    out = {"x": _num(item.get("x"), "x"), "y": _num(item.get("y"), "y")}
+    out = {"x": number(item.get("x"), "x"), "y": number(item.get("y"), "y")}
     for k in ("w", "h"):
         if item.get(k) is not None:
-            v = _num(item[k], k)
+            v = number(item[k], k)
             if v <= 0:
                 raise ArchitectureError(f"{k} must be positive")
             out[k] = v
@@ -1278,7 +1298,7 @@ def clean_port_layout(item: dict) -> dict:
     side = item.get("side")
     if side not in SIDES:
         raise ArchitectureError(f"side must be one of {list(SIDES)}")
-    off = _num(item.get("offset", 0.5), "offset")
+    off = number(item.get("offset", 0.5), "offset")
     if not 0 <= off <= 1:
         raise ArchitectureError("offset must be between 0 and 1")
     return {"side": side, "offset": off}
@@ -1291,7 +1311,7 @@ def clean_points(points: Any) -> list:
     for pt in points:
         if not isinstance(pt, (list, tuple)) or len(pt) != 2:
             raise ArchitectureError("points must be a list of [x, y] pairs")
-        out.append([_num(pt[0], "point x"), _num(pt[1], "point y")])
+        out.append([number(pt[0], "point x"), number(pt[1], "point y")])
     return out
 
 
@@ -1412,7 +1432,7 @@ def _spread_ports(owner: Element) -> None:
 
 def auto_layout(repo, composition: Element) -> dict:
     """Left-to-right layered layout ordered by connector direction (System Composer 'Arrange')."""
-    comp = _require_composition(composition)
+    comp = require_composition(composition)
     comps = components_of(comp)
     idx = {id(c): i for i, c in enumerate(comps)}
     succ: dict[int, list[int]] = {i: [] for i in range(len(comps))}
@@ -1491,6 +1511,9 @@ def auto_layout(repo, composition: Element) -> dict:
 # View model (for the canvas)
 # ---------------------------------------------------------------------------
 
+_DEFAULT_CONNECTOR_NAME = re.compile(r"^(Connector\d*|connect_.*)$")
+
+
 def _ref(e: Optional[Element]) -> Optional[dict]:
     return None if e is None else {"id": e.element_id, "name": e.name,
                                    "qualified_name": e.qualified_name, "kind": e.kind}
@@ -1530,7 +1553,8 @@ def component_view(c: PartUsage, composition: Element, decorate: Optional[Callab
         "qualified_name": c.qualified_name,
         "definition": _ref(d), "is_reference": d is not None,
         "owner_id": c.owner.element_id if c.owner else None,
-        "inherited": c.owner is not composition and c.owner is not edit_owner(composition),
+        # Viewing a reference component: this sub-component belongs to the shared definition.
+        "from_definition": c.owner is not composition,
         "layout": effective_box(c, composition, _defaults),
         "has_children": bool(components_of(c)),
         "has_state_machine": owns_state_machine(c),
@@ -1556,8 +1580,11 @@ def connector_view(conn: ConnectionUsage, composition: Element,
         if t.name and t.name not in ifaces:
             ifaces.append(t.name)
     pts = conn.tool_data.get("points")
+    # Like System Composer: show the interface on the line; a user-given name otherwise.
+    default_name = not conn.name or bool(_DEFAULT_CONNECTOR_NAME.match(conn.name))
+    label = ", ".join(ifaces) if ifaces else ("" if default_name else conn.name)
     return {
-        "id": conn.element_id, "name": conn.name, "label": conn.name or "",
+        "id": conn.element_id, "name": conn.name, "label": label,
         "kind": connector_kind(composition, conn),
         "source": ep(0), "target": ep(1),
         "interfaces": ifaces,
@@ -1587,7 +1614,7 @@ def breadcrumbs(composition: Element, path: Optional[list[Element]] = None) -> l
 def view(repo, composition: Element, *, path: Optional[list[Element]] = None,
          decorate: Optional[Callable[[Element], dict]] = None) -> dict:
     """Complete canvas view model for one composition (architecture or component)."""
-    comp = _require_composition(composition)
+    comp = require_composition(composition)
     d = definition_of(comp)
     comps = components_of(comp)
     defaults = _default_boxes(comp)
@@ -1631,7 +1658,7 @@ def model_tree(root: Element, *, decorate: Optional[Callable] = None) -> dict:
         nseen = seen | {key} if key is not None else seen
         out["children"] = [node(c, here, nseen) for c in components_of(e)]
         return out
-    return node(_require_composition(root), [], frozenset())
+    return node(require_composition(root), [], frozenset())
 
 
 def architecture_roots(repo) -> list[PartDefinition]:
@@ -1746,6 +1773,19 @@ def _on_removed(repo, removed_ids: set[int]) -> None:
             repo.remove(c)
 
 
+def _on_created(e: Element, repo) -> None:
+    """Generic creation paths (POST /api/element, MCP create, parser) keep component and
+    port names unique among their siblings, as System Composer does."""
+    if not e.name:
+        return
+    if not (is_component(e) or (isinstance(e, PortUsage)
+                                and isinstance(e.owner, (PartDefinition, PartUsage)))):
+        return
+    taken = sibling_names(e)
+    if e.name in taken:
+        e.name = unique_name(e.name, taken)
+
+
 def _edges(e: Element):
     if isinstance(e, ConnectionUsage):
         for i, ctx in enumerate(getattr(e, "end_contexts", ()) or ()):
@@ -1759,7 +1799,7 @@ _INSTALLED = False
 def install() -> None:
     """Register codecs, rules and hooks (idempotent; runs on import)."""
     global _INSTALLED
-    from engine import validator as _v, repository as _r, graph_export as _g
+    from engine import graph_export as _g, hooks as _h, repository as _r, validator as _v
     register_codec("arch.port", _encode_port, _decode_port)
     register_codec("arch.connector", _encode_connector, _decode_connector)
     register_repo_codec("architecture", _encode_repo, _decode_repo)
@@ -1767,6 +1807,8 @@ def install() -> None:
         register_repo_rule(check_repo)
     if _on_removed not in _r._REMOVAL_HOOKS:
         register_removal_hook(_on_removed)
+    if _on_created not in _h._CREATED_HOOKS:
+        _h.register_created_hook(_on_created)
     if _edges not in _g._EDGE_SOURCES:
         register_edge_source(_edges)
     _INSTALLED = True

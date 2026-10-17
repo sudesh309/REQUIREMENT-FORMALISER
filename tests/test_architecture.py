@@ -140,6 +140,34 @@ class ComponentTests(unittest.TestCase):
         self.assertIs(extra.owner, left)
         self.assertNotIn(extra, ports_of(right))
 
+    def test_retype_reattaches_connectors_by_port_name(self):
+        repo, root, adc, fms, disp = _arch()
+        OldDef = repo.add(PartDefinition(name="AdcMk1"))
+        NewDef = repo.add(PartDefinition(name="AdcMk2"))
+        sensor = A.add_component(repo, root, "sensor", definition=OldDef)
+        A.add_port(repo, sensor, "airData", "out")
+        A.add_port(repo, sensor, "legacy", "out")
+        new_air = A.add_port(repo, A.add_component(repo, root, "tmp", definition=NewDef), "airData", "out")
+        A.add_port(repo, disp, "air", "in")
+        A.add_port(repo, disp, "old", "in")
+        c1 = A.connect(repo, root, _ep(sensor, "airData"), _ep(disp, "air"))
+        c2 = A.connect(repo, root, _ep(sensor, "legacy"), _ep(disp, "old"))
+        A.set_definition(repo, sensor, NewDef)
+        self.assertIs(c1.ends[0], new_air)
+        self.assertEqual(A.connector_problems(c1), [])
+        self.assertEqual(A.connector_problems(c2)[0][0], "arch.connector.scope")   # shown as broken
+
+    def test_generic_creation_keeps_names_unique(self):
+        repo, root, adc, *_ = _arch()
+        dup = PartUsage(name="ADC")
+        root.own(dup)
+        hooks.notify_created(dup, repo)
+        self.assertEqual(dup.name, "ADC1")
+        p = PortUsage(name="airData")
+        adc.own(p)
+        hooks.notify_created(p, repo)
+        self.assertEqual(p.name, "airData1")
+
     def test_reference_cycle_rejected(self):
         repo = Repository("P")
         root = A.create_architecture(repo, "Root")
@@ -490,8 +518,15 @@ class LayoutAndViewTests(unittest.TestCase):
         conn = v["connectors"][0]
         self.assertEqual(conn["source"], {"component_id": adc.element_id,
                                           "port_id": ports_of(adc)[0].element_id})
-        self.assertEqual((conn["kind"], conn["issues"]), ("data", []))
+        self.assertEqual((conn["kind"], conn["issues"], conn["label"]), ("data", [], ""))
         self.assertEqual(conn["id"], c.element_id)
+        Air = repo.add(PortDefinition(name="AirData"))
+        A.update_port(repo, ports_of(adc)[0], interface=Air)
+        self.assertEqual(A.view(repo, root)["connectors"][0]["label"], "AirData")
+        self.assertFalse(comps["aoa"]["from_definition"])
+        inner = A.add_component(repo, s, "core")
+        self.assertTrue(A.view(repo, s)["components"][0]["from_definition"])
+        self.assertIs(inner.owner, Sensor)
 
     def test_breadcrumbs_and_drill_path(self):
         repo, root, adc, fms, disp = _arch()
