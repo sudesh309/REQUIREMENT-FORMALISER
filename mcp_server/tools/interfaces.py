@@ -14,7 +14,7 @@ from typing import Any, Optional
 from engine import interfaces as I
 from engine.interfaces import InterfaceError
 from mcp_server.core import SESSION, _err, _ok, register_kind, register_summary_hook
-from sysmlv2 import ConnectionUsage, PortUsage
+from sysmlv2 import PortUsage
 
 for _name, _cls in I.ALL_CLASSES.items():
     register_kind(_name, _cls)
@@ -156,11 +156,7 @@ def tool_check_compatibility(source: Optional[str] = None, target: Optional[str]
                              source_element: Optional[str] = None, target_element: Optional[str] = None,
                              connector: Optional[str] = None) -> dict:
     if connector:
-        c = _find(connector, "Connector")
-        if not isinstance(c, ConnectionUsage) or len(c.ends) < 2:
-            return _err(f"{connector!r} is not a connector with two ends")
-        return _ok(I.compatibility_report(c.ends[0], c.ends[1], getattr(c, "source_element", None),
-                                          getattr(c, "target_element", None)))
+        return _ok(I.connector_report(_find(connector, "Connector")))
     if not source or not target:
         return _err("give source and target ports (or a connector)")
     return _ok(I.compatibility_report(_port(source, "Source port"), _port(target, "Target port"),
@@ -180,10 +176,9 @@ def tool_connect_ports(source: str, target: str, source_element: Optional[str] =
 @_safe
 def tool_set_connector_elements(connector: str, source_element: Optional[str] = None,
                                 target_element: Optional[str] = None) -> dict:
-    c = _find(connector, "Connector")
+    c = I.require_port_connector(_find(connector, "Connector"))
     I.set_connector_elements(c, **_fields(source_element=source_element, target_element=target_element))
-    return _ok(I.compatibility_report(c.ends[0], c.ends[1], getattr(c, "source_element", None),
-                                      getattr(c, "target_element", None)))
+    return _ok(I.connector_report(c))
 
 
 @_safe

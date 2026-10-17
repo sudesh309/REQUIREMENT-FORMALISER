@@ -928,6 +928,10 @@ def set_fields(repo, e: Element, fields: dict, resolve: Optional[Resolver] = Non
 
     if "color" in fields:
         c = fields["color"]
+        if not isinstance(e, (*INTERFACE_CLASSES, ValueType)):
+            raise InterfaceError(
+                f"{e.kind} {e.name!r} has no colour: only data, physical and service interfaces "
+                f"and value types carry one")
         if c in (None, ""):
             apply.append(lambda: setattr(e, "color", None))
         elif not isinstance(c, str) or not _COLOR_RE.match(c):
@@ -1905,6 +1909,24 @@ def connector_compatibility(conn: ConnectionUsage) -> Optional[list[str]]:
         return None
     return check_compatibility(src, tgt, getattr(conn, "source_element", None),
                                getattr(conn, "target_element", None))
+
+
+def require_port_connector(conn: Any) -> ConnectionUsage:
+    """`conn` when it is a connector joining two ports, else InterfaceError."""
+    if not isinstance(conn, ConnectionUsage):
+        raise InterfaceError(f"{getattr(conn, 'qualified_name', conn)!r} is not a connector")
+    if len(conn.ends) < 2 or not all(isinstance(p, PortUsage) for p in conn.ends[:2]):
+        raise InterfaceError(f"Connector {conn.name!r} does not join two ports")
+    return conn
+
+
+def connector_report(conn: Any) -> dict:
+    """``compatibility_report`` for an existing port-to-port connector."""
+    c = require_port_connector(conn)
+    report = compatibility_report(c.ends[0], c.ends[1], getattr(c, "source_element", None),
+                                  getattr(c, "target_element", None))
+    report["connector"] = {"id": c.element_id, "name": c.name}
+    return report
 
 
 def port_label(port: Element) -> str:

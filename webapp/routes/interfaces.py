@@ -39,7 +39,7 @@ from typing import Any, Callable
 from engine import interfaces as I
 from engine.interfaces import InterfaceError
 from kerml.elements import Element
-from sysmlv2 import ConnectionUsage, PortUsage
+from sysmlv2 import PortUsage
 from webapp.core import (
     err, ok, register_kind, register_prop_hook, register_summary_hook, route, session,
 )
@@ -263,16 +263,7 @@ def api_move_owned(req):
 def api_compatibility(req):
     q = req.get("query") or {}
     if q.get("connector"):
-        conn = _find(q["connector"], "Connector")
-        if not isinstance(conn, ConnectionUsage) or len(conn.ends) < 2:
-            raise InterfaceError(f"{conn.qualified_name!r} is not a connector with two ends")
-        src, tgt = conn.ends[0], conn.ends[1]
-        if not isinstance(src, PortUsage) or not isinstance(tgt, PortUsage):
-            raise InterfaceError("connector ends are not ports")
-        report = I.compatibility_report(src, tgt, getattr(conn, "source_element", None),
-                                        getattr(conn, "target_element", None))
-        report["connector"] = {"id": conn.element_id, "name": conn.name}
-        return ok(report)
+        return ok(I.connector_report(_find(q["connector"], "Connector")))
     if not q.get("source") or not q.get("target"):
         raise InterfaceError("give ?source=<port>&target=<port> or ?connector=<connector>")
     return ok(I.compatibility_report(_port(q["source"], "Source port"), _port(q["target"], "Target port"),
@@ -316,12 +307,10 @@ def api_connect(req):
 @_guard
 def api_connector_elements(req):
     body = _body(req)
-    conn = _find(body.get("connector"), "Connector")
+    conn = I.require_port_connector(_find(body.get("connector"), "Connector"))
     kwargs = {k: body[k] for k in ("source_element", "target_element") if k in body}
     I.set_connector_elements(conn, **kwargs)
-    src, tgt = conn.ends[0], conn.ends[1]
-    return ok(I.compatibility_report(src, tgt, getattr(conn, "source_element", None),
-                                     getattr(conn, "target_element", None)))
+    return ok(I.connector_report(conn))
 
 
 # --- dictionary exchange ---------------------------------------------------

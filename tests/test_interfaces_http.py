@@ -99,6 +99,24 @@ class InterfacesHttpTests(WebAppTestCase):
                 r = self.call(method, path, body, expect=status)
                 self.assertIn(fragment, r["error"])
 
+    def test_malformed_connectors_and_colourless_items_rejected(self):
+        # A generic connector has no ends yet: element selection and checks answer 400, not 500.
+        bare = self.elem("ConnectionUsage", "Bare")
+        r = self.call("POST", "/api/interfaces/connector-elements",
+                      {"connector": bare["id"], "source_element": "x"}, expect=400)
+        self.assertIn("does not join two ports", r["error"])
+        r = self.call("GET", f"/api/interfaces/compatibility?connector={bare['id']}", expect=400)
+        self.assertIn("does not join two ports", r["error"])
+        part = self.elem("PartUsage", "Box")
+        r = self.call("POST", "/api/interfaces/connector-elements", {"connector": part["id"]}, expect=400)
+        self.assertIn("is not a connector", r["error"])
+        # A plain SysML port definition has no persisted colour, so setting one is refused.
+        pdef = self.elem("PortDefinition", "LegacyPort")
+        r = self.call("PATCH", f"/api/interfaces/item/{pdef['id']}", {"color": "#123456"}, expect=400)
+        self.assertIn("has no colour", r["error"])
+        r = self.call("PATCH", f"/api/interfaces/item/{pdef['id']}", {"description": "kept"})
+        self.assertEqual(r["description"], "kept")
+
     def test_assign_badges_compatibility_and_validate(self):
         sysd, _, _, out, inp = self.arch()
         ad = self.air_data()

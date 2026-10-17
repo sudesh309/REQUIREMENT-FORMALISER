@@ -77,11 +77,15 @@ class InterfaceToolTests(unittest.TestCase):
 
     def test_errors_are_reported_not_raised(self):
         out, _ = self._ports()
+        call("sysml_create_element", kind="ConnectionUsage", name="Bare", parent="Sys")
         for name, args, fragment in (
                 ("sysml_create_interface", {"kind": "Nope"}, "Unknown interface kind"),
                 ("sysml_add_interface_element", {"interface": "Missing"}, "not found"),
                 ("sysml_assign_interface", {"port": out, "interface": "Missing"}, "not found"),
                 ("sysml_check_compatibility", {}, "give source and target"),
+                ("sysml_check_compatibility", {"connector": "Sys::Bare"}, "does not join two ports"),
+                ("sysml_set_connector_elements", {"connector": "Sys::Bare"}, "does not join two ports"),
+                ("sysml_set_connector_elements", {"connector": "Sys"}, "is not a connector"),
                 ("sysml_import_dictionary", {"text": "[]"}, "'items' list")):
             r = call(name, **args)
             self.assertFalse(r["ok"], (name, r))
