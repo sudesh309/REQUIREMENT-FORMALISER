@@ -38,6 +38,7 @@ from engine.graph_export import EXPORTERS, export_knowledge_graph
 from engine.links import (
     LINK_KINDS, create_link, describe_link, link_kind, links_of, list_link_kinds,
 )
+from engine.hooks import notify_created
 from engine.properties import set_properties
 from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
@@ -142,6 +143,7 @@ def tool_create_element(kind: str, name: str,
         elem.name = name
     parent_el.own(elem)
     SESSION.repo.registry.register_tree(elem)
+    notify_created(elem, SESSION.repo)
     if properties:
         try:
             _apply_properties(elem, properties)

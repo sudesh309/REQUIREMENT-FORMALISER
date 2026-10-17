@@ -72,6 +72,7 @@ from engine import (
     state_machine as sm_dot, state_machine_mermaid,
     to_json,
 )
+from engine.hooks import notify_created
 from engine.validator import Severity
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
@@ -172,6 +173,7 @@ def api_create_element(req: dict) -> Body:
         elem.name = body.get("name") or "new"
     parent.own(elem)
     SESSION.repo.registry.register_tree(elem)
+    notify_created(elem, SESSION.repo)
     if body.get("properties"):
         try:
             apply_props(elem, body["properties"])

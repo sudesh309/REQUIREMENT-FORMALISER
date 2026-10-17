@@ -16,6 +16,7 @@ from .links import (
 from .serializer import register_codec, register_repo_codec
 from .validator import register_rule, register_repo_rule
 from .graph_export import register_edge_source
+from .hooks import notify_created, register_created_hook
 
 __all__ = [
     "Repository", "ElementRegistry",
@@ -31,5 +32,5 @@ __all__ = [
     # extension points for feature modules
     "register_link_kind", "register_codec", "register_repo_codec",
     "register_rule", "register_repo_rule", "register_edge_source",
-    "register_removal_hook",
+    "register_removal_hook", "register_created_hook", "notify_created",
 ]

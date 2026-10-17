@@ -148,6 +148,13 @@ strings) and `style` (dict with optional `fill`, `stroke`, `text`, `dash`,
 `icon`). Summary hooks *append* badges and *set* style keys; the tree shows
 badges, the canvas uses both.
 
+**Element creation**: every code path that creates an element (web API,
+canvas routes, MCP tools, table import, templates) must call
+`engine.notify_created(element, repo)` once the element is owned;
+features react with `engine.register_created_hook(fn(element, repo))`
+(for example to apply default stereotypes). Deletion goes through
+`Repository.remove`, which cascades and runs `register_removal_hook` hooks.
+
 **Frontend events** (`studio.emit` / `studio.on`):
 
 | Event | Payload | Meaning |

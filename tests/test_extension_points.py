@@ -133,3 +133,19 @@ class McpCoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CreatedHookTests(WebAppTestCase):
+
+    def test_created_hook_runs_for_web_and_mcp(self):
+        from engine import hooks, register_created_hook
+        seen = []
+        register_created_hook(lambda e, repo: seen.append(e.name))
+        try:
+            self.call("POST", "/api/new", {"name": "T"})
+            self.call("POST", "/api/element", {"kind": "PartDefinition", "name": "WebMade"})
+            from mcp_server import server as m
+            m.tool_create_element("PartDefinition", "McpMade")
+            self.assertEqual(seen, ["WebMade", "McpMade"])
+        finally:
+            hooks._CREATED_HOOKS.pop()
