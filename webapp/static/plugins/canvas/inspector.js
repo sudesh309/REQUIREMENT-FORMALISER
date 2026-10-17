@@ -3,8 +3,8 @@
 // duplicate, create-component-from-selection, expand, save as reference, inline,
 // arrange. Everything goes through /api/arch/* (see docs/features/architecture.md).
 import {
-  DIRECTIONS, INTERFACE_KINDS, esc, injectStyles, isComponent, isComposition,
-  openForm, options, reload, treeNodes,
+  DIRECTIONS, INTERFACE_KINDS, clipboard, copyComponents, esc, injectStyles, isComponent,
+  isComposition, openForm, options, reload, treeNodes,
 } from "./common.js";
 
 export function installInspector(studio) {
@@ -97,9 +97,13 @@ async function renderComposition(studio, el, box) {
     ? `<b>${esc(c.name)}</b>`
     : `<button type="button" data-goto="${esc(c.id)}">${esc(c.name)}</button>`).join(" › ");
   const eps = endpoints(v);
+  // Picked rows follow the shared multi-selection, so they survive re-renders (and a
+  // canvas rubber-band selection shows up here too).
+  const kept = new Set(studio.state.selection || []);
+  const anyKept = v.components.some(c => kept.has(c.id));
   const comps = v.components.map(c => `
     <tr>
-      <td class="w-6"><input type="checkbox" aria-label="Select ${esc(c.name)}" data-pick="${esc(c.id)}" /></td>
+      <td class="w-6"><input type="checkbox" aria-label="Select ${esc(c.name)}" data-pick="${esc(c.id)}" ${kept.has(c.id) ? "checked" : ""} /></td>
       <td><input class="input" aria-label="Component name" data-rename="${esc(c.id)}" value="${esc(c.name)}" /></td>
       <td class="text-xs">${c.definition ? `<button type="button" class="text-blue-700 hover:underline" data-goto="${esc(c.definition.id)}">${esc(c.definition.name)}</button>` : `<span class="text-slate-400">inline</span>`}</td>
       <td class="text-xs">${c.ports.length}</td>
@@ -142,9 +146,13 @@ async function renderComposition(studio, el, box) {
       <tbody>${comps}</tbody>
     </table>
     <div class="flex gap-1 mt-1">
-      <button type="button" class="btn-action" data-act="group" disabled title="Create Component from Selection">Group selected…</button>
-      <button type="button" class="btn-action" data-act="duplicate-selected" disabled>Duplicate selected</button>
-      <button type="button" class="btn-action" data-act="delete-selected" disabled>Delete selected</button>
+      <button type="button" class="btn-action" data-act="group" ${anyKept ? "" : "disabled"} title="Create Component from Selection">Group selected…</button>
+      <button type="button" class="btn-action" data-act="duplicate-selected" ${anyKept ? "" : "disabled"}>Duplicate selected</button>
+      <button type="button" class="btn-action" data-act="delete-selected" ${anyKept ? "" : "disabled"}>Delete selected</button>
+      <span class="sep"></span>
+      <button type="button" class="btn-action" data-act="copy" ${anyKept ? "" : "disabled"} title="Copy the selected components">Copy</button>
+      <button type="button" class="btn-action" data-act="paste" ${clipboard.ids.length ? "" : "disabled"}
+        title="${clipboard.ids.length ? `Paste ${esc(clipboard.names.join(", "))} into ${esc(comp.name)}` : "Copy components first"}">Paste${clipboard.ids.length ? ` (${clipboard.ids.length})` : ""}</button>
     </div>
     <div class="arch-h">Ports of ${esc(comp.name)} <span class="font-normal text-slate-400">(boundary ports when viewing its inside)</span></div>
     <table class="arch-table" data-table="ports">
@@ -165,7 +173,7 @@ async function renderComposition(studio, el, box) {
     if (t.dataset.pick !== undefined) {
       const ids = picked();
       studio.setSelection(ids);
-      for (const act of ["group", "duplicate-selected", "delete-selected"]) {
+      for (const act of ["group", "duplicate-selected", "delete-selected", "copy"]) {
         box.querySelector(`[data-act="${act}"]`).disabled = !ids.length;
       }
     } else if (t.dataset.rename) {
@@ -221,6 +229,21 @@ async function renderComposition(studio, el, box) {
     else if (act === "delete") confirmDelete(studio, [el.id], `component ${el.name}`, el.owner_id);
     else if (act === "delete-selected") confirmDelete(studio, picked(), `${picked().length} component(s)`, el.id);
     else if (act === "group") group(studio, el, picked());
+    else if (act === "copy") {
+      const ids = picked();
+      copyComponents(ids, v.components.filter(c => ids.includes(c.id)).map(c => c.name));
+      studio.log(`Copied ${clipboard.names.join(", ")}; open a composition and press Paste`, "info");
+      const paste = box.querySelector('[data-act="paste"]');
+      paste.disabled = false;
+      paste.textContent = `Paste (${ids.length})`;
+    }
+    else if (act === "paste") {
+      guarded(studio, async () => {
+        const r = await studio.api("POST", "/api/arch/duplicate", { ids: clipboard.ids, target: el.id });
+        studio.log(`Pasted ${r.components.map(c => c.name).join(", ")} into ${comp.name}`, "ok");
+        studio.setSelection(r.components.map(c => c.id));
+      }, again);
+    }
   });
 }
 

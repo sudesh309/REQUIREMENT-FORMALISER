@@ -81,10 +81,13 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await inputs[1].press("Tab");
   await page.waitForFunction(() => [...document.querySelectorAll("#tree .tree-node > .row")]
     .some(r => r.textContent.includes("FMS")));
+  // The inspector re-renders after the rename: the value *attribute* only exists in the new DOM.
+  await page.waitForSelector(`${section} input[data-rename][value="FMS"]`);
 
   // Create component from selection.
   const picks = await page.$$(`${section} input[data-pick]`);
   for (const p of picks) await p.check();
+  await page.waitForFunction(() => !document.querySelector('[data-section="architecture"] [data-act="group"]').disabled);
   await page.click(`${section} [data-act="group"]`);
   await page.fill("#modal-root input[name=name]", "AirDataUnit");
   await submitModal();
@@ -100,6 +103,17 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   expect(view.components.length === 1 && view.components[0].badges.includes("composite"), "grouped component");
   const inner = await api("GET", `/api/arch/view/${view.components[0].id}`);
   expect(inner.connectors.length === 1 && inner.connectors[0].issues.length === 0, "connector moved inside");
+
+  // Copy + paste: a deep copy with a fresh name, internals included.
+  await page.check(`${section} input[data-pick]`);
+  await page.click(`${section} [data-act="copy"]`);
+  await page.waitForFunction(() => !document.querySelector('[data-section="architecture"] [data-act="paste"]').disabled);
+  await page.click(`${section} [data-act="paste"]`);
+  await page.waitForSelector(`${section} input[data-rename][value="AirDataUnit1"]`);
+  const after = await api("GET", `/api/arch/view/${arch.id}`);
+  const copy = after.components.find(c => c.name === "AirDataUnit1");
+  const copyInner = await api("GET", `/api/arch/view/${copy.id}`);
+  expect(copyInner.components.length === 2 && copyInner.connectors.length === 1, "pasted a deep copy");
   await page.click('.tab[data-tab="diagram"]');
   await page.click('.diag-mode[data-mode="ibd"]');
   await page.waitForSelector("#diagram svg", { timeout: 10000 });

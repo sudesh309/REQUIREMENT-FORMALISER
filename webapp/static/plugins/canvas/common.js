@@ -5,6 +5,15 @@ export const PORT_KINDS = ["data", "physical", "client", "server"];
 export const INTERFACE_KINDS = new Set(["PortDefinition", "InterfaceDefinition", "ItemDefinition",
                                         "AttributeDefinition"]);
 
+// Component clipboard shared by the inspector and the canvas: Paste deep-copies the
+// copied components into the composition being viewed (POST /api/arch/duplicate {ids, target}).
+export const clipboard = { ids: [], names: [] };
+
+export function copyComponents(ids, names = []) {
+  clipboard.ids = [...ids];
+  clipboard.names = [...names];
+}
+
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;",
                                                      "\"": "&quot;", "'": "&#39;" }[m]));
@@ -83,7 +92,7 @@ export function injectStyles() {
     .btn-action[disabled] { opacity:.45; cursor:not-allowed; }
     .arch-strip { display:flex; flex-wrap:wrap; gap:.25rem; align-items:center; padding:.35rem;
                   background:#f8fafc; border:1px solid #e2e8f0; border-radius:.375rem; }
-    .arch-strip .sep { width:1px; height:1.1rem; background:#cbd5e1; margin:0 .25rem; }
+    [data-section="architecture"] .sep { width:1px; height:1.1rem; background:#cbd5e1; margin:0 .25rem; }
     .arch-table { width:100%; font-size:.8rem; border-collapse:collapse; }
     .arch-table th { text-align:left; font-weight:600; color:#64748b; font-size:.7rem; text-transform:uppercase;
                      letter-spacing:.04em; padding:.25rem .35rem; border-bottom:1px solid #e2e8f0; }
