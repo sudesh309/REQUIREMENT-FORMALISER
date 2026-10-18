@@ -168,6 +168,14 @@ export default async function install(studio) {
     decorateTree(studio);
     if (editor.visible()) editor.refresh();
   });
+  // Selecting a profile, stereotype or property in the containment tree shows it in the open editor.
+  studio.on("select", (el) => {
+    if (!el || !editor.visible()) return;
+    const target = el.kind === "Profile" ? { kind: "profile", id: el.id }
+      : el.kind === "Stereotype" ? { kind: "stereotype", id: el.id }
+      : el.kind === "StereotypeTag" ? { kind: "stereotype", id: el.owner_id } : null;
+    if (target && editor.index?.has(target.id)) editor.select(target.kind, target.id);
+  });
   studio.profiles = { editor, openBatchDialog: () => openBatchDialog(studio) };
 }
 
@@ -521,6 +529,13 @@ class ProfileEditor {
       if (row) { this.select(row.dataset.kind, row.dataset.pfId); tree.focus(); }
     });
     tree.addEventListener("keydown", (e) => this.treeKey(e));
+    // Inside the editor, Delete acts on the editor's selection: it must never reach the
+    // core shortcut that deletes the containment-tree selection.
+    pane.addEventListener("keydown", (e) => {
+      if (e.key !== "Delete" || e.defaultPrevented) return;
+      e.stopPropagation();
+      if (!e.target.closest("input, textarea, select")) { e.preventDefault(); this.command("delete"); }
+    });
   }
 
   async load() {
