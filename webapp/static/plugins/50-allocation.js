@@ -20,11 +20,11 @@ const LS_SCENARIO = "allocation.scenario";
 const STYLE = `
 #tab-allocation { background:#f8fafc; }
 .alloc-toolstrip { display:flex; flex-wrap:wrap; align-items:stretch; background:#fff; border-bottom:1px solid #e2e8f0; padding:.2rem .4rem 0; }
-.alloc-tsg { display:flex; flex-direction:column; justify-content:space-between; padding:0 .55rem; border-right:1px solid #e2e8f0; }
+.alloc-tsg { display:flex; flex-direction:column; justify-content:space-between; padding:0 .4rem; border-right:1px solid #e2e8f0; }
 .alloc-tsg:last-child { border-right:0; }
 .alloc-tsg-body { display:flex; align-items:center; gap:.2rem; flex-wrap:wrap; min-height:2.7rem; }
 .alloc-tsg-label { font-size:.58rem; letter-spacing:.09em; color:#94a3b8; text-align:center; text-transform:uppercase; padding:.05rem 0 .2rem; }
-.alloc-tsb { display:flex; flex-direction:column; align-items:center; gap:.05rem; padding:.15rem .3rem; border-radius:.25rem; font-size:.68rem; color:#334155; border:1px solid transparent; min-width:3.1rem; cursor:pointer; white-space:nowrap; }
+.alloc-tsb { display:flex; flex-direction:column; align-items:center; gap:.05rem; padding:.15rem .3rem; border-radius:.25rem; font-size:.68rem; color:#334155; border:1px solid transparent; min-width:2.9rem; cursor:pointer; white-space:nowrap; }
 .alloc-tsb:hover:not([disabled]) { background:#f1f5f9; border-color:#e2e8f0; }
 .alloc-tsb:focus-visible { outline:2px solid #2563eb; }
 .alloc-tsb[disabled] { opacity:.38; cursor:default; }
@@ -34,7 +34,7 @@ const STYLE = `
 .alloc-chip { font-size:.65rem; padding:.05rem .4rem; border:1px solid #cbd5e1; border-radius:999px; color:#475569; background:#fff; cursor:pointer; }
 .alloc-chip[aria-pressed="true"] { background:#ede9fe; border-color:#c4b5fd; color:#5b21b6; }
 .alloc-filters { display:grid; grid-template-columns:auto auto; gap:.15rem .3rem; align-items:center; font-size:.65rem; color:#64748b; }
-.alloc-filters select { border:1px solid #cbd5e1; border-radius:.25rem; padding:.05rem .2rem; font-size:.7rem; width:8.6rem; background:#fff; }
+.alloc-filters select { border:1px solid #cbd5e1; border-radius:.25rem; padding:.05rem .2rem; font-size:.7rem; width:7.8rem; background:#fff; }
 .alloc-fbar { display:flex; align-items:center; gap:.35rem; padding:.25rem .7rem; border-bottom:1px solid #e2e8f0; background:#f8fafc; color:#94a3b8; }
 .alloc-fbar input { border:1px solid #cbd5e1; border-radius:.25rem; padding:.1rem .4rem; font-size:.72rem; width:10rem; background:#fff; color:#0f172a; }
 .alloc-fbar input:focus { outline:none; border-color:#8b5cf6; box-shadow:0 0 0 2px rgb(139 92 246 / .2); }
@@ -242,9 +242,10 @@ export default function install(studio) {
           </select>
         </div></div><div class="alloc-tsg-label">Show</div></div>
         <div class="alloc-tsg"><div class="alloc-tsg-body">
-          ${tsButton("coverage", "◔", "Coverage", "Coverage of the current scenario")}
+          ${tsButton("coverage", "▥", "Coverage", "Coverage of the current scenario")}
           ${tsButton("chain", "⇶", "Chain", "Allocation chain of the selected element across sets")}
-          ${tsButton("show-arch", "⌖", "Show", "Show the selected element in the architecture")}
+          ${tsButton("show-arch", "◎", "Show", "Show the selected element in the architecture")}
+          ${tsButton("export", "⇩", "Export", "Download the scenario's allocations as CSV")}
           ${tsButton("refresh", "↻", "Refresh", "Reload the allocation editor")}
         </div><div class="alloc-tsg-label">Analyze</div></div>
       </div>
@@ -302,6 +303,7 @@ export default function install(studio) {
     has("chain", !!focusElementId());
     has("show-arch", !!focusElementId());
     has("coverage", !!currentScenario());
+    has("export", !!(currentScenario() && st.matrix));
     p.querySelectorAll("[data-alloc-chip]").forEach((b) => {
       const [axis, k] = b.dataset.allocChip.split(":");
       b.setAttribute("aria-pressed", String((axis === "row" ? st.rowKinds : st.colKinds).has(k)));
@@ -714,6 +716,26 @@ export default function install(studio) {
     }, { submitLabel: "Delete", danger: true });
   }
 
+  function cmdExport() {
+    const m = st.matrix, sc = currentScenario(); if (!m || !sc) return;
+    // Quote every field; neutralise leading formula characters for spreadsheet safety.
+    const q = (v) => {
+      let s = String(v ?? "");
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, "\"\"")}"`;
+    };
+    const head = ["Set", "Scenario", "Source", "Source kind", "Source qualified name",
+                  "Target", "Target kind", "Target qualified name", "Stereotypes", "Description"];
+    const lines = [head.map(q).join(",")];
+    for (const a of m.allocations) {
+      lines.push([a.set, a.scenario, a.source?.name, a.source?.kind, a.source?.qualified_name,
+                  a.target?.name, a.target?.kind, a.target?.qualified_name,
+                  a.stereotypes.map((s) => s.name).join(" "), a.doc].map(q).join(","));
+    }
+    studio.download(`${sc.set.name}-${sc.name}.csv`.replace(/[^\w.-]+/g, "_"), lines.join("\r\n") + "\r\n");
+    studio.log(`Exported ${m.allocations.length} allocation(s) of ${sc.set.name}/${sc.name}`, "ok");
+  }
+
   function toggleCell(src, tgt, allocId) {
     const scenario = st.scenarioId;
     st.queue = st.queue.then(async () => {
@@ -808,7 +830,7 @@ export default function install(studio) {
       if (act && !act.disabled) {
         const a = act.dataset.allocAct;
         const run = { "new-set": cmdNewSet, "new-scenario": cmdNewScenario, duplicate: cmdDuplicate, rename: cmdRename,
-                      delete: cmdDelete, refresh: reload,
+                      delete: cmdDelete, refresh: reload, export: cmdExport,
                       coverage: () => setSideTab("coverage"), chain: () => setSideTab("chain"),
                       "show-arch": () => showInArchitecture(focusElementId()) }[a];
         Promise.resolve(run?.()).catch(() => {});
@@ -957,13 +979,29 @@ export default function install(studio) {
   });
   studio.on("tab-shown", (id) => { st.visible = id === "allocation"; });
   studio.on("model-changed", () => { if (st.visible) reload(); else st.dirty = true; });
+  // Keep the editor in step with the containment tree / inspector selection.
   studio.on("select", (el) => {
-    if (!el || !st.matrix) return;
-    if (el.kind === "Allocation") {
-      if (st.matrix.allocations.some((a) => a.id === el.id) && st.selAlloc !== el.id) {
-        st.selAlloc = el.id; renderMatrix(); renderSide();
+    if (!el) return;
+    if (el.kind === "Allocation" || el.kind === "AllocationScenario" || el.kind === "AllocationSet") {
+      let scId = st.scenarioId;
+      if (el.kind === "Allocation" && el.allocation?.scenario_id) scId = el.allocation.scenario_id;
+      else if (el.kind === "AllocationScenario") scId = el.id;
+      else if (el.kind === "AllocationSet") {
+        const s = st.sets.find((x) => x.id === el.id);
+        if (s && !s.scenarios.some((x) => x.id === scId)) scId = s.scenarios[0]?.id || scId;
       }
-    } else if (!st.selAxis || st.selAxis.id !== el.id) {
+      const changed = scId !== st.scenarioId;
+      const before = `${st.selAlloc}|${JSON.stringify(st.browserSel)}`;
+      st.scenarioId = scId;
+      if (el.kind === "Allocation") st.selAlloc = el.id;
+      if (el.kind === "AllocationSet") st.browserSel = { type: "set", id: el.id };
+      else if (changed || el.kind === "AllocationScenario") st.browserSel = { type: "scenario", id: scId };
+      if (changed) { st.selAxis = null; if (st.visible) reload(); }
+      else if (st.visible && before !== `${st.selAlloc}|${JSON.stringify(st.browserSel)}`) renderAll();
+      return;
+    }
+    if (!st.matrix) return;
+    if (!st.selAxis || st.selAxis.id !== el.id) {
       const axis = st.matrix.rows.some((r) => r.id === el.id) ? "row" : st.matrix.columns.some((c) => c.id === el.id) ? "col" : null;
       if (axis) { st.selAxis = { axis, id: el.id }; renderMatrix(); renderSide(); }
     }

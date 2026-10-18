@@ -78,6 +78,10 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await page.waitForSelector('[data-alloc-card="chain"] svg', { timeout: 10000 });
   await page.click('[data-alloc-side="properties"]');
 
+  // Export the scenario as CSV.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click('[data-alloc-act="export"]')]);
+  expect(download.suggestedFilename() === "L2P-Scenario_1.csv", `csv name ${download.suggestedFilename()}`);
+
   // Filter: unallocated sources only.
   await page.selectOption("#alloc-show", "unallocated");
   await page.waitForFunction(() => document.querySelectorAll("#alloc-matrix tbody tr").length === 1);
@@ -85,6 +89,13 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   expect(rows.length === 1 && rows[0] === "Maintenance", `unallocated rows: ${rows}`);
   await page.selectOption("#alloc-show", "all");
   await page.waitForFunction(() => document.querySelectorAll("#alloc-matrix tbody tr").length === 4);
+
+  // Selecting a scenario in the containment tree switches the editor to it (and back).
+  await page.click('#tree .tree-node .row:has-text("Dual IMA")');
+  await page.waitForFunction(() => document.querySelector("#alloc-mhead .crumb")?.textContent.includes("Dual IMA"));
+  expect(await page.locator("#alloc-matrix td.cell.on").count() === 0, "Dual IMA has no allocations");
+  await page.click('#alloc-browser [data-type="scenario"]:has-text("Scenario 1")');
+  await page.waitForFunction(() => document.querySelector("#alloc-mhead .crumb")?.textContent.includes("Scenario 1"));
 
   // Reload the page: the matrix state comes back from the server.
   const checkPersisted = async () => {
