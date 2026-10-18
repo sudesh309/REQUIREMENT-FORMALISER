@@ -84,7 +84,7 @@ from sysmlv2.relationships import DeriveRequirement, Refine, Satisfy, Trace, Ver
 
 from .diagram import requirements as _dot_requirements
 from .graph_export import _EDGE_SOURCES, register_edge_source
-from .hooks import notify_created
+from .hooks import _CREATED_HOOKS, notify_created, register_created_hook
 from .links import LinkKind, create_link, link_kind, register_link_kind
 from .properties import register_scalar_property
 from .serializer import register_codec, register_repo_codec
@@ -1998,6 +1998,15 @@ def validate_repo(repo) -> Iterator[ValidationIssue]:
                                       + ", ".join(ENUMS[attr]) + ".", e)
 
 
+def _on_created(element: Element, repo) -> None:
+    """Requirements created inside a set by generic paths (core toolbar, POST /api/element,
+    sysml_create_element) get the set's next ID, as if added in the Requirements editor."""
+    if is_requirement(element) and not getattr(element, "req_id", None):
+        rset = set_of(element)
+        if rset is not None:
+            element.req_id = next_req_id(rset)
+
+
 def _confirm_edges(e: Element):
     for r in e.owned_relationships:
         if isinstance(r, Confirm) and r.source is not None and r.target is not None:
@@ -2013,6 +2022,8 @@ def install() -> None:
         register_repo_rule(validate_repo)
     if _confirm_edges not in _EDGE_SOURCES:
         register_edge_source(_confirm_edges)
+    if _on_created not in _CREATED_HOOKS:
+        register_created_hook(_on_created)
 
 
 install()

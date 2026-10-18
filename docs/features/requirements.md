@@ -43,6 +43,8 @@ Requirement fields:
 | Status | `req_status` | draft, reviewed, approved, implemented, verified |
 | Verification method | `verification_method` | test, analysis, inspection, demonstration |
 
+A requirement created inside a set by another path (the core *Req Def* toolbar button,
+`POST /api/element`, `sysml_create_element`) also gets the set's next ID (a created hook).
 Enumerations accept common spellings (`Design Constraint`, `H`, `Approved`, `T`, `pass` ...) and
 store the canonical value; anything else is rejected with a message listing the allowed values.
 Custom attributes (DAL, ATA chapter, owner, ...) come from stereotypes defined with the profiles

@@ -186,6 +186,15 @@ class RequirementsApiTests(WebAppTestCase):
         self.assertIn("Invalid type", e["error"])
         self.call("PATCH", f"/api/element/{r1['id']}", {"props": {"req_type": "Safety", "rationale": "AC 25.1309"}})
         self.assertEqual(self.table()["rows"][0]["type"], "safety")
+        # Requirements made with the generic element API inside a set get the next ID.
+        generic = self.call("POST", "/api/element", {"kind": "RequirementDefinition", "name": "Yaw",
+                                                     "parent": self.set["id"]})
+        self.assertEqual(generic["req_id"], "FCS-2")
+        explicit = self.call("POST", "/api/element", {"kind": "RequirementDefinition", "name": "Trim",
+                                                      "parent": r1["id"], "properties": {"req_id": "FCS-99"}})
+        self.assertEqual(explicit["req_id"], "FCS-99")
+        loose = self.call("POST", "/api/element", {"kind": "RequirementDefinition", "name": "Loose"})
+        self.assertNotIn("req_id", loose)
         # Requirement sets and test cases are creatable through the generic element API too.
         s2 = self.call("POST", "/api/element", {"kind": "RequirementSet", "name": "SRS"})
         self.assertIn("req set", s2["badges"])
