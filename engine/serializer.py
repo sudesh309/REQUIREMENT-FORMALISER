@@ -84,6 +84,34 @@ def _json_safe(value: Any) -> bool:
         return False
 
 
+# Library elements get fresh UUIDs in every process, so references to them are
+# saved by qualified name ("lib:KerML::ScalarValues::Real"): files stay stable
+# across sessions and such typings survive a load.
+_LIB_PREFIX = "lib:"
+
+
+def _libraries() -> tuple:
+    from kerml.library import KERML_LIBRARY
+    from sysmlv2.library import SYSML_LIBRARY
+    return (KERML_LIBRARY, SYSML_LIBRARY)
+
+
+def _ref(e: Element) -> str:
+    root = e.root()
+    if any(root is lib for lib in _libraries()):
+        return _LIB_PREFIX + e.qualified_name
+    return e.element_id
+
+
+def _library_index() -> dict[str, Element]:
+    index: dict[str, Element] = {}
+    for lib in _libraries():
+        for x in lib.walk():
+            index[x.element_id] = x
+            index[_LIB_PREFIX + x.qualified_name] = x
+    return index
+
+
 # -- encode ---------------------------------------------------------------
 
 def _encode_element(e: Element) -> dict:
@@ -104,12 +132,12 @@ def _encode_element(e: Element) -> dict:
         payload["is_derived"] = e.is_derived
         payload["is_end"] = e.is_end
         payload["default_value"] = e.default_value
-        payload["typed_by"] = [t.element_id for t in e.types]
-        payload["subsets"] = [s.target.element_id for s in e.subsettings if s.target]
-        payload["redefines"] = [r.target.element_id for r in e.redefinitions if r.target]
+        payload["typed_by"] = [_ref(t) for t in e.types]
+        payload["subsets"] = [_ref(s.target) for s in e.subsettings if s.target]
+        payload["redefines"] = [_ref(r.target) for r in e.redefinitions if r.target]
     if hasattr(e, "specializations"):
         payload["specializes"] = [
-            s.target.element_id for s in e.specializations if s.target
+            _ref(s.target) for s in e.specializations if s.target
         ]
     # SysML-specific extras ------------------------------------------------
     for attr in ("req_id", "text", "is_conjugated", "portion_kind", "is_variant",
@@ -117,7 +145,7 @@ def _encode_element(e: Element) -> dict:
         if hasattr(e, attr):
             payload[attr] = getattr(e, attr)
     if hasattr(e, "ends"):
-        payload["ends"] = [f.element_id for f in getattr(e, "ends", []) if f]
+        payload["ends"] = [_ref(f) for f in getattr(e, "ends", []) if f]
     doc = next((a.body for a in e.annotations if isinstance(a, Documentation)), None)
     if doc:
         payload["doc"] = doc
@@ -178,7 +206,11 @@ def to_dict(repo: "Repository") -> dict:
     link_classes = tuple(lk.cls for lk in LINK_KINDS)
     elements: list[dict] = []
     links: list[dict] = []
-    for e in repo.all_elements():
+    # Containment order (not registry order), so the same model always saves the same way.
+    ordered = list(repo.root_package.walk())
+    seen = {id(e) for e in ordered}
+    ordered += [e for e in repo.all_elements() if id(e) not in seen]
+    for e in ordered:
         # Relationships are captured by element payloads (structural) or the
         # `links` list (typed links); they are not model elements in their own right.
         if isinstance(e, Relationship) or _in_library(e):
@@ -203,7 +235,8 @@ def to_dict(repo: "Repository") -> dict:
 
 
 def to_json(repo: "Repository", *, indent: int = 2) -> str:
-    return json.dumps(to_dict(repo), indent=indent)
+    """Deterministic JSON (sorted keys, newline at EOF) so saved projects diff cleanly."""
+    return json.dumps(to_dict(repo), indent=indent, sort_keys=True) + "\n"
 
 
 # -- decode ---------------------------------------------------------------
@@ -211,7 +244,8 @@ def to_json(repo: "Repository", *, indent: int = 2) -> str:
 def from_dict(data: dict) -> "Repository":
     from .repository import Repository
     repo = Repository(name=data.get("name", "Project"))
-    by_id: dict[str, Element] = {repo.root_package.element_id: repo.root_package}
+    by_id: dict[str, Element] = _library_index()
+    by_id[repo.root_package.element_id] = repo.root_package
 
     # Files written before links were split out stored Relationship objects as
     # elements; those are rebuilt from payloads/links instead, so drop them.
@@ -226,6 +260,10 @@ def from_dict(data: dict) -> "Repository":
             # Keep the saved id so references to the root stay valid across saves.
             repo.registry.unregister(inst)
             inst.element_id = r["id"]
+            if r.get("doc"):
+                inst.add_annotation(Documentation(body=r["doc"]))
+            if r.get("tool_data"):
+                inst.tool_data = dict(r["tool_data"])
         else:
             cls = _resolve_class(r["class"])
             inst = cls.__new__(cls)
