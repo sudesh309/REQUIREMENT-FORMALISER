@@ -300,10 +300,12 @@ function fillInspector(studio, box, view) {
     const st = app.style || {};
     const sw = st.fill || st.stroke ? swatch(st) : "";
     const icon = st.icon && ICONS[st.icon] ? `<span class="text-slate-500" style="width:14px;display:inline-flex">${svg(ICONS[st.icon])}</span>` : "";
-    const multi = app.groups.filter(g => g.properties.length).length > 1;
+    // Group headings name the declaring stereotype whenever a property is inherited.
+    const withProps = app.groups.filter(g => g.properties.length);
+    const heads = withProps.length > 1 || withProps.some(g => g.id !== app.id);
     const rows = app.groups.map(g => {
       if (!g.properties.length) return "";
-      const head = multi ? `<div class="pf-ghead">${esc(g.stereotype)}</div>` : "";
+      const head = heads ? `<div class="pf-ghead">${esc(g.stereotype)}${g.id !== app.id ? " (inherited)" : ""}</div>` : "";
       return head + g.properties.map(p => propertyEditor(p)).join("");
     }).join("");
     return `
