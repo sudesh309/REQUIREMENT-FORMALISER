@@ -188,7 +188,10 @@ Selecting a **stereotype** shows, top to bottom:
    with a live preview.
 4. **Default stereotypes for new elements inside** (component stereotypes
    only): stereotypes applied automatically to sub-components, ports and
-   connectors created inside an element that carries this stereotype.
+   connectors created inside an element that carries this stereotype. A
+   reference component keeps its ports and internals on its definition, so
+   elements created there also get the defaults of stereotypes applied to the
+   component usages typed by that definition.
 
 ### Stereotypes section of the Properties tab (inspector)
 
@@ -237,6 +240,7 @@ they can be repaired.
 |------|-------------------------|
 | rename a property, stereotype or profile | values and applications kept (values are keyed by the property object) |
 | change a property's unit to a compatible one | values, default, min and max converted (`kg` -> `g`: 2 -> 2000) |
+| change a property's unit to an incompatible one | numbers kept as they are (the property is being redefined) |
 | change type / range / literals | values coerced; values that no longer fit are reset to the default and listed in the response (`reset`) and the log |
 | rename literals in place (same count) | values follow the position |
 | delete a property | its values are removed everywhere |

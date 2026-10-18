@@ -210,6 +210,19 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(matches_category(AllocationSet(name="s"), "Allocation"))
         self.assertTrue(matches_category(FunctionDefinition(name="f"), "Function"))
 
+        class ServiceInterface(PortDefinition):
+            kind = "ServiceInterface"
+
+        class FunctionElement(AttributeUsage):
+            kind = "FunctionElement"
+
+        class Adapter(PartUsage):
+            kind = "Adapter"
+
+        self.assertEqual(categories_of(ServiceInterface(name="s")), ["Interface"])
+        self.assertEqual(categories_of(FunctionElement(name="f")), ["InterfaceElement"])
+        self.assertEqual(categories_of(Adapter(name="a")), ["Component"])
+
 
 class ApplicationTests(unittest.TestCase):
 
@@ -350,6 +363,20 @@ class DefaultStereotypeTests(unittest.TestCase):
         self.assertEqual([a.stereotype.name for a in stereotypes_on(c)], ["Module"])
         self.assertEqual([a.stereotype.name for a in stereotypes_on(k)], ["A429Bus"])
         self.assertEqual(stereotypes_on(loose), [])
+
+    def test_defaults_reach_the_definition_of_a_reference_component(self):
+        """Ports of a reference component live on its definition (engine/structure.py)."""
+        arch, _fmc, _adc = _system(self.repo)
+        fcc_def = _new(self.repo, PartDefinition, "FCCDef", self.repo.root_package)
+        fcc = PartUsage(name="FCC")
+        fcc.add_type(fcc_def)
+        arch.own(fcc)
+        notify_created(fcc, self.repo)
+        P.apply_stereotype(self.repo, fcc, self.lru)          # on the usage, as on the canvas
+        p = _new(self.repo, PortUsage, "a429_in", fcc_def)
+        self.assertEqual([a.stereotype.name for a in stereotypes_on(p)], ["A429Port"])
+        other = _new(self.repo, PartDefinition, "Unused", self.repo.root_package)
+        self.assertEqual(stereotypes_on(_new(self.repo, PortUsage, "q", other)), [])
 
     def test_defaults_are_inherited_from_base(self):
         P.update_stereotype(self.repo, self.lru, defaults={"port": None})

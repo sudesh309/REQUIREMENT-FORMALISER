@@ -1423,6 +1423,20 @@ def validate_profiles(repo) -> Iterator[ValidationIssue]:
 # Hooks: default stereotypes, cleanup on removal
 # ---------------------------------------------------------------------------
 
+def _default_hosts(repo, host: Element) -> list[Element]:
+    """Elements whose stereotypes give defaults to elements created in ``host``.
+
+    A reference component keeps its ports, parts and connectors on its
+    definition (engine/structure.py), so a definition also takes the defaults
+    of the stereotypes applied to the component usages typed by it.
+    """
+    hosts = [host]
+    if "PartDefinition" in kind_names(host):
+        hosts += [u for u in model_elements(repo) if "PartUsage" in kind_names(u)
+                  and any(t is host for t in getattr(u, "types", None) or [])]
+    return hosts
+
+
 def _on_created(e: Element, repo) -> None:
     """Default stereotypes for new ports / connectors / components and new root architectures."""
     try:
@@ -1433,11 +1447,12 @@ def _on_created(e: Element, repo) -> None:
                 else "component" if "PartUsage" in k else None)
         host = e.owner
         if slot and host is not None:
-            for a in stereotypes_on(host):
-                d = a.stereotype.effective_default(slot)
-                if d is not None and not d.is_abstract and d.can_apply_to(e) \
-                        and application_of(e, d) is None:
-                    d.apply(e)
+            for h in _default_hosts(repo, host):
+                for a in stereotypes_on(h):
+                    d = a.stereotype.effective_default(slot)
+                    if d is not None and not d.is_abstract and d.can_apply_to(e) \
+                            and application_of(e, d) is None:
+                        d.apply(e)
         if matches_category(e, "Architecture") and isinstance(e.owner, Package):
             for p in profiles_of(repo):
                 r = p.root_stereotype
