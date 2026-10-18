@@ -840,6 +840,7 @@ export default async function install(studio) {
         <span class="text-slate-500">${esc(r.qualified_name)}</span>
         <span class="flex-1"></span>
         <button class="rq-mini" data-rq="d-nav" title="Select in the containment tree">Show in tree</button>
+        <button class="rq-mini" data-rq="d-props" title="Open in the Properties tab (stereotypes and custom attributes)">Properties</button>
         <button class="rq-mini" data-rq="d-diagram" title="Open the traceability diagram around this requirement">Trace diagram</button>
         <button class="rq-mini" data-rq="d-highlight" title="Highlight linked elements on the canvas">Highlight links</button>
       </div>
@@ -848,7 +849,7 @@ export default async function install(studio) {
           <label>Summary <input class="input" data-d="summary" value="${esc(r.summary || "")}" /></label>
           <label>Description <textarea class="input" rows="4" data-d="description" placeholder="The system shall …">${esc(r.description || "")}</textarea></label>
           <label>Rationale <textarea class="input" rows="2" data-d="rationale">${esc(r.rationale || "")}</textarea></label>
-          ${stereo ? `<div class="mt-1"><div class="text-slate-500 text-xs mb-1">Stereotype properties</div>${stereo}</div>` : ""}
+          ${stereo ? `<div class="mt-1"><div class="text-slate-500 text-xs mb-1">Custom attributes (stereotypes; edit them under <b>Properties</b>)</div>${stereo}</div>` : ""}
         </div>
         <div>
           <div class="flex items-center gap-2 mb-1"><span class="w-24 text-slate-500">Implementation</span>${implBar(r.implementation)}</div>
@@ -869,6 +870,7 @@ export default async function install(studio) {
       });
     });
     q("d-nav").onclick = () => studio.emit("navigate", { id: r.id });
+    q("d-props").onclick = () => { studio.emit("navigate", { id: r.id }); studio.switchTab("properties"); };
     q("d-diagram").onclick = () => run(openDiagramFor)(r.id);
     q("d-highlight").onclick = () => highlightLinks(r.id, S.detailLinks);
     q("d-verify").onclick = run(async () => {
