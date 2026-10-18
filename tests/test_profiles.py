@@ -571,6 +571,34 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(P.get_property_value(v, "lvl"), "7")
         self.assertEqual(to_json(from_json(to_json(repo))), to_json(repo))
 
+    def test_invalid_saved_state_still_loads(self):
+        """A file with state the editing APIs refuse opens; the validator reports it."""
+        from kerml.stereotypes import StereotypeApplication
+        repo, prof, eq, lru, port, bus = _avionics()
+        arch, fmc, adc = _system(repo)
+        app = P.apply_stereotype(repo, fmc, lru, {"mass": 2})
+        app.raw_slots()[eq.tags[0]] = -5.0                       # below the minimum 0 kg
+        adc.add_annotation(StereotypeApplication(port, {}))       # wrong kind ...
+        adc.add_annotation(StereotypeApplication(port, {}))       # ... and applied twice
+        arch.add_annotation(StereotypeApplication(eq, {}))        # abstract
+        data = json.loads(to_json(repo))
+        for r in data["elements"]:                                # a property deleted by hand
+            for a in r.get("stereotypes", []):
+                a["values"]["gone"] = 1
+        loaded = from_json(json.dumps(data))
+        fmc2 = loaded.resolve("AvSystem::FMC")
+        self.assertEqual(P.get_property_value(fmc2, "Avionics.LRU.mass"), -5.0)
+        self.assertEqual(len(stereotypes_on(loaded.resolve("AvSystem::ADC"))), 2)
+        rules = {i.rule for i in Validator().validate(loaded) if i.rule.startswith("profile")}
+        for rule in ("profile.value.invalid", "profile.application.duplicate",
+                     "profile.application.applies_to", "profile.application.abstract"):
+            self.assertIn(rule, rules)
+        # The editing API stays strict after loading.
+        with self.assertRaises(P.ProfileError):
+            P.apply_stereotype(loaded, fmc2, P.find_stereotype(loaded, "Avionics.LRU"))
+        with self.assertRaises(P.ProfileError):
+            P.set_property_value(loaded, fmc2, "Avionics.LRU.mass", -1)
+
     def test_import_log_round_trip(self):
         repo = self._project()
         text = P.export_profile_json(P.find_profile(repo, "Avionics"))

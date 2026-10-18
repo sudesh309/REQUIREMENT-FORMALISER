@@ -5,9 +5,9 @@ All logic lives in :mod:`engine.profiles`. Stereotypes are addressed by id,
 ``Profile.Stereotype.property``. Numeric values may carry a compatible unit
 (``"2.5 lb"`` for a kg property) or be an arithmetic expression (``"2*0.75"``).
 
-The pre-existing ``sysml_apply_stereotype`` tool (mcp_server/server.py) goes
-through ``Stereotype.apply`` and therefore gets the same value checks; it
-takes a stereotype id or ``Profile::Stereotype`` qualified name.
+``sysml_apply_stereotype`` here replaces the core tool of the same name (same
+arguments and result keys): it also accepts ``Profile.Stereotype`` and unique
+bare names, dotted value keys, and refuses duplicates with a clear message.
 """
 from __future__ import annotations
 
@@ -171,6 +171,18 @@ def tool_delete_stereotype_property(stereotype: str, property: str) -> dict:
 
 
 # --- applications -------------------------------------------------------------
+
+def tool_apply_stereotype(stereotype: str, target: str, values: Optional[dict] = None) -> dict:
+    """Extends the core ``sysml_apply_stereotype`` (same name and result keys)."""
+    def run():
+        repo = _repo()
+        e = P.find_element(repo, target)
+        st = P.find_stereotype(repo, stereotype)
+        app = P.apply_stereotype(repo, e, st, values or {})
+        return {"applied": st.name, "stereotype": st.full_name, "to": e.qualified_name,
+                "values": app.values, "stereotypes": P.element_stereotypes(e)}
+    return _call(run)
+
 
 def tool_remove_stereotype(target: str, stereotype: Optional[str] = None) -> dict:
     def run():
@@ -340,6 +352,15 @@ TOOLS: list[dict] = [
      "inputSchema": _schema({"stereotype": {"type": "string"}, "property": {"type": "string"}},
                             ["stereotype", "property"]),
      "handler": tool_delete_stereotype_property},
+    {"name": "sysml_apply_stereotype",
+     "description": "Apply a stereotype to an element. stereotype: id, 'Profile.Stereotype', "
+                    "'Pkg::Stereotype' or a unique name. Optional initial values keyed by "
+                    "property name or 'Profile.Stereotype.prop' are checked (type, range, "
+                    "literals) and converted from compatible units ('3 lb' into kg). Abstract, "
+                    "non-applicable (applies-to) and duplicate applications are refused.",
+     "inputSchema": _schema({"stereotype": {"type": "string"}, "target": {"type": "string"},
+                             "values": {"type": "object"}}, ["stereotype", "target"]),
+     "handler": tool_apply_stereotype},
     {"name": "sysml_remove_stereotype",
      "description": "Remove an applied stereotype from an element (all of them if 'stereotype' is omitted).",
      "inputSchema": _schema({"target": {"type": "string"}, "stereotype": {"type": "string"}}, ["target"]),

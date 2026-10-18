@@ -79,6 +79,25 @@ class ProfileToolTests(unittest.TestCase):
         ok("sysml_remove_stereotype", target=self.fmc["id"], stereotype="Avionics.LRU")
         self.assertEqual(ok("sysml_get_stereotype_properties", target=self.fmc["id"])["stereotypes"], [])
 
+    def test_apply_tool_is_extended(self):
+        self._profile()
+        # one tool of that name: the profiles plugin replaced the core tool in place
+        self.assertEqual([t["name"] for t in M.TOOLS].count("sysml_apply_stereotype"), 1)
+        out = ok("sysml_apply_stereotype", stereotype="Avionics.LRU", target=self.fmc["id"],
+                 values={"Avionics.LRU.mass": "2*1.5", "dal": "a"})
+        self.assertEqual((out["applied"], out["stereotype"]), ("LRU", "Avionics.LRU"))
+        self.assertEqual(out["values"], {"mass": 3.0, "dal": "A"})
+        self.assertEqual(out["stereotypes"][0]["qualified_name"], "Avionics.LRU")
+        dup = call("sysml_apply_stereotype", stereotype="LRU", target=self.fmc["id"])
+        self.assertIn("already applied", dup["error"])
+        ok("sysml_create_profile", name="Other")
+        ok("sysml_add_stereotype", profile="Other", name="LRU")
+        amb = call("sysml_apply_stereotype", stereotype="LRU", target=self.arch["id"])
+        self.assertIn("ambiguous", amb["error"])
+        bad = call("sysml_apply_stereotype", stereotype="Avionics.LRU", target=self.arch["id"],
+                   values={"mass": "1 W"})
+        self.assertIn("cannot convert", bad["error"])
+
     def test_batch_and_delete(self):
         self._profile()
         ok("sysml_create_element", kind="PartUsage", name="ADC", parent=self.arch["id"])

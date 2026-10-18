@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from typing import Any, Iterable, Optional
 
 from .elements import Annotation, Element
@@ -592,9 +593,38 @@ class Stereotype(Namespace):
 
     def apply(self, target: Element, values: Optional[dict[str, Any]] = None
               ) -> "StereotypeApplication":
-        """Apply to ``target`` with optional initial values (checked and coerced)."""
+        """Apply to ``target`` with optional initial values (checked and coerced).
+
+        When the project loader (``engine.serializer``) restores a saved
+        application, nothing is refused: a saved file may hold state the
+        editing APIs would reject (an out-of-range value, a duplicate or an
+        abstract application written by hand or by an older version). Such
+        state is kept as saved, so the project still opens and the validator
+        reports it instead.
+        """
+        if _called_by_loader():
+            return self.restore(target, values or {})
         self.check_applicable(target)
         app = StereotypeApplication(self, values or {})
+        target.add_annotation(app)
+        return app
+
+    def restore(self, target: Element, values: dict[str, Any]) -> "StereotypeApplication":
+        """Re-attach a saved application without checks (see :meth:`apply`).
+
+        Values are coerced when possible and kept as saved otherwise; values
+        of properties the stereotype no longer declares are dropped.
+        """
+        app = StereotypeApplication(self, {})
+        declared = {t.name: t for t in self.all_tags()}
+        for k, v in (values or {}).items():
+            tag = declared.get(k)
+            if tag is None:
+                continue
+            try:
+                app.raw_slots()[tag] = tag.coerce(v)
+            except (StereotypeError, ValueError, TypeError):
+                app.raw_slots()[tag] = v
         target.add_annotation(app)
         return app
 
@@ -750,6 +780,15 @@ class StereotypeApplication(Annotation):
 
     def __repr__(self) -> str:
         return f"<<{self.stereotype.name} {self.values}>>"
+
+
+def _called_by_loader() -> bool:
+    """Is the caller of :meth:`Stereotype.apply` the project loader (engine.serializer)?"""
+    try:
+        frame = sys._getframe(2)      # 0: this helper, 1: Stereotype.apply, 2: its caller
+    except ValueError:                # pragma: no cover - shallow stack
+        return False
+    return frame.f_globals.get("__name__") == "engine.serializer"
 
 
 def stereotypes_on(e: Element) -> list[StereotypeApplication]:
