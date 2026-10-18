@@ -16,16 +16,17 @@ const STYLES = `
 .rq-toolstrip { display:flex; flex-wrap:wrap; align-items:stretch; background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:4px 4px 0; }
 .rq-ts-section { display:flex; flex-direction:column; justify-content:space-between; padding:0 6px; border-right:1px solid #e2e8f0; }
 .rq-ts-buttons { display:flex; gap:2px; align-items:flex-start; }
-.rq-ts-btn { display:flex; flex-direction:column; align-items:center; gap:2px; min-width:46px; padding:3px 5px; border-radius:4px; font-size:11px; line-height:1.1; color:#334155; white-space:nowrap; }
+.rq-ts-btn { display:flex; flex-direction:column; align-items:center; gap:2px; min-width:40px; padding:3px 4px; border-radius:4px; font-size:11px; line-height:1.1; color:#334155; white-space:nowrap; text-align:center; }
 .rq-ts-btn:hover:not(:disabled) { background:#e2e8f0; }
 .rq-ts-btn:focus-visible { outline:2px solid #2563eb; }
 .rq-ts-btn:disabled { opacity:.35; cursor:not-allowed; }
 .rq-ts-btn.on { background:#dbeafe; color:#1d4ed8; }
 .rq-ts-icon { font-size:16px; line-height:18px; color:#1d4ed8; }
 .rq-ts-label { font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:#94a3b8; text-align:center; padding:2px 0 3px; }
-.rq-ts-col { display:flex; flex-direction:column; gap:3px; justify-content:center; }
-.rq-ts-select { font-size:11px; border:1px solid #cbd5e1; border-radius:4px; padding:2px 4px; background:#fff; max-width:170px; }
-.rq-ts-note { font-size:10px; color:#64748b; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rq-ts-col { display:flex; flex-direction:column; gap:2px; justify-content:center; }
+.rq-ts-select { font-size:11px; border:1px solid #cbd5e1; border-radius:4px; padding:2px 4px; background:#fff; width:136px; }
+.rq-ts-note { font-size:10px; line-height:12px; color:#64748b; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rq-ts-note.sel { color:#1d4ed8; }
 .rq-subbar { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; border-bottom:1px solid #e2e8f0; font-size:12px; }
 .rq-seg { display:inline-flex; border:1px solid #cbd5e1; border-radius:5px; overflow:hidden; }
 .rq-seg button { padding:2px 9px; font-size:12px; color:#475569; background:#fff; }
@@ -206,14 +207,15 @@ export default async function install(studio) {
   reqPane = studio.registerTab({
     id: "requirements", title: "Requirements", order: 40,
     mount(pane) {
+      reqPane = pane;
       pane.innerHTML = `
       <div class="rq-root" data-rq="root">
         <div class="rq-toolstrip" role="toolbar" aria-label="Requirements toolstrip">
           <div class="rq-ts-section"><div class="rq-ts-buttons">
             <div class="rq-ts-col"><select class="rq-ts-select" data-rq="set-select" title="Requirement set shown"></select>
               <span class="rq-ts-note" data-rq="set-note"></span></div>
-            <button class="rq-ts-btn" data-rq="new-set" title="New requirement set"><span class="rq-ts-icon">▤</span>New Set</button>
-            <button class="rq-ts-btn" data-rq="set-props" title="Rename, change ID prefix or delete the set"><span class="rq-ts-icon">✎</span>Set…</button>
+            <button class="rq-ts-btn" data-rq="new-set" title="New requirement set"><span class="rq-ts-icon">▤</span>New<br>Set</button>
+            <button class="rq-ts-btn" data-rq="set-props" title="Rename, change ID prefix or delete the set"><span class="rq-ts-icon">✎</span>Set<br>Properties</button>
           </div><div class="rq-ts-label">Set</div></div>
           <div class="rq-ts-section"><div class="rq-ts-buttons">
             <button class="rq-ts-btn" data-rq="add" title="Add requirement after the selected one (Insert)"><span class="rq-ts-icon">＋</span>Add</button>
@@ -227,14 +229,15 @@ export default async function install(studio) {
             <button class="rq-ts-btn" data-rq="outdent" title="Move up one level (Alt+Shift+←)"><span class="rq-ts-icon">⇤</span>Outdent</button>
           </div><div class="rq-ts-label">Arrange</div></div>
           <div class="rq-ts-section"><div class="rq-ts-buttons">
-            <div class="rq-ts-col"><select class="rq-ts-select" data-rq="link-type" title="Link type"></select>
-              <span class="rq-ts-note" data-rq="sel-note" title="Current model selection (tree / canvas)">Selection: none</span></div>
-            <button class="rq-ts-btn" data-rq="link-to" title="Link the selected requirement with the selected model element(s)"><span class="rq-ts-icon">⇠</span>Link to Selection</button>
-            <button class="rq-ts-btn" data-rq="link-from" title="Selected model element(s) become the link source"><span class="rq-ts-icon">⇢</span>Link from Selection</button>
+            <div class="rq-ts-col"><select class="rq-ts-select" data-rq="link-type" title="Link type used by Link to / from Selection"></select>
+              <span class="rq-ts-note" data-rq="link-dir" title="Link direction (source → destination)"></span>
+              <span class="rq-ts-note sel" data-rq="sel-note" title="Current model selection (tree / canvas)">Selection: none</span></div>
+            <button class="rq-ts-btn" data-rq="link-to" title="Link the selected requirement with the selected model element(s)"><span class="rq-ts-icon">⇠</span>Link to<br>Selection</button>
+            <button class="rq-ts-btn" data-rq="link-from" title="Selected model element(s) become the link source"><span class="rq-ts-icon">⇢</span>Link from<br>Selection</button>
           </div><div class="rq-ts-label">Link</div></div>
           <div class="rq-ts-section"><div class="rq-ts-buttons">
-            <button class="rq-ts-btn" data-rq="add-test" title="Add a test case to the set"><span class="rq-ts-icon">⚗</span>Test Case</button>
-            <button class="rq-ts-btn" data-rq="clear-suspect" title="Clear every suspect link of the selected requirement"><span class="rq-ts-icon">⚠</span>Clear Suspect</button>
+            <button class="rq-ts-btn" data-rq="add-test" title="Add a test case to the set"><span class="rq-ts-icon">⚗</span>Test<br>Case</button>
+            <button class="rq-ts-btn" data-rq="clear-suspect" title="Clear every suspect link of the selected requirement"><span class="rq-ts-icon">⚠</span>Clear<br>Suspect</button>
           </div><div class="rq-ts-label">Verify / Track</div></div>
           <div class="rq-ts-section"><div class="rq-ts-buttons">
             <button class="rq-ts-btn" data-rq="import" title="Import CSV or ReqIF"><span class="rq-ts-icon">⭳</span>Import</button>
@@ -255,8 +258,9 @@ export default async function install(studio) {
       tbody = q("tbody"); tableWrap = q("table-wrap"); detailEl = q("detail"); subbarEl = q("subbar");
       setSelect = q("set-select"); selNote = q("sel-note"); splitter = q("splitter"); theadRow = q("thead");
       q("link-type").innerHTML = meta.link_types.map((t) =>
-        opt(t.name, `${ICONS[t.name]} ${t.label}  (${shortRule(t.source)} → ${shortRule(t.target)})`, t.name === S.linkType)).join("");
-      q("link-type").addEventListener("change", (e) => { S.linkType = e.target.value; });
+        opt(t.name, `${ICONS[t.name]} ${t.label}`, t.name === S.linkType)).join("");
+      q("link-type").addEventListener("change", (e) => setLinkType(e.target.value));
+      setLinkType(S.linkType);
       setSelect.addEventListener("change", run(async (e) => { S.setId = e.target.value; S.selId = null; await loadTable(); }));
       wireToolstrip(pane);
       wireTable();
@@ -267,6 +271,19 @@ export default async function install(studio) {
 
   function shortRule(rule) {
     return { requirement: "requirement", test: "test case", design: "design element", any: "any" }[rule] || rule;
+  }
+
+  // The toolstrip link-type picker; the note under it spells out the direction.
+  function setLinkType(name) {
+    S.linkType = name;
+    const t = typeMeta[name];
+    const sel = reqPane?.querySelector('[data-rq="link-type"]');
+    if (sel && sel.value !== name) sel.value = name;
+    const note = reqPane?.querySelector('[data-rq="link-dir"]');
+    if (note && t) {
+      note.textContent = `${shortRule(t.source)} → ${shortRule(t.target)}`;
+      note.title = t.description;
+    }
   }
 
   function wireToolstrip(pane) {
@@ -501,6 +518,7 @@ export default async function install(studio) {
   function selectRow(id) {
     if (S.selId === id) return;
     S.selId = id;
+    S.tm.element = id;   // the traceability diagram follows the latest selection
     tbody.querySelectorAll("tr.sel").forEach((t) => t.classList.remove("sel"));
     tbody.querySelector(`tr[data-id="${CSS.escape(id)}"]`)?.classList.add("sel");
     renderDetail();
@@ -925,7 +943,7 @@ export default async function install(studio) {
       ["Add requirement after", () => addRequirement(false)],
       ["Add child requirement", () => addRequirement(true)],
       null,
-      ...meta.link_types.map((t) => [`Link to Selection as ${t.label}`, () => { S.linkType = t.name; reqPane.querySelector('[data-rq="link-type"]').value = t.name; return linkWithSelection("to"); }]),
+      ...meta.link_types.map((t) => [`Link to Selection as ${t.label}`, () => { setLinkType(t.name); return linkWithSelection("to"); }]),
       [`Link from Selection (${type.label})`, () => linkWithSelection("from")],
       null,
       ["Indent", () => moveSelected("indent"), !!reqPane.querySelector('[data-rq="indent"]').disabled],
@@ -1019,6 +1037,7 @@ export default async function install(studio) {
   tmPane = studio.registerTab({
     id: "traceability", title: "Traceability", order: 45,
     mount(pane) {
+      tmPane = pane;
       pane.innerHTML = `
       <div class="rq-root" data-tm="root">
         <div class="rq-toolstrip" role="toolbar" aria-label="Traceability toolstrip">
@@ -1160,7 +1179,8 @@ export default async function install(studio) {
     const candidates = rows();
     const sel = studio.getSelection()[0];
     const selNode = sel ? studio.state.treeIndex.get(sel) : null;
-    if (!S.tm.element) S.tm.element = S.selId || candidates[0]?.id || "";
+    const exists = (id) => !!id && (candidates.some((r) => r.id === id) || studio.state.treeIndex.has(id));
+    if (!exists(S.tm.element)) S.tm.element = (exists(S.selId) && S.selId) || candidates[0]?.id || "";
     let optsHtml = candidates.map((r) => opt(r.id, reqLabel(r), r.id === S.tm.element)).join("");
     if (selNode && !candidates.some((r) => r.id === sel)) optsHtml = opt(sel, `Selection: ${selNode.name}`, sel === S.tm.element) + optsHtml;
     if (S.tm.element && !candidates.some((r) => r.id === S.tm.element) && S.tm.element !== sel) {
@@ -1217,17 +1237,27 @@ export default async function install(studio) {
     box.querySelector('[data-insp="link"]').onclick = run(() => linkRequirementDialog(el));
   }
 
+  // Requirements of every set (the Requirements tab may be showing just one), grouped by set.
+  async function allRequirementOptions(excludeId) {
+    const t = await api("GET", "/api/req/table");
+    const groups = t.sets.map((s) => {
+      const items = t.rows.filter((r) => r.set_id === s.id && r.id !== excludeId);
+      return items.length ? `<optgroup label="${esc(s.name)}">${items.map((r) =>
+        opt(r.id, `${"  ".repeat(r.depth)}${reqLabel(r)}`)).join("")}</optgroup>` : "";
+    }).join("");
+    return { html: groups, count: t.rows.filter((r) => r.id !== excludeId).length };
+  }
+
   async function linkRequirementDialog(el) {
-    if (!S.table) await loadTable();
-    const all = rows().filter((r) => r.id !== el.id);
-    if (!all.length) { studio.log("There are no requirements to link to yet.", "warning"); return; }
+    const all = await allRequirementOptions(el.id);
+    if (!all.count) { studio.log("There are no requirements to link to yet.", "warning"); return; }
     const category = el.requirement ? "requirement" : (el.verification_result ? "test" : "design");
     const types = category === "requirement" ? ["derive", "refine", "relate", "confirm"]
       : category === "test" ? ["verify", "confirm", "relate"] : ["implement", "confirm", "relate"];
     openModal(`Link ${el.name || ""} to a requirement`, `
       <label class="block text-sm">Link type <select class="input" name="type">${types.map((t) =>
         opt(t, `${ICONS[t]} ${typeMeta[t].label}: ${el.name} ${OUTGOING[t]} the requirement`)).join("")}</select></label>
-      <label class="block text-sm">Requirement <select class="input" name="target">${all.map((r) => opt(r.id, reqLabel(r))).join("")}</select></label>
+      <label class="block text-sm">Requirement <select class="input" name="target">${all.html}</select></label>
     `, async (o) => {
       const l = await api("POST", "/api/req/links", { type: o.type, source: el.id, target: o.target });
       studio.log(`Linked: ${otherLabel(l.source)} ${l.verb} ${otherLabel(l.target)}`, "ok");
@@ -1310,6 +1340,10 @@ export default async function install(studio) {
   });
   studio.on("select", (el) => {
     updateSelectionNote();
+    if (el?.traceable && el.id !== S.tm.element) {
+      S.tm.element = el.id;
+      if (S.visible.tm && S.tm.view === "diagram") run(loadTraceability)();
+    }
     if (el?.requirement && rowById(el.id) && S.visible.req) selectRow(el.id);
   });
   studio.on("selection-changed", updateSelectionNote);
