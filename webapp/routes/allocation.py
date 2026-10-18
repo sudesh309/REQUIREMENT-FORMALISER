@@ -47,11 +47,11 @@ from webapp.core import (
 
 
 def _api(fn: Callable) -> Callable:
-    """Turn AllocationError into a JSON error carrying its status code."""
+    """URL-decode path parameters; turn AllocationError into a JSON error with its status."""
     @functools.wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any):
+    def wrapper(req: dict, **path: str):
         try:
-            return fn(*args, **kwargs)
+            return fn(req, **{k: urllib.parse.unquote(v) for k, v in path.items()})
         except AllocationError as ex:
             return err(str(ex), ex.status)
     return wrapper
@@ -60,7 +60,7 @@ def _api(fn: Callable) -> Callable:
 def _find(ref: Any, what: str):
     if not isinstance(ref, str) or not ref:
         raise AllocationError(f"{what} is required")
-    e = session().find(urllib.parse.unquote(ref))
+    e = session().find(ref)
     if e is None:
         raise AllocationError(f"{what} {ref!r} not found", 404)
     return e
