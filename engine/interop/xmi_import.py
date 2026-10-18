@@ -158,6 +158,7 @@ class _XmiImporter:
         self.generalizations: list[tuple[ET.Element, Element]] = []
         self.links: list[tuple[str, ET.Element]] = []
         self.ports: list[tuple[ET.Element, PortUsage]] = []
+        self.pending_stereotypes: list[tuple[str, Element]] = []
         self.created_ids: set[str] = set()
 
     # --- indexing -------------------------------------------------------------
@@ -233,6 +234,8 @@ class _XmiImporter:
             self.report.created.append(e.element_id)
         if ident:
             self.elements[ident] = e
+        if node.get("isAbstract") in ("true", "false") and not isinstance(e, Package):
+            e.is_abstract = node.get("isAbstract") == "true"
         self.repo.registry.register_tree(e)
         self.comments(node, e)
         return e
@@ -326,7 +329,7 @@ class _XmiImporter:
                 if cls is not None:
                     sub = self.make(cls, child, e)
                     self.classifier_content(child, sub)
-        self.custom_stereotypes(ident, e)
+        self.pending_stereotypes.append((ident, e))
 
     # --- features -----------------------------------------------------------------
     def type_of(self, node: ET.Element) -> Optional[Element]:
@@ -400,7 +403,7 @@ class _XmiImporter:
                     dv = dnode.get("value")
                 if dv is not None:
                     f.default_value = infer_scalar(dv)
-            self.custom_stereotypes(ident, f)
+            self.pending_stereotypes.append((ident, f))
 
     def flow_direction(self, ident: str, stereo: str) -> FeatureDirection:
         d = (self.sysml_attr(ident, stereo, "direction") or "inout").lower()
@@ -448,7 +451,7 @@ class _XmiImporter:
             if not conn.name:
                 names = [x.name or "?" for x in ends]
                 conn.name = f"connect_{'_'.join(names)}" if names else None
-            self.custom_stereotypes(_xattr(node, "id") or "", conn)
+            self.pending_stereotypes.append((_xattr(node, "id") or "", conn))
 
     def create_generalizations(self) -> None:
         for node, e in self.generalizations:
@@ -553,6 +556,8 @@ class _XmiImporter:
         self.create_generalizations()
         self.port_directions()
         self.create_connectors()
+        for ident, e in self.pending_stereotypes:
+            self.custom_stereotypes(ident, e)
         self.repo.registry.register_tree(self.repo.root_package)
         for e in list(self.repo.root_package.walk()):
             if e.element_id in self.created_ids and not isinstance(e, Stereotype):

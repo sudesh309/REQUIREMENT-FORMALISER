@@ -219,6 +219,7 @@ def rule_catalog(found: Iterable[str] = ()) -> list[dict]:
 def run_model_check(repo, *, severities: Optional[Iterable[str]] = None,
                     rules: Optional[Iterable[str]] = None) -> dict:
     """Validate `repo` and return issues (optionally filtered) with counts and the rule catalogue."""
+    install()
     issues = Validator().validate(repo)
     rows = []
     for i in issues:

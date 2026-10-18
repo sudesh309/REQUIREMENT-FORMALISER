@@ -21,6 +21,7 @@ import csv
 import io
 import re
 import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 from typing import Any, Iterable
 from xml.sax.saxutils import escape, quoteattr
@@ -92,7 +93,10 @@ def _read_member(zf: zipfile.ZipFile, name: str) -> bytes:
     info = zf.getinfo(name)
     if info.file_size > MAX_ARCHIVE_BYTES:
         raise InteropError(f"{name} is too large")
-    return zf.read(info)
+    try:
+        return zf.read(info)
+    except (zipfile.BadZipFile, zlib.error, EOFError) as ex:
+        raise InteropError(f"corrupt archive member {name}: {ex}") from None
 
 
 # --- XLSX writer ---------------------------------------------------------------

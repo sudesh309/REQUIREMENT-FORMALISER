@@ -708,7 +708,7 @@ class _Importer:
             e = next((c for c in owner.owned_elements
                       if c.name == spec.name and type(c) is spec.cls), None)
         if e is not None:
-            spec.before = _encode_element(e)
+            spec.before = _snapshot(e)
             if e.owner is not owner:
                 if any(x is owner for x in e.walk()):
                     raise InteropError(f"{spec.where}: cannot move an element into itself")
@@ -952,7 +952,6 @@ class _Importer:
     # --- driver -----------------------------------------------------------------
     def run(self) -> ImportReport:
         from engine.hooks import notify_created
-        from engine.serializer import _encode_element
         self.parse_rows()
         self.create_all()
         self.import_profiles()          # after elements: a profile may be a package row
@@ -971,11 +970,18 @@ class _Importer:
             eid = spec.element.element_id  # type: ignore[union-attr]
             if spec.created:
                 self.report.created.append(eid)
-            elif spec.before != _encode_element(spec.element):  # type: ignore[arg-type]
+            elif spec.before != _snapshot(spec.element):  # type: ignore[arg-type]
                 self.report.updated.append(eid)
             else:
                 self.report.unchanged.append(eid)
         return self.report
+
+
+def _snapshot(e: Element) -> str:
+    """Serialized form of one element (a detached copy, to detect updates)."""
+    import json
+    from engine.serializer import _encode_element
+    return json.dumps(_encode_element(e), sort_keys=True, default=str)
 
 
 def _join_errors(errors: list[str], limit: int = 25) -> str:
@@ -1057,10 +1063,13 @@ class ModelBuilder:
         """A component; without `parent_id` (and `reference_id`) it is an architecture."""
         ident = self._id(id)
         if kind is None:
-            kind = "PartUsage" if (parent_id and self._kinds.get(parent_id) in
-                                   ("PartDefinition", "PartUsage")) or reference_id \
-                else "PartDefinition"
-        self._kinds[ident] = kind
+            if reference_id or self._kinds.get(parent_id or "") in ("PartDefinition", "PartUsage"):
+                kind = "PartUsage"
+            elif not parent_id or parent_id in self._kinds:
+                kind = "PartDefinition"
+            else:
+                kind = ""        # parent outside this builder: the importer decides
+        self._kinds[ident] = kind or "PartUsage"
         row = {"ID": ident, "Name": name, "Kind": kind, "Parent ID": parent_id or self.root_id,
                "Reference ID": reference_id or "", "Multiplicity": multiplicity or "",
                "Documentation": doc, **extra}

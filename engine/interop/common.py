@@ -280,12 +280,14 @@ def extra_attributes(e: Element) -> dict[str, Any]:
     """
     defaults = _class_defaults(type(e)) or {}
     out: dict[str, Any] = {}
+    missing = object()
     for k, v in _public_vars(e):
         if k in CORE_ATTRS or callable(v) or not _json_scalar_or_data(v):
             continue
-        if k in defaults and defaults[k] == v and type(defaults[k]) is type(v):
+        default = defaults.get(k, getattr(type(e), k, missing))
+        if default is not missing and default == v and type(default) is type(v):
             continue
-        if k not in defaults and v in (None, "", [], {}):
+        if default is missing and v in (None, "", [], {}):
             continue
         out[k] = v
     return out
