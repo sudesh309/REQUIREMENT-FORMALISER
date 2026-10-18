@@ -732,6 +732,14 @@ class ValidatorTests(unittest.TestCase):
                      "profile.property.definition"):
             self.assertIn(rule, rules)
 
+    def test_detects_names_created_outside_the_editor(self):
+        repo, prof, eq, lru, *_ = _avionics()
+        odd = Stereotype(name="Line Unit")          # e.g. the generic "Add element" route
+        prof.own(odd)
+        notify_created(odd, repo)
+        issues = [i for i in Validator().validate(repo) if i.rule == "profile.name"]
+        self.assertEqual([i.element for i in issues], [odd])
+
     def test_detects_cycle(self):
         repo, prof, eq, lru, *_ = _avionics()
         eq.base = lru                                     # bypassing the API

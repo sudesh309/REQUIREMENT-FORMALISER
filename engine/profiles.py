@@ -1341,8 +1341,23 @@ def display_fields(e: Element) -> tuple[list[str], dict]:
 # Validation (repository rule: element rules can be cleared by other tests)
 # ---------------------------------------------------------------------------
 
+def _bad_name(e: Element) -> bool:
+    try:
+        check_name(e.name)
+        return False
+    except StereotypeError:
+        return True
+
+
 def validate_profiles(repo) -> Iterator[ValidationIssue]:
     E, W = Severity.ERROR, Severity.WARNING
+    # Names created through generic element routes bypass the editor's checks.
+    for e in [*profiles_of(repo), *stereotypes_of(repo),
+              *(t for s in stereotypes_of(repo) for t in s.tags)]:
+        if _bad_name(e):
+            yield ValidationIssue(W, "profile.name", f"{e.kind} name {e.name!r} is not an identifier "
+                                  f"(letters, digits, '_'), so 'Profile.Stereotype.property' "
+                                  f"addresses cannot reach it", e)
     for st in stereotypes_of(repo):
         if st.has_base_cycle():
             yield ValidationIssue(E, "profile.stereotype.cycle",

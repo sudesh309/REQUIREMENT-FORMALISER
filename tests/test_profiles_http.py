@@ -93,6 +93,7 @@ class ProfilesHttpTests(WebAppTestCase):
         full = self.call("GET", f"/api/element/{self.fmc['id']}")
         self.assertEqual(full["stereotypes"][0]["values"]["dal"], "D")
         self.assertEqual(full["stereotypes"][0]["qualified_name"], "Avionics.LRU")
+        self.assertEqual(full["stereotypes"][0]["style"], {"fill": "#ffeeaa", "icon": "computer"})
         self.assertIn("«LRU»", full["badges"])
         self.assertEqual(full["style"], {"fill": "#ffeeaa", "icon": "computer"})
         tree = self.call("GET", "/api/tree")

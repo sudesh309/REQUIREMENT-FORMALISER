@@ -195,7 +195,7 @@ function once(input, value) {
 }
 
 /** studio.modal with keyboard support (Enter submits, Escape cancels) and inline errors. */
-function openModal(studio, title, html, onSubmit) {
+function openModal(studio, title, html, onSubmit, { onCancel } = {}) {
   studio.modal(title, `${html}<div class="pf-msg err" data-pf-modal-msg></div>`, async (values) => {
     const msg = document.querySelector("[data-pf-modal-msg]");
     try { await onSubmit(values); }
@@ -206,6 +206,7 @@ function openModal(studio, title, html, onSubmit) {
   const submit = root.querySelector("[data-modal-submit]");
   const cancel = root.querySelector("[data-modal-cancel]");
   submit.type = "button"; cancel.type = "button";
+  if (onCancel) cancel.addEventListener("click", () => onCancel());
   form.addEventListener("submit", (e) => { e.preventDefault(); submit.click(); });
   form.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); submit.click(); }
@@ -913,10 +914,33 @@ class ProfileEditor {
       ${isComp ? `<div class="pf-section-title">Default stereotypes for new elements inside</div>
       <div class="pf-form">${defaultSelect("component", "Component")}${defaultSelect("port", "Port")}${defaultSelect("connector", "Connector")}</div>` : ""}`;
     host.querySelector("[data-pf=add-prop]").onclick = () => this.addProperty(s);
+    const url = `/api/stereotypes/${encodeURIComponent(s.id)}`;
+    const label = (field) => field === "applies_to" ? "applies to" : field;
+    // A change that would invalidate applications is confirmed, then sent with force.
+    const confirmForced = (field, value, why) => openModal(this.studio, "Remove stereotype applications?", `
+        <p class="text-sm">${esc(why)}</p>
+        <p class="text-sm mt-2">Continue and remove those applications and their values?</p>`,
+      () => this.save(async () => {
+        const out = await this.studio.api("PATCH", url, { [field]: value, force: true });
+        if (out.stripped?.length) this.studio.log(`Removed ${out.stripped.join("; ")}`, "warning");
+        return `«${out.qualified_name}»: ${label(field)} updated, ${out.stripped.length} application(s) removed`;
+      }), { onCancel: () => this.refresh() });
     this.bindFields(host.querySelector("[data-pf=stereotype-form]"), async (field, value) => {
-      const body = { [field]: field === "base" ? (value || null) : value };
-      const out = await this.studio.api("PATCH", `/api/stereotypes/${encodeURIComponent(s.id)}`, body);
-      return `«${out.qualified_name}»: ${field === "applies_to" ? "applies to" : field} updated`;
+      if (field === "abstract" && value && s.application_count) {
+        confirmForced(field, value, `«${s.qualified_name}» is applied to ${s.application_count} element(s), ` +
+                                    "and abstract stereotypes cannot be applied.");
+        return null;
+      }
+      try {
+        const out = await this.studio.api("PATCH", url, { [field]: field === "base" ? (value || null) : value });
+        return `«${out.qualified_name}»: ${label(field)} updated`;
+      } catch (e) {
+        if (field === "applies_to" && /remove those applications/.test(errorText(e))) {
+          confirmForced(field, value, errorText(e).replace(/;\s*remove those applications.*$/, "."));
+          return null;
+        }
+        throw e;
+      }
     });
     // style
     const patchStyle = async (key, value) => {

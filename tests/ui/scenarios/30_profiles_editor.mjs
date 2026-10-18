@@ -109,4 +109,17 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   expect((await page.textContent('[data-pf="import-log"]')).includes("Avionics.profile.json"), "import history lists the file");
   expect((await api("GET", "/api/stereotypes/Avionics.Sensor")).style.fill === "#ffcc00", "imported style");
   expect(!(await msg() || "").includes("error"), "no error shown");
+
+  // --- making an applied stereotype abstract asks before removing its applications ----------
+  const sensor2 = await api("GET", "/api/stereotypes/Avionics.Sensor");
+  await api("POST", `/api/elements/${adc.id}/stereotypes`, { stereotype: sensor2.id });
+  await page.click('.tab[data-tab="properties"]');
+  await page.click('.tab[data-tab="profiles"]');                      // showing the tab reloads it
+  await page.click(`.pf-row[data-pf-id="${sensor2.id}"]`);
+  await page.check("#pf-s-abstract");
+  await page.waitForSelector("#modal-form");
+  expect((await page.textContent("#modal-form")).includes("applied to 1 element(s)"), "abstract change is confirmed");
+  await page.click("[data-modal-submit]");
+  await until(() => document.querySelector(".pf-row.sel")?.classList.contains("abstract"));
+  expect((await api("GET", `/api/elements/${adc.id}/stereotypes`)).applied.length === 0, "application removed");
 }
