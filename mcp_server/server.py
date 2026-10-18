@@ -916,6 +916,8 @@ TOOLS: list[dict] = [
 
 # Tool plugins (mcp_server/tools/*.py) each define a TOOLS list in the same format.
 TOOLS.extend(_tool_plugins.load_tools())
+# A plugin tool named like an earlier tool replaces it (keeping its place in tools/list).
+TOOLS[:] = list({t["name"]: t for t in TOOLS}.values())
 TOOL_BY_NAME: dict[str, dict] = {t["name"]: t for t in TOOLS}
 
 
