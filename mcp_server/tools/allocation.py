@@ -160,8 +160,8 @@ def tool_allocation_map(scenario: str) -> dict:
 
 
 @_guard
-def tool_allocation_chain(element: str) -> dict:
-    return A.allocation_chain(_find(element, "element"))
+def tool_allocation_chain(element: str, direction: str = "LR") -> dict:
+    return A.allocation_chain(_find(element, "element"), direction=direction)
 
 
 register_summary_hook(A.annotate_summary)
@@ -240,5 +240,6 @@ TOOLS = [
     _tool("sysml_allocation_chain",
           "Follow allocations across sets (functional -> logical -> physical) from an element; "
           "returns nodes, edges and a Mermaid flowchart.",
-          tool_allocation_chain, {"element": _REF}, ["element"]),
+          tool_allocation_chain,
+          {"element": _REF, "direction": {"type": "string", "enum": ["LR", "TB"]}}, ["element"]),
 ]

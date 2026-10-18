@@ -201,3 +201,6 @@ class AllocationApiTests(WebAppTestCase):
         chain = self.call("GET", f"/api/allocation/chain/{fn['id']}")
         self.assertEqual([n["name"] for n in chain["nodes"]], ["ComputeNav", "NavFn", "IMA"])
         self.assertIn("flowchart LR", chain["mermaid"])
+        tb = self.call("GET", f"/api/allocation/chain/{fn['id']}?direction=TB")
+        self.assertTrue(tb["mermaid"].startswith("flowchart TB"))
+        self.call("GET", f"/api/allocation/chain/{fn['id']}?direction=XY", expect=400)

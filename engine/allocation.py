@@ -868,14 +868,18 @@ def _mm(text: str) -> str:
     return _MERMAID_UNSAFE.sub(" ", text or "").strip() or "?"
 
 
-def allocation_chain(element: Element, *, scenarios: Optional[Iterable[AllocationScenario]] = None) -> dict:
+def allocation_chain(element: Element, *, scenarios: Optional[Iterable[AllocationScenario]] = None,
+                     direction: str = "LR") -> dict:
     """Follow allocations through every set (functional -> logical -> physical, ...).
 
     Walks forward (what `element` is allocated to, and onwards) and backward
     (what is allocated to it, and further back). Returns ``nodes``, ``edges``
     (one per allocation, labelled with set and scenario) and ``mermaid``, a
-    flowchart grouping nodes by architecture.
+    flowchart (``direction`` LR or TB) grouping nodes by architecture.
     """
+    direction = (direction or "LR").upper()
+    if direction not in ("LR", "TB"):
+        raise AllocationError("direction must be LR or TB")
     allowed = None if scenarios is None else {id(sc) for sc in scenarios}
     allocs = [a for a in iter_allocations(element.root())
               if a.source is not None and a.target is not None and a.scenario is not None
@@ -919,12 +923,12 @@ def allocation_chain(element: Element, *, scenarios: Optional[Iterable[Allocatio
                   "target_id": a.target.element_id, "set": a.scenario.allocation_set.name,
                   "scenario": a.scenario.name} for a in edges]
     return {"focus": element_ref(element), "nodes": node_list, "edges": edge_list,
-            "mermaid": _chain_mermaid(node_list, edge_list, element.element_id)}
+            "mermaid": _chain_mermaid(node_list, edge_list, element.element_id, direction)}
 
 
-def _chain_mermaid(nodes: list[dict], edges: list[dict], focus_id: str) -> str:
+def _chain_mermaid(nodes: list[dict], edges: list[dict], focus_id: str, direction: str = "LR") -> str:
     alias = {n["id"]: f"n{i}" for i, n in enumerate(nodes)}
-    lines = ["flowchart LR"]
+    lines = [f"flowchart {direction}"]
     groups: dict[str, list[dict]] = {}
     titles: dict[str, str] = {}
     for n in sorted(nodes, key=lambda n: n["level"]):

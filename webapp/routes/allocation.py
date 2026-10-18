@@ -316,7 +316,7 @@ def api_element(req: dict, eid: str):
 @route("GET", r"^/api/allocation/chain/(?P<eid>[^/]+)$")
 @_api
 def api_chain(req: dict, eid: str):
-    return ok(A.allocation_chain(_find(eid, "element")))
+    return ok(A.allocation_chain(_find(eid, "element"), direction=_query(req).get("direction") or "LR"))
 
 
 # --- element JSON, generic PATCH, stereotype applies-to -------------------
