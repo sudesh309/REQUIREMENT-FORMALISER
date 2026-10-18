@@ -251,7 +251,7 @@ dashed `style`; on adapters an `Adapter` badge, `style.icon = "adapter"` and
 | `sysml_assign_interface` | set a port's interface (`"owned"`, a shared one, or null) |
 | `sysml_make_interface_shared` | save a port's owned interface into the dictionary (`on_conflict`) |
 | `sysml_check_compatibility` | check two ports (and selected elements) or a connector |
-| `sysml_connect_ports` | connect two ports, optionally selecting bus elements |
+| `sysml_connect_ports` | (architecture tool) connect two ports; `source_element` / `target_element` select bus elements |
 | `sysml_set_connector_elements` | select / clear the bus element at a connector end |
 | `sysml_create_adapter`, `sysml_set_adapter_mappings` | adapters |
 | `sysml_export_dictionary` | export (to a `path` or returned as JSON) |

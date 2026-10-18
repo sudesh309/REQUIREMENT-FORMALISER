@@ -38,7 +38,7 @@ class InterfaceToolTests(unittest.TestCase):
     def test_tools_registered(self):
         for name in ("sysml_create_interface", "sysml_add_interface_element", "sysml_set_interface_element",
                      "sysml_create_value_type", "sysml_assign_interface", "sysml_check_compatibility",
-                     "sysml_export_dictionary", "sysml_import_dictionary", "sysml_connect_ports",
+                     "sysml_export_dictionary", "sysml_import_dictionary",
                      "sysml_create_adapter", "sysml_set_adapter_mappings"):
             self.assertIn(name, msrv.TOOL_BY_NAME)
             self.assertIn("inputSchema", msrv.TOOL_BY_NAME[name])
@@ -60,8 +60,9 @@ class InterfaceToolTests(unittest.TestCase):
         self.assertTrue(call("sysml_assign_interface", port=inp, interface="owned")["ok"])  # owned copy
         r = call("sysml_check_compatibility", source=out, target=inp)
         self.assertTrue(r["result"]["compatible"], r)
-        r = call("sysml_connect_ports", source=out, target=inp)
-        conn = r["result"]["connector"]["id"]
+        # Connectors are created by the architecture tool (sysml_connect_ports); here the
+        # engine helper is used because the test addresses ports by id only.
+        conn = I.connect_ports(SESSION.repo, SESSION.find(out), SESSION.find(inp)).element_id
         owned = I.interface_of(SESSION.find(inp))
         r = call("sysml_set_interface_element", interface=owned.element_id, element="fix", type="uint8")
         self.assertTrue(r["ok"], r)

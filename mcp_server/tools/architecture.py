@@ -104,7 +104,9 @@ def tool_update_port(port: str, name: Optional[str] = None, direction: Optional[
 def tool_connect_ports(composition: str, source_port: str, target_port: str,
                        source_component: Optional[str] = None,
                        target_component: Optional[str] = None,
-                       name: Optional[str] = None) -> dict:
+                       name: Optional[str] = None,
+                       source_element: Optional[str] = None,
+                       target_element: Optional[str] = None) -> dict:
     def go():
         comp = _find(composition, "composition")
         conn = A.connect(
@@ -112,6 +114,13 @@ def tool_connect_ports(composition: str, source_port: str, target_port: str,
             {"component": _find(source_component, "source component", False), "port": _port_ref(source_port)},
             {"component": _find(target_component, "target component", False), "port": _port_ref(target_port)},
             name)
+        if source_element or target_element:
+            from engine import interfaces as I   # bus-element selection on the new connector
+            try:
+                I.set_connector_elements(conn, source_element or None, target_element or None)
+            except I.InterfaceError as ex:
+                SESSION.repo.remove(conn)
+                raise A.ArchitectureError(str(ex)) from None
         return A.connector_view(conn, comp)
     return _run("Connect", go)
 
@@ -248,9 +257,11 @@ TOOLS = [
                     "driver, outputs may branch, physical <-> physical, client <-> server. Omit a "
                     "component to use a boundary port of the composition; a component deeper in the "
                     "hierarchy gets boundary ports added on the way (cross-hierarchy). Ports may be "
-                    "ids or port names.",
+                    "ids or port names. Optionally select a bus interface element at either end "
+                    "(source_element / target_element, e.g. 'position.lat').",
      "inputSchema": _schema({"composition": _REF, "source_component": _REF, "source_port": _S,
-                             "target_component": _REF, "target_port": _S, "name": _S},
+                             "target_component": _REF, "target_port": _S, "name": _S,
+                             "source_element": _S, "target_element": _S},
                             ["composition", "source_port", "target_port"]),
      "handler": tool_connect_ports},
     {"name": "sysml_arrange",

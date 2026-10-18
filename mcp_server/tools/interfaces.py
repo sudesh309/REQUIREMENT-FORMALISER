@@ -164,16 +164,6 @@ def tool_check_compatibility(source: Optional[str] = None, target: Optional[str]
 
 
 @_safe
-def tool_connect_ports(source: str, target: str, source_element: Optional[str] = None,
-                       target_element: Optional[str] = None, name: Optional[str] = None) -> dict:
-    s, t = _port(source, "Source port"), _port(target, "Target port")
-    conn = I.connect_ports(SESSION.repo, s, t, name=name, source_element=source_element,
-                           target_element=target_element)
-    return _ok({"connector": SESSION.element_summary(conn),
-                **I.compatibility_report(s, t, conn.source_element, conn.target_element)})
-
-
-@_safe
 def tool_set_connector_elements(connector: str, source_element: Optional[str] = None,
                                 target_element: Optional[str] = None) -> dict:
     c = I.require_port_connector(_find(connector, "Connector"))
@@ -302,13 +292,6 @@ TOOLS = [
          "source": _STR, "target": _STR, "source_element": _STR, "target_element": _STR,
          "connector": _STR}},
      "handler": tool_check_compatibility},
-    {"name": "sysml_connect_ports",
-     "description": "Connect two ports with a connector owned by their common composition, "
-                    "optionally selecting a bus element at either end.",
-     "inputSchema": {"type": "object", "properties": {
-         "source": _STR, "target": _STR, "source_element": _STR, "target_element": _STR, "name": _STR},
-         "required": ["source", "target"]},
-     "handler": tool_connect_ports},
     {"name": "sysml_set_connector_elements",
      "description": "Select (or clear with '') the bus element used at a connector's source and target.",
      "inputSchema": {"type": "object", "properties": {

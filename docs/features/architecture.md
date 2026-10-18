@@ -245,7 +245,7 @@ is kept.
 | `sysml_rename_element` | unique rename |
 | `sysml_add_port` | `owner`, `name?`, `direction`, `kind`, `interface?`, `usage_only?` |
 | `sysml_update_port` | `port`, `name?`, `direction?`, `kind?`, `interface?`, `clear_interface?`, `force?` |
-| `sysml_connect_ports` | `composition`, `source_component?`, `source_port`, `target_component?`, `target_port`, `name?` (same rules as the web API) |
+| `sysml_connect_ports` | `composition`, `source_component?`, `source_port`, `target_component?`, `target_port`, `name?`, `source_element?`, `target_element?` (same rules as the web API; elements select bus interface elements) |
 | `sysml_arrange` | auto-layout |
 | `sysml_group` / `sysml_expand` | create component from selection / its inverse |
 | `sysml_save_as_reference` / `sysml_inline_component` | reference components |

@@ -1467,16 +1467,27 @@ def connect_ports(repo, source: Element, target: Element, *, name: Optional[str]
     owner = parent or _connector_owner(source, target) or repo.root_package
     if not isinstance(owner, Namespace):
         raise InterfaceError("Connector parent must be a component or architecture")
-    base = name or f"{source.name}_to_{target.name}"
-    if not _NAME_RE.match(base):
-        base = "connector"
-    cname = base if _sibling(owner, base) is None else _unique_rename(owner, base)
-    conn = ConnectionUsage(name=cname, ends=[source, target])
-    conn.source_element = None
-    conn.target_element = None
-    set_connector_elements(conn, source_element or None, target_element or None)
-    owner.own(conn)
-    notify_created(conn, repo)
+    # Connector creation and its System Composer rules (direction, single driver,
+    # port kinds, usage context) belong to the architecture engine.
+    from . import architecture as A
+
+    def endpoint(port: PortUsage) -> dict:
+        comp = owning_component(port)
+        if comp is owner:
+            return {"component": None, "port": port}
+        if isinstance(comp, PartDefinition):
+            # A definition port is reached through the usage of that definition here.
+            comp = next((u for u in components_of(owner) if definition_of(u) is comp), comp)
+        return {"component": comp, "port": port}
+
+    try:
+        conn = A.connect(repo, owner, endpoint(source), endpoint(target), name)
+    except A.ArchitectureError as ex:
+        raise InterfaceError(str(ex)) from None
+    conn.source_element = getattr(conn, "source_element", None)
+    conn.target_element = getattr(conn, "target_element", None)
+    if source_element or target_element:
+        set_connector_elements(conn, source_element or None, target_element or None)
     return conn
 
 

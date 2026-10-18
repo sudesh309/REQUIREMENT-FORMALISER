@@ -98,7 +98,8 @@ class ProfilesHttpTests(WebAppTestCase):
         self.assertEqual(full["style"], {"fill": "#ffeeaa", "icon": "computer"})
         tree = self.call("GET", "/api/tree")
         fmc_node = tree["children"][0]["children"][0]
-        self.assertEqual((fmc_node["name"], fmc_node["badges"]), ("FMC", ["«LRU»"]))
+        self.assertEqual(fmc_node["name"], "FMC")
+        self.assertIn("«LRU»", fmc_node["badges"])   # other features append their own badges
         # remove one / all
         self.call("DELETE", f"/api/elements/{self.fmc['id']}/stereotypes/Avionics.LRU")
         self.call("DELETE", f"/api/elements/{self.fmc['id']}/stereotypes/Avionics.LRU", expect=404)

@@ -68,7 +68,7 @@ class ProfileToolTests(unittest.TestCase):
         props = ok("sysml_get_stereotype_properties", target=self.fmc["id"])
         self.assertEqual(props["stereotypes"][0]["values"], {"mass": 1.36077711, "dal": "B"})
         summary = ok("sysml_get_element", ref=self.fmc["id"])
-        self.assertEqual(summary["badges"], ["«LRU»"])
+        self.assertIn("«LRU»", summary["badges"])
         self.assertEqual(summary["stereotypes"][0]["stereotype"], "Avionics.LRU")
         # definition edits propagate
         upd = ok("sysml_update_stereotype_property", stereotype="Avionics.LRU", property="mass", unit="g")
