@@ -147,6 +147,23 @@ class LinkTests(unittest.TestCase):
                 rq.create_trace_link(self.repo, t, s, d)
         self.assertEqual(len(rq.trace_links(self.repo)), len(ok))
 
+    def test_interfaces_and_their_elements_are_linkable(self):
+        from sysmlv2 import AttributeUsage, PortDefinition
+        a429 = self.repo.add(PortDefinition(name="A429_Label"))
+        label_203 = AttributeUsage(name="pressure_altitude")
+        a429.own(label_203)
+        mass = AttributeUsage(name="mass")
+        self.arch.own(mass)
+        self.repo.registry.register_tree(a429)
+        self.assertEqual(rq.category_of(a429), "interfaces")
+        self.assertEqual(rq.category_of(label_203), "interfaces")
+        self.assertFalse(rq.is_linkable(mass))
+        rq.create_trace_link(self.repo, "implement", label_203, self.r2)
+        with self.assertRaisesRegex(rq.RequirementsError, "design element"):
+            rq.create_trace_link(self.repo, "implement", mass, self.r2)
+        cols = rq.trace_matrix(self.repo, self.set, "interfaces")["columns"]
+        self.assertEqual([c["name"] for c in cols], ["A429_Label", "pressure_altitude"])
+
     def test_aliases_and_core_link_kinds(self):
         from engine import link_kind
         self.assertIs(rq.trace_type("satisfy"), rq.trace_type("implement"))

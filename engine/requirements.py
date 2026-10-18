@@ -70,6 +70,7 @@ from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import stereotypes_on
 from sysmlv2.definitions import (
     ActionDefinition, ActionUsage,
+    AttributeUsage,
     CalculationDefinition, CalculationUsage,
     ConnectionUsage,
     InterfaceDefinition, InterfaceUsage,
@@ -200,6 +201,14 @@ def _is_function(e: Any) -> bool:
                                    StateUsage, TransitionUsage)))
 
 
+def _is_interface(e: Any) -> bool:
+    """Interfaces (port / interface definitions and usages) and their elements (attributes
+    owned by an interface definition, e.g. the data elements of an interface dictionary entry)."""
+    if isinstance(e, (PortDefinition, InterfaceDefinition, InterfaceUsage)):
+        return True
+    return isinstance(e, AttributeUsage) and isinstance(e.owner, (PortDefinition, InterfaceDefinition))
+
+
 # Element categories, in matching order (requirements and test cases are also
 # ActionDefinitions, so they must be tested before "functions").
 CATEGORIES: list[tuple[str, str, Any]] = [
@@ -208,8 +217,7 @@ CATEGORIES: list[tuple[str, str, Any]] = [
     ("components", "Components", lambda e: isinstance(e, (PartUsage, PartDefinition))),
     ("ports", "Ports", lambda e: isinstance(e, PortUsage)),
     ("connectors", "Connectors", lambda e: isinstance(e, ConnectionUsage)),
-    ("interfaces", "Interfaces",
-     lambda e: isinstance(e, (PortDefinition, InterfaceDefinition, InterfaceUsage))),
+    ("interfaces", "Interfaces", _is_interface),
     ("functions", "Functions", _is_function),
 ]
 _CATEGORY_PRED = {key: pred for key, _label, pred in CATEGORIES}

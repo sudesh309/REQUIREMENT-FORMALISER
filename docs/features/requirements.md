@@ -83,8 +83,9 @@ Links always point from source to destination; the UI shows the verb in the righ
 | Confirm | ☑ | any linkable element | requirement | *source* (analysis, review) confirms *destination* |
 
 Linkable elements: components (`PartUsage`, `PartDefinition`), ports, connectors, interfaces
-(`PortDefinition`, `InterfaceDefinition`, `InterfaceUsage`), functions (actions), requirements and
-test cases. Wrong endpoints are refused immediately with a hint, e.g. *"Implement links need a
+(`PortDefinition`, `InterfaceDefinition`, `InterfaceUsage`, including the interface dictionary's
+data / physical / service interfaces) and their elements (attributes owned by an interface),
+functions (actions), requirements and test cases. Wrong endpoints are refused immediately with a hint, e.g. *"Implement links need a
 design element ... as source; got SRS-1 'Navigation'. Use Derive or Refine between requirements."*
 Duplicate links and self-links are refused. `implement`, `relate` and `confirm` are also registered
 as engine link kinds, so the core *Link…* dialog and `sysml_link` accept them.
