@@ -194,6 +194,26 @@ def apply_props(e: Element, props: dict) -> None:
         set_property(e, k, v, SESSION.find)
 
 
+# --- mutation hooks (undo/redo snapshots) -------------------------------
+
+_MUTATION_HOOKS: list[Callable[[str, str, Any], Optional[Callable[[int], None]]]] = []
+
+
+def register_mutation_hook(fn: Callable[[str, str, Any], Optional[Callable[[int], None]]]) -> None:
+    """``fn(method, path, body)`` runs before every non-GET API request; it may return a
+    ``finish(status)`` callback that runs after the handler (e.g. to record an undo step)."""
+    _MUTATION_HOOKS.append(fn)
+
+
+def begin_mutation(method: str, path: str, body: Any) -> Callable[[int], None]:
+    finishers = [f for f in (hook(method, path, body) for hook in _MUTATION_HOOKS) if f]
+
+    def finish(status: int) -> None:
+        for f in finishers:
+            f(status)
+    return finish
+
+
 # --- plugin routes ------------------------------------------------------
 
 PLUGIN_ROUTES: list[tuple[str, str, Handler]] = []

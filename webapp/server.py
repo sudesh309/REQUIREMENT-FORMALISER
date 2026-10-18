@@ -11,7 +11,7 @@ GET    /static/<path>         → static assets
 
 GET    /api/plugins           → frontend plugin modules to load
 GET    /api/state             → repo name + counts
-POST   /api/new               → new project    {name}
+POST   /api/new               → new project    {name, type: system|software}
 POST   /api/parse             → parse .sysml   {source}
 GET    /api/save              → save → JSON
 POST   /api/load              → load from JSON {text}
@@ -100,8 +100,8 @@ from sysmlv2.state_machines import (
 )
 from webapp import routes as _route_plugins
 from webapp.core import (
-    KIND_REGISTRY, PLUGIN_ROUTES, SESSION, Body, Session, apply_props, reset_session,
-    summarize, tree,
+    KIND_REGISTRY, PLUGIN_ROUTES, SESSION, Body, Session, apply_props, begin_mutation,
+    reset_session, summarize, tree,
 )
 from webapp.core import err as _err, ok as _ok
 
@@ -118,15 +118,23 @@ def api_state(_req: dict) -> Body:
 
 
 def api_new(req: dict) -> Body:
+    from engine.architecture import ArchitectureError, model_type, set_model_type
     body = req.get("body") or {}
-    SESSION.set_repo(Repository(name=body.get("name") or "UntitledProject"))
+    repo = Repository(name=body.get("name") or "UntitledProject")
+    if body.get("type"):            # architecture model type: 'system' (default) or 'software'
+        try:
+            set_model_type(repo, body["type"])
+        except ArchitectureError as ex:
+            return _err(str(ex), ex.status)
+    SESSION.set_repo(repo)
     return _ok({"name": SESSION.repo.name,
-                "root_id": SESSION.repo.root_package.element_id})
+                "root_id": SESSION.repo.root_package.element_id,
+                "type": model_type(repo)})
 
 
 def api_parse(req: dict) -> Body:
     src = (req.get("body") or {}).get("source", "")
-    parse(src, into=SESSION.repo.root_package)
+    parse(src, into=SESSION.repo.root_package, repo=SESSION.repo)
     SESSION.repo.registry.register_tree(SESSION.repo.root_package)
     return _ok({"element_count": len(list(SESSION.repo.all_elements()))})
 
@@ -479,6 +487,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             m = re.match(pattern, path)
             if not m:
                 continue
+            finish = None
             try:
                 body = None
                 if method in ("POST", "PATCH", "PUT", "DELETE"):
@@ -489,10 +498,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "body":  body,
                     "query": dict(urllib.parse.parse_qsl(parsed.query)),
                 }
+                if method != "GET":   # undo/redo snapshots (webapp.core.register_mutation_hook)
+                    finish = begin_mutation(method, path, body)
                 status, payload = fn(request, **m.groupdict()) if m.groupdict() else fn(request)
             except Exception as ex:  # noqa: BLE001
                 status, payload = 500, {"error": str(ex),
                                         "traceback": traceback.format_exc()}
+            if finish is not None:
+                finish(status)
             data = json.dumps(payload, default=str).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")

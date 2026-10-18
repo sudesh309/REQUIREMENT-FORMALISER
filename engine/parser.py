@@ -24,6 +24,17 @@ for round-tripping the bundled examples. Supported:
     requirement <name> : <Type>;
     connect <a> to <b>;
 
+Inside part (and other) definitions, additionally:
+
+    in port <name> : <Type>;          // also `out port`, `inout port`, and
+                                      // direction prefixes on other usages
+    part <name> [: <Type>] { ... }    // inline component with its own members
+    connect <a>.<p> to <b>.<q>;       // connector between ports of sub-parts;
+                                      // a bare <p> is a port of the definition
+
+Type names and connector ends may refer to definitions declared later in
+the file (they are resolved after the whole unit is read).
+
     doc /* free text */
     // line comment
 
@@ -65,7 +76,7 @@ _TOKEN = re.compile(
     (?P<num>\d+)                               |
     (?P<str>"(?:[^"\\]|\\.)*")                |
     (?P<id>[A-Za-z_][A-Za-z0-9_]*)             |
-    (?P<sym>::|\.\.|[{}\[\];:,=*])
+    (?P<sym>::|\.\.|[{}\[\];:,=*.])
     """,
     re.VERBOSE | re.DOTALL,
 )
@@ -143,10 +154,78 @@ def _resolve_in_scope(start, qname: str):
     return None
 
 
+_DIRECTIONS = {"in": FeatureDirection.IN, "out": FeatureDirection.OUT,
+               "inout": FeatureDirection.INOUT}
+
+
+def _feature_named(owner, name: str):
+    """A feature called `name` of `owner`, its types, or their supertypes."""
+    from kerml.types import Type
+    scopes = [owner] + list(getattr(owner, "types", []) or [])
+    for scope in scopes:
+        hit = next((e for e in scope.owned_elements if e.name == name), None)
+        if hit is not None:
+            return hit
+        if isinstance(scope, Type):
+            hit = next((f for f in scope.inherited_features() if f.name == name), None)
+            if hit is not None:
+                return hit
+    return None
+
+
 class _Parser:
     def __init__(self, toks: list[Tok]):
         self.toks = toks
         self.pos = 0
+        # Forward references, resolved once the whole unit has been read.
+        self.pending_types: list[tuple] = []      # (feature, scope, qname)
+        self.pending_supers: list[tuple] = []     # (definition, scope, qname)
+        self.pending_connects: list[tuple] = []   # (connector, scope, path_a, path_b)
+
+    # --- deferred resolution ------------------------------------------
+    def _type_later(self, feature, scope, qname: str) -> None:
+        tgt = _resolve_in_scope(scope, qname)
+        if tgt is not None:
+            feature.add_type(tgt)
+        else:
+            self.pending_types.append((feature, scope, qname))
+
+    def resolve_pending(self) -> None:
+        for defn, scope, qname in self.pending_supers:
+            sup = _resolve_in_scope(scope, qname)
+            if sup is not None:
+                defn.specialize(sup)
+        for feature, scope, qname in self.pending_types:
+            tgt = _resolve_in_scope(scope, qname)
+            if tgt is not None:
+                feature.add_type(tgt)
+        for conn, scope, path_a, path_b in self.pending_connects:
+            ends, ctxs = [], []
+            for path in (path_a, path_b):
+                ctx, end = self._resolve_path(scope, path)
+                if end is not None:
+                    ends.append(end)
+                    ctxs.append(ctx)
+            conn.ends = ends
+            conn.end_contexts = tuple(ctxs) if len(ends) == 2 else ()
+
+    @staticmethod
+    def _resolve_path(scope, path: list[str]):
+        """``a::b.c.d`` -> (context, element): the first segment is a (qualified) name in
+        scope, the rest walk features; the context is the first-level part usage."""
+        first = _resolve_in_scope(scope, path[0])
+        if first is None and "::" in path[0]:
+            # `part::port` written with '::': walk features after the first segment.
+            head, *rest = path[0].split("::")
+            return _Parser._resolve_path(scope, [head, *rest, *path[1:]])
+        if first is None or len(path) == 1:
+            return None, first
+        node = first
+        for seg in path[1:]:
+            node = _feature_named(node, seg)
+            if node is None:
+                return None, None
+        return first, node
 
     # --- low-level helpers -------------------------------------------
     def peek(self, k: int = 0) -> Optional[Tok]:
@@ -242,38 +321,51 @@ class _Parser:
             sup = _resolve_in_scope(owner, s)
             if sup is not None:
                 defn.specialize(sup)  # type: ignore[arg-type]
+            else:
+                self.pending_supers.append((defn, owner, s))
 
         # Empty definition: `def Foo;`
         if self.accept("sym", ";"):
             return
         self.eat("sym", "{")
+        self._parse_body(defn)
+
+    def _parse_body(self, owner) -> None:
+        """Members of a definition (or of a part usage with a body) up to the closing brace."""
         while not self.accept("sym", "}"):
             t = self.peek()
             if t and t.kind == "doc":
                 from kerml.elements import Documentation
-                defn.add_annotation(Documentation(body=t.value))
+                owner.add_annotation(Documentation(body=t.value))
                 self.pos += 1
                 continue
             if t and t.kind == "kw" and t.value == "doc":
                 self.pos += 1
                 d = self.eat("doc").value
-                if hasattr(defn, "text"):
-                    setattr(defn, "text", d)
+                if hasattr(owner, "text"):
+                    setattr(owner, "text", d)
                 continue
-            self._parse_member_inside_def(defn)
+            self._parse_member_inside_def(owner)
 
     def _parse_member_inside_def(self, defn) -> None:
         t = self.peek()
+        if t is not None and t.kind == "kw" and t.value == "connect":
+            self._parse_connect(defn)
+            return
+        direction = None
+        if t is not None and t.kind == "kw" and t.value in _DIRECTIONS:
+            direction = _DIRECTIONS[t.value]
+            self.pos += 1
+            t = self.peek()
         if t is None or t.kind != "kw" or t.value not in _DEF_KIND:
-            raise ParseError(
-                f"Expected usage keyword inside definition at {t.line if t else '?'}"
-            )
+            where = f"{t.line}:{t.col}" if t else "end of input"
+            raise ParseError(f"Expected usage keyword inside definition at {where}")
         kw = t.value
         _, use_cls = _DEF_KIND[kw]
         if use_cls is None:
             raise ParseError(f"Cannot use {kw!r} as a usage")
         self.pos += 1
-        name = self.eat("id").value
+        name = self._eat_name()
         type_qn: Optional[str] = None
         if self.accept("sym", ":"):
             type_qn = self._parse_qname()
@@ -281,15 +373,16 @@ class _Parser:
         if self.accept("sym", "["):
             mult = self._parse_multiplicity()
             self.eat("sym", "]")
-        self.eat("sym", ";")
         usage = use_cls(name=name, multiplicity=mult or MultiplicityRange(1, 1))
+        if direction is not None:
+            usage.direction = direction
         if type_qn:
-            tgt = _resolve_in_scope(defn, type_qn)
-            if tgt is not None:
-                usage.add_type(tgt)
+            self._type_later(usage, defn, type_qn)
         defn.own(usage)
-        if hasattr(defn, "addFeature"):
-            defn.addFeature(usage)  # pragma: no cover - compat
+        if self.accept("sym", "{"):
+            self._parse_body(usage)      # e.g. an inline component with its own ports
+        else:
+            self.eat("sym", ";")
 
     def _parse_usage(self, owner: Package, kw: str) -> None:
         _, use_cls = _DEF_KIND[kw]
@@ -306,23 +399,35 @@ class _Parser:
         self.eat("sym", ";")
         u = use_cls(name=name, multiplicity=mult or MultiplicityRange(1, 1))
         if type_qn:
-            tgt = owner.resolve(type_qn)
-            if tgt is not None:
-                u.add_type(tgt)
+            self._type_later(u, owner, type_qn)
         owner.own(u)
 
-    def _parse_connect(self, owner: Package) -> None:
+    def _parse_connect(self, owner) -> None:
+        """`connect a to b;` with dotted ends (`part.port`); resolved after the unit is read."""
         self.eat("kw", "connect")
-        a = self._parse_qname()
+        a = self._parse_path()
         self.eat("kw", "to")
-        b = self._parse_qname()
+        b = self._parse_path()
         self.eat("sym", ";")
-        c = ConnectionUsage(name=f"connect_{a.replace('::','_')}_{b.replace('::','_')}")
-        ea = owner.resolve(a)
-        eb = owner.resolve(b)
-        if ea is not None: c.ends.append(ea)  # type: ignore[arg-type]
-        if eb is not None: c.ends.append(eb)  # type: ignore[arg-type]
+        flat = lambda p: "_".join(p).replace("::", "_")  # noqa: E731
+        c = ConnectionUsage(name=f"connect_{flat(a)}_{flat(b)}")
         owner.own(c)
+        self.pending_connects.append((c, owner, a, b))
+
+    def _eat_name(self) -> str:
+        """An identifier; direction keywords (in/out/inout) are accepted as names too."""
+        t = self.peek()
+        if t is not None and t.kind == "kw" and t.value in _DIRECTIONS:
+            self.pos += 1
+            return t.value
+        return self.eat("id").value
+
+    def _parse_path(self) -> list[str]:
+        """`A::B.c.d` -> ['A::B', 'c', 'd']."""
+        parts = [self._parse_qname()]
+        while self.accept("sym", "."):
+            parts.append(self._eat_name())
+        return parts
 
     def _parse_enum(self, owner: Package, doc: Optional[str]) -> None:
         self.eat("kw", "enum")
@@ -364,8 +469,27 @@ class _Parser:
         return MultiplicityRange(lo, lo)
 
 
-def parse(source: str, *, into: Optional[Package] = None) -> Package:
-    """Parse `source` text. If `into` is given, members are added to it."""
+def parse(source: str, *, into: Optional[Package] = None, repo=None) -> Package:
+    """Parse `source` text. If `into` is given, members are added to it.
+
+    With ``repo``, every new element is registered and announced through
+    ``engine.notify_created`` (so features such as default stereotypes apply).
+    """
     pkg = into or Package(name="ParsedRoot")
-    _Parser(_tokenize(source)).parse_unit(pkg)
+    before = {id(e) for e in pkg.walk()} if repo is not None else set()
+    parser = _Parser(_tokenize(source))
+    try:
+        parser.parse_unit(pkg)
+    finally:
+        parser.resolve_pending()
+    if repo is not None:
+        from .hooks import notify_created
+        repo.registry.register_tree(pkg)
+        for e in [e for e in pkg.walk() if id(e) not in before]:
+            notify_created(e, repo)
     return pkg
+
+
+# Architecture semantics (port kinds, connector end contexts) persist through codecs
+# registered by this module; importing it here makes them active with `import engine`.
+from . import architecture as _architecture  # noqa: E402,F401

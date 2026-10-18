@@ -18,7 +18,12 @@ Conventions
   direction is ``Feature.direction`` and its interface is its type.
 - A *connector* is a ``ConnectionUsage`` owned by the composition whose
   internals it wires; ``ends[0]`` is the source port and ``ends[1]`` the
-  destination port.
+  destination port. ``end_contexts[i]`` is the sub-component usage through
+  which ``ends[i]`` is reached (None for a boundary port of the composition),
+  so two usages of one definition port are told apart; read both with
+  ``connector_ends``.
+- A port's *kind* is ``PortUsage.port_kind``: 'data' (directional),
+  'physical' (non-directional), 'client' or 'server' (software services).
 """
 from __future__ import annotations
 
@@ -92,3 +97,51 @@ def component_tree(root: Element, *, _depth: int = 0, _parent: Optional[Element]
 def owning_component(port: PortUsage) -> Optional[Element]:
     """The component or architecture that owns a port."""
     return port.owner if isinstance(port.owner, (PartUsage, PartDefinition)) else None
+
+
+def is_component(e: Element) -> bool:
+    """True for a PartUsage that sits inside an architecture or another component."""
+    return isinstance(e, PartUsage) and isinstance(e.owner, (PartUsage, PartDefinition))
+
+
+def internal_owners(composition: Element) -> list[Element]:
+    """The composition itself plus, for a reference component, its definition."""
+    return _internal_owners(composition)
+
+
+def context_of(composition: Element, end: Element) -> Optional[Element]:
+    """Best guess of the sub-component through which `end` is reached inside `composition`.
+
+    None means `end` belongs to the composition itself (a boundary port) or is
+    not reachable from it. Used for connectors saved without ``end_contexts``.
+    """
+    owners = _internal_owners(composition)
+    if any(end.owner is o for o in owners):
+        return None
+    comps = components_of(composition)
+    for c in comps:
+        if end.owner is c:
+            return c
+    for c in comps:
+        d = definition_of(c)
+        if d is not None and end.owner is d:
+            return c
+    return None
+
+
+def connector_ends(conn: ConnectionUsage,
+                   composition: Optional[Element] = None) -> list[tuple[Optional[Element], Element]]:
+    """``[(context, end), ...]`` for a connector, in ``ends`` order.
+
+    ``context`` is the sub-component usage that owns (or is typed by the owner of)
+    the port, or None for a boundary port of the composition. Stored
+    ``end_contexts`` win; otherwise contexts are inferred from ownership.
+    """
+    comp = composition if composition is not None else conn.owner
+    ends = [e for e in conn.ends if e is not None]
+    stored = tuple(getattr(conn, "end_contexts", ()) or ())
+    if len(stored) == len(ends) and ends:
+        return list(zip(stored, ends))
+    if comp is None:
+        return [(None, e) for e in ends]
+    return [(context_of(comp, e), e) for e in ends]

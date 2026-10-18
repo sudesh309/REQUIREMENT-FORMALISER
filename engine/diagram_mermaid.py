@@ -68,33 +68,57 @@ def bdd_mermaid(root: Namespace) -> str:
 
 # --- IBD ----------------------------------------------------------------
 
+def _ibd_node(ctx, end) -> str:
+    """Mermaid id of a connector end: a sub-component port is drawn per component usage,
+    a boundary port on the frame, and a part-to-part end attaches to the part's box."""
+    if ctx is not None:
+        return f"{_nid(ctx)}_{_nid(end)}"
+    if isinstance(end, PortUsage):
+        return _nid(end)
+    return f"sub_{_nid(end)}"
+
+
+def _port_text(p: PortUsage) -> str:
+    kind = getattr(p, "port_kind", "data")
+    if kind != "data":
+        return f"{p.name or '?'} · {kind}"
+    return {"in": "▸ ", "inout": "◂▸ "}.get(p.direction.value, "") + (p.name or "?") + (
+        " ▸" if p.direction.value == "out" else "")
+
+
 def ibd_mermaid(part: PartDefinition) -> str:
+    """Internal block diagram: boundary ports on the frame, sub-components with their ports,
+    connectors between the drawn port nodes (directed for data and client/server)."""
+    from .architecture import connector_label
+    from .structure import components_of, connector_ends, connectors_of, ports_of
     lines = ["flowchart LR"]
     lines.append(f"    subgraph {_nid(part)}[\"{_safe(part.name or '?')}\"]")
-    port_ids: list[str] = []
-    for u in part.owned_features:
-        if isinstance(u, ConnectionUsage):
-            continue
-        type_name = ", ".join(t.name or "?" for t in u.types) or "?"
-        sub = f"sub_{_nid(u)}"
-        lines.append(f'        subgraph {sub}["{_safe(u.name or "?")} : {_safe(type_name)}"]')
-        for child in u.owned_elements:
-            if isinstance(child, PortUsage):
-                lines.append(f'            {_nid(child)}(("{_safe(child.name or "?")}"))')
-                port_ids.append(_nid(child))
-        for t in getattr(u, "types", []):
-            if isinstance(t, Definition):
-                for sub_p in t.owned_features:
-                    if isinstance(sub_p, PortUsage):
-                        pid = f"{_nid(u)}_{_nid(sub_p)}"
-                        lines.append(f'            {pid}(("{_safe(sub_p.name or "?")}"))')
+    for p in ports_of(part):
+        shape = ('>"{}"]' if p.direction.value == "in" else '(["{}"])').format(_safe(_port_text(p)))
+        lines.append(f"        {_nid(p)}{shape}")
+    for u in components_of(part):
+        type_name = ", ".join(t.name or "?" for t in u.types)
+        title = _safe(u.name or "?") + (f" : {_safe(type_name)}" if type_name else "")
+        lines.append(f'        subgraph sub_{_nid(u)}["{title}"]')
+        ports = ports_of(u)
+        for p in ports:
+            lines.append(f'            {_nid(u)}_{_nid(p)}(("{_safe(_port_text(p))}"))')
+        if not ports:
+            lines.append(f'            {_nid(u)}_body[" "]')
+            lines.append(f"            style {_nid(u)}_body fill:none,stroke:none")
         lines.append("        end")
     lines.append("    end")
-    for c in part.owned_features:
-        if not isinstance(c, ConnectionUsage) or len(c.ends) < 2:
+    for c in connectors_of(part):
+        ends = connector_ends(c, part)
+        if len(ends) < 2:
             continue
-        a, b = c.ends[0], c.ends[1]
-        lines.append(f'    {_nid(a)} ---|"{_safe(c.name or "")}"| {_nid(b)}')
+        a, b = _ibd_node(*ends[0]), _ibd_node(*ends[1])
+        kinds = {getattr(p, "port_kind", "data") for _, p in ends}
+        directed = all(isinstance(p, PortUsage) for _, p in ends) and "physical" not in kinds
+        link = "-->" if directed else "---"
+        text = connector_label(c, part)
+        label = f'|"{_safe(text)}"|' if text else ""
+        lines.append(f"    {a} {link}{label} {b}")
     return "\n".join(lines)
 
 
