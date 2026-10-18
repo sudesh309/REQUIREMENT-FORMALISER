@@ -77,6 +77,14 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await page.press('[data-path="Avionics.LRU.mass"]', "Enter");
   await until(() => document.querySelector('[data-path="Avionics.LRU.mass"]')?.value === "1.36077711");
   expect((await page.textContent('[data-section="stereotypes"] .pf-unit')).trim() === "kg", "unit shown next to the value");
+  // Keyboard: Tab commits and moves on; the next editor keeps the focus after the save.
+  await page.fill('[data-path="Avionics.LRU.mass"]', "1500 g");
+  await page.press('[data-path="Avionics.LRU.mass"]', "Tab");
+  await until(() => document.querySelector('[data-path="Avionics.LRU.mass"]')?.value === "1.5");
+  expect(await page.evaluate(() => document.activeElement?.dataset.path) === "Avionics.LRU.dal", "focus stays on the next editor");
+  await page.fill('[data-path="Avionics.LRU.mass"]', "3 lb");
+  await page.press('[data-path="Avionics.LRU.mass"]', "Enter");
+  await until(() => document.querySelector('[data-path="Avionics.LRU.mass"]')?.value === "1.36077711");
   await page.selectOption('[data-path="Avionics.LRU.dal"]', "B");
   await until(() => document.querySelector('[data-section="stereotypes"] [data-pf=msg]')?.textContent.includes("dal = B"));
   const view = await api("GET", `/api/elements/${fcc.id}/stereotypes`);

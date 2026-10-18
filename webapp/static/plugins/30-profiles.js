@@ -379,9 +379,8 @@ function fillInspector(studio, box, view) {
         const v = await studio.api("PATCH", `/api/elements/${encodeURIComponent(eid)}/stereotypes`, { property: path, value });
         const shown = findValue(v, path);
         studio.log(`${view.element.name}: ${path} = ${shown?.display ?? ""}`, "ok");
-        const focusPath = document.activeElement === input ? path : null;
-        rerender(v);
-        if (focusPath) box.querySelector(`[data-path="${CSS.escape(focusPath)}"]`)?.focus();
+        // Update this editor in place (no re-render): focus may already be in the next field.
+        if (shown) showStored(input, shown);
         msg(`${path} = ${shown?.display ?? ""}`, "ok");
       } catch (err) {
         input.classList.add("pf-invalid");
@@ -403,6 +402,28 @@ function findValue(view, path) {
   return null;
 }
 
+/** Text shown in a number / text editor for a stored value (numbers without their unit). */
+function editorText(p) {
+  if (p.value === null || p.value === undefined) return "";
+  if (NUMERIC.has(p.type) && typeof p.value === "number")
+    return (p.display || "").replace(new RegExp(`\\s*${escapeRe(p.unit)}$`), "");
+  return String(p.value);
+}
+
+/** Show a freshly stored value in its editor and clear any error marking. */
+function showStored(input, p) {
+  if (input.type === "checkbox") input.checked = !!p.value;
+  else {
+    const text = p.type === "enumeration" ? (p.value ?? "") : editorText(p);
+    input.value = text;
+    input.dataset.orig = text;
+  }
+  input.classList.remove("pf-invalid");
+  input.removeAttribute("aria-invalid");
+  input.title = p.description || "";
+  delete input._pfSent;
+}
+
 function propertyEditor(p) {
   const id = `pf-v-${p.id}-${Math.random().toString(36).slice(2, 7)}`;
   const tip = [p.description, p.type + (p.unit ? ` [${p.unit}]` : ""),
@@ -419,8 +440,7 @@ function propertyEditor(p) {
       ${cur === "" || !lits.includes(cur) ? option(cur, cur === "" ? "—" : `${cur} (invalid)`, true) : ""}
       ${lits.map(l => option(l, l, l === cur)).join("")}</select>`;
   } else {
-    const text = p.value === null || p.value === undefined ? "" :
-      (NUMERIC.has(p.type) && typeof p.value === "number" ? (p.display || "").replace(new RegExp(`\\s*${escapeRe(p.unit)}$`), "") : String(p.value));
+    const text = editorText(p);
     const hint = NUMERIC.has(p.type)
       ? `Number, expression (2*0.75)${p.unit ? ` or value with a compatible unit (e.g. 3 ${p.unit === "kg" ? "lb" : p.unit})` : ""}`
       : "Text";
@@ -442,7 +462,8 @@ async function openBatchDialog(studio, presetStereotype) {
   const all = [...data.profiles.flatMap(p => p.stereotypes), ...data.ungrouped].filter(s => !s.abstract);
   if (!all.length) { studio.log("Define a (non-abstract) stereotype in the Profile Editor first.", "warning"); return; }
   const sel = studio.getSelection();
-  const current = studio.selected;
+  // studio.selected outlives a project switch; only trust it while something is selected.
+  const current = studio.state.selectedId && studio.selected?.id === studio.state.selectedId ? studio.selected : null;
   const pick = presetStereotype || all[0].id;
   const scopeDefault = sel.length > 1 ? "selection" : (current ? "composition" : "model");
   openModal(studio, "Apply stereotype to elements", `
@@ -643,10 +664,16 @@ class ProfileEditor {
   withFocus(fn) {
     const a = document.activeElement;
     const key = a && this.pane.contains(a) ? a.dataset.focusKey : null;
+    // Text typed into the focused cell but not committed yet survives the re-render.
+    const typed = key && a.tagName === "INPUT" && a.type !== "checkbox" && a.type !== "color"
+      && a.value !== (a.getAttribute("value") ?? "") && a._pfCommitted !== a.value ? a.value : null;
     fn();
     if (key) {
       const el = this.pane.querySelector(`[data-focus-key="${CSS.escape(key)}"]`);
-      if (el) { el.focus(); if (el.select && el.tagName === "INPUT" && el.type === "text") el.select(); }
+      if (!el) return;
+      el.focus();
+      if (typed !== null && el.tagName === "INPUT" && !el.disabled) el.value = typed;
+      else if (el.select && el.tagName === "INPUT" && el.type !== "checkbox" && el.type !== "color") el.select();
     }
   }
 
@@ -859,7 +886,7 @@ class ProfileEditor {
       const out = await this.studio.api("PATCH", `/api/profiles/${encodeURIComponent(p.id)}`, { [field]: value || (field === "root_stereotype" ? null : value) });
       if (out.root_applied?.length) this.studio.log(`Applied model root stereotype to ${out.root_applied.join(", ")}`, "ok");
       return `Profile ${out.name}: ${field} updated`;
-    }, true);
+    });
   }
 
   renderStereotype(host, s, prof) {
@@ -1059,6 +1086,7 @@ class ProfileEditor {
         if ((col === "min" || col === "max" || col === "default") && value === "" && col !== "default") body = { [col]: null };
         if (col === "default" && value === "" ) body = { default: null };
         if (!once(input, JSON.stringify(body))) return;
+        input._pfCommitted = input.value;
         await this.save(async () => {
           const out = await this.studio.api("PATCH", url, body);
           this.pendingEnum.delete(pid);
@@ -1095,13 +1123,15 @@ class ProfileEditor {
     }
   }
 
-  /** Bind data-field inputs: commit on change / Enter, revert on Escape. */
-  bindFields(host, patch, isProfile = false) {
+  /** Bind data-field inputs: commit on change / Enter, revert on Escape. Names, categories
+   *  and styles show in the containment tree and its badges, so every save refreshes it. */
+  bindFields(host, patch) {
     for (const el of host.querySelectorAll("[data-field]")) {
       const commit = () => this.save(async () => {
         const value = el.type === "checkbox" ? el.checked : el.value;
+        el._pfCommitted = el.value;
         return patch(el.dataset.field, value);
-      }, isProfile);
+      });
       el.addEventListener("change", commit);
       if (el.tagName === "INPUT" && el.type === "text" || el.tagName === "INPUT" && !el.type) {
         el.addEventListener("keydown", (e) => {
