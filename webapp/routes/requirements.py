@@ -17,11 +17,12 @@ meant for the user (``404`` when a referenced element does not exist).
     PATCH  /api/req/test-cases/<tid>             {name?, description?, result?}
     DELETE /api/req/test-cases/<tid>
     GET    /api/req/links?element=<id>           trace links touching an element (with suspect flags)
+    GET    /api/req/links?set=<sid>&suspect=1    every trace link of the project / a set (optionally suspect only)
     POST   /api/req/links                        {type, source, target}
     POST   /api/req/links/batch                  {type, sources[], target} or {type, source, targets[]}
     DELETE /api/req/links/<lid>
     POST   /api/req/links/<lid>/clear-suspect
-    POST   /api/req/clear-suspect                {element?}  every suspect link of an element / the project
+    POST   /api/req/clear-suspect                {element?}  every suspect link of an element, a set or the project
     GET    /api/req/status?target=<id>           roll-up of a set / requirement (all sets without target)
     GET    /api/req/matrix?set=&columns=&column_set=
     GET    /api/req/diagram?element=&depth=      Mermaid traceability graph
@@ -214,7 +215,14 @@ def _link(ref: str):
 @route("GET", r"^/api/req/links$")
 @_guard
 def api_links(req: dict):
-    e = _find((req.get("query") or {}).get("element"), "element")
+    """Links of one element (?element=), or every link of the project / a set (?set=&suspect=1)."""
+    q = req.get("query") or {}
+    if not q.get("element"):
+        suspect_only = str(q.get("suspect", "")).lower() in ("1", "true", "yes")
+        return ok({"element": None, "set_id": q.get("set") or None,
+                   "links": rq.all_links(_repo(), _set(q.get("set"), optional=True),
+                                         suspect_only=suspect_only)})
+    e = _find(q.get("element"), "element")
     return ok({"element": rq.element_info(e), "traceable": rq.is_linkable(e),
                "links": rq.links_for(_repo(), e)})
 

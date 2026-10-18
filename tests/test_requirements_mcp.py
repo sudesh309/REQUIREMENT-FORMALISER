@@ -57,7 +57,10 @@ class RequirementsMcpTests(unittest.TestCase):
         self.assertEqual(upd["suspect_count"], 2)   # the Implement and the Verify link
         links = self.ok("sysml_requirement_links", ref=r2["id"])["links"]
         self.assertTrue(any(l["suspect"] for l in links))
+        self.assertEqual(len(self.ok("sysml_requirement_links", suspect_only=True)["links"]), 2)
+        self.assertEqual(len(self.ok("sysml_requirement_links", set="FCS")["links"]), 2)
         self.assertEqual(self.ok("sysml_clear_suspect", ref=r2["id"])["cleared"], 2)
+        self.assertEqual(self.ok("sysml_requirement_links", suspect_only=True)["links"], [])
         m = self.ok("sysml_trace_matrix", set="FCS", columns="components")
         self.assertEqual(m["links"][0]["element"], "Avionics::Aircraft::FCC")
         self.assertIn("FCS-1 Pitch control", m["unlinked_requirements"])

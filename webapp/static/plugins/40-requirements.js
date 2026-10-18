@@ -107,6 +107,21 @@ const STYLES = `
 .rq-diagram { padding:12px; }
 .rq-diagram-nodes { display:flex; flex-wrap:wrap; gap:4px; padding:0 12px 12px; }
 #tree li.tree-node.rq-drop-target > .row { background:#fef3c7; outline:1px dashed #f59e0b; }
+.rq-table td.rq-pad { padding:2px 6px; }
+.rq-table tr.rq-linkrow.suspect > td { background:#fffbeb; }
+.rq-check { display:inline-flex; align-items:center; gap:4px; color:#475569; }
+.rq-dock { flex:none; display:flex; flex-direction:column; height:240px; min-height:0; background:#fff; border-top:1px solid #cbd5e1; box-shadow:0 -2px 6px rgba(15,23,42,.06); }
+.rq-dock.rq-off { display:none; }
+.rq-dock-head { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:12px; }
+.rq-dock-title { font-weight:600; color:#334155; font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:help; }
+.rq-dock-head .rq-small-select { max-width:150px; }
+.rq-dock-head .rq-filter { width:150px !important; }
+.rq-dock-body { flex:1; overflow:auto; min-height:0; outline:none; }
+.rq-dock-body:focus-visible { box-shadow: inset 0 0 0 2px #93c5fd; }
+.rq-dock tr.rq-row { cursor:grab; }
+.rq-dock tr.rq-row:hover > td { background:#f8fafc; }
+.rq-dock tr.rq-row.sel > td { background:#eff6ff; }
+[data-plugin-button="req-perspective"].rq-on { background:#dbeafe; color:#1d4ed8; border-color:#bfdbfe; }
 `;
 
 const ICONS = { implement: "⚙", verify: "✓", refine: "⇣", derive: "⇡", relate: "↔", confirm: "☑" };
@@ -152,7 +167,10 @@ export default async function install(studio) {
     detailLinks: null, detailToken: 0, skipModelChanged: false,
     tm: { setId: null, columns: "components", columnSet: "", view: "matrix", element: "", depth: "2", data: null },
     insp: null,
+    links: [], linksSuspectOnly: false,      // "Links" view of the Requirements tab
+    dockOn: false, dockFilter: "", dockH: 240, // Requirements Perspective dock
   };
+  try { S.dockOn = localStorage.getItem("rq.dock") === "1"; } catch { /* storage unavailable */ }
 
   // ------------------------------------------------------------------ helpers
   const opt = (value, label, selected) =>
@@ -203,6 +221,7 @@ export default async function install(studio) {
 
   // ------------------------------------------------------------------ Requirements tab
   let reqPane, tbody, tableWrap, detailEl, subbarEl, setSelect, selNote, splitter, theadRow;
+  let dockEl = null, dockBody = null, dockBtn = null;   // Requirements Perspective dock (below)
 
   reqPane = studio.registerTab({
     id: "requirements", title: "Requirements", order: 40,
@@ -261,7 +280,7 @@ export default async function install(studio) {
         opt(t.name, `${ICONS[t.name]} ${t.label}`, t.name === S.linkType)).join("");
       q("link-type").addEventListener("change", (e) => setLinkType(e.target.value));
       setLinkType(S.linkType);
-      setSelect.addEventListener("change", run(async (e) => { S.setId = e.target.value; S.selId = null; await loadTable(); }));
+      setSelect.addEventListener("change", run((e) => chooseSet(e.target.value)));
       wireToolstrip(pane);
       wireTable();
       wireSplitter();
@@ -277,13 +296,16 @@ export default async function install(studio) {
   function setLinkType(name) {
     S.linkType = name;
     const t = typeMeta[name];
-    const sel = reqPane?.querySelector('[data-rq="link-type"]');
-    if (sel && sel.value !== name) sel.value = name;
+    for (const sel of [reqPane?.querySelector('[data-rq="link-type"]'), dockEl?.querySelector('[data-dock="link-type"]')]) {
+      if (sel && sel.value !== name) sel.value = name;
+    }
     const note = reqPane?.querySelector('[data-rq="link-dir"]');
     if (note && t) {
       note.textContent = `${shortRule(t.source)} → ${shortRule(t.target)}`;
       note.title = t.description;
     }
+    const dsel = dockEl?.querySelector('[data-dock="link-type"]');
+    if (dsel && t) dsel.title = `${t.label}: ${shortRule(t.source)} → ${shortRule(t.target)}. ${t.description}`;
   }
 
   function wireToolstrip(pane) {
@@ -324,7 +346,20 @@ export default async function install(studio) {
     S.table = data;
     if (S.setId && !data.sets.some((s) => s.id === S.setId)) S.setId = "";
     if (S.selId && !rowById(S.selId)) S.selId = null;
+    if (S.view === "links") await loadLinks();
     S.dirty.req = false;
+    renderAll();
+  }
+
+  async function loadLinks() {
+    const p = new URLSearchParams();
+    if (S.setId) p.set("set", S.setId);
+    S.links = (await api("GET", `/api/req/links?${p}`)).links;
+  }
+
+  async function showView(view) {
+    S.view = view;
+    if (view === "links") await loadLinks();
     renderAll();
   }
 
@@ -332,14 +367,21 @@ export default async function install(studio) {
     if (!tbody) return;
     renderSetSelect();
     renderSubbar();
-    if (S.view === "tests") renderTests(); else renderTable();
+    if (S.view === "tests") renderTests();
+    else if (S.view === "links") renderLinksView();
+    else renderTable();
     renderDetail();
     updateToolstrip();
+    renderDock();
   }
 
+  async function chooseSet(id) { S.setId = id; S.selId = null; await loadTable(); }
+
+  const setOptions = () => opt("", sets().length ? "All sets" : "No sets yet", !S.setId) +
+    sets().map((s) => opt(s.id, `${s.name} (${s.count})`, s.id === S.setId)).join("");
+
   function renderSetSelect() {
-    setSelect.innerHTML = opt("", sets().length ? "All sets" : "No sets yet", !S.setId) +
-      sets().map((s) => opt(s.id, `${s.name} (${s.count})`, s.id === S.setId)).join("");
+    setSelect.innerHTML = setOptions();
     const cs = currentSet();
     reqPane.querySelector('[data-rq="set-note"]').textContent = cs ? `ID prefix ${cs.prefix || "—"}` : `${sets().length} set(s)`;
   }
@@ -357,28 +399,48 @@ export default async function install(studio) {
 
   function renderSubbar() {
     const nReq = rows().length, nTc = (S.table?.test_cases || []).length;
+    const nLinks = S.table?.link_count || 0, nSus = S.table?.suspect_link_count || 0;
     const tot = rollupTotals();
+    const reqFilters = `
+      <select class="rq-small-select" data-rq="filter-type" title="Filter by type">${enumOptions(meta.types, S.filter.type, "All types")}</select>
+      <select class="rq-small-select" data-rq="filter-status" title="Filter by status">${enumOptions(meta.statuses, S.filter.status, "All statuses")}</select>`;
+    const linkFilters = `
+      <label class="rq-check"><input type="checkbox" data-rq="suspect-only" ${S.linksSuspectOnly ? "checked" : ""} /> Suspect only</label>
+      <button class="rq-mini" data-rq="clear-all-suspect" ${nSus ? "" : "disabled"} title="Mark every suspect link shown as reviewed">⚠ Clear all suspect (${nSus})</button>`;
     subbarEl.innerHTML = `
       <span class="rq-seg" role="tablist">
         <button data-rq="view-req" class="${S.view === "requirements" ? "on" : ""}">Requirements (${nReq})</button>
         <button data-rq="view-tests" class="${S.view === "tests" ? "on" : ""}">Test cases (${nTc})</button>
+        <button data-rq="view-links" class="${S.view === "links" ? "on" : ""}" title="Every trace link with change information">Links (${nLinks}${nSus ? ` · ⚠ ${nSus}` : ""})</button>
       </span>
       <input class="input rq-filter" data-rq="filter-text" placeholder="Filter text / ID…" value="${esc(S.filter.text)}" />
-      <select class="rq-small-select" data-rq="filter-type" title="Filter by type">${enumOptions(meta.types, S.filter.type, "All types")}</select>
-      <select class="rq-small-select" data-rq="filter-status" title="Filter by status">${enumOptions(meta.statuses, S.filter.status, "All statuses")}</select>
+      ${S.view === "links" ? linkFilters : S.view === "requirements" ? reqFilters : ""}
       <span class="rq-rollup" data-rq="rollup" data-impl-pct="${tot.impl.pct}" data-ver-pct="${tot.ver.pct}">
         <span title="Implemented leaf requirements">Implemented ${implBar(tot.impl)}</span>
         <span title="Verified (passed) leaf requirements">Verified ${verBar(tot.ver)}</span>
       </span>`;
-    subbarEl.querySelector('[data-rq="view-req"]').onclick = () => { S.view = "requirements"; renderAll(); };
-    subbarEl.querySelector('[data-rq="view-tests"]').onclick = () => { S.view = "tests"; renderAll(); };
-    const ft = subbarEl.querySelector('[data-rq="filter-text"]');
+    const q = (k) => subbarEl.querySelector(`[data-rq="${k}"]`);
+    q("view-req").onclick = run(() => showView("requirements"));
+    q("view-tests").onclick = run(() => showView("tests"));
+    q("view-links").onclick = run(() => showView("links"));
+    const ft = q("filter-text");
     ft.addEventListener("input", () => {
       S.filter.text = ft.value;
       if (S.view === "requirements") renderTable();
+      else if (S.view === "links") renderLinksView();
     });
-    subbarEl.querySelector('[data-rq="filter-type"]').onchange = (e) => { S.filter.type = e.target.value; renderTable(); };
-    subbarEl.querySelector('[data-rq="filter-status"]').onchange = (e) => { S.filter.status = e.target.value; renderTable(); };
+    if (S.view === "requirements") {
+      q("filter-type").onchange = (e) => { S.filter.type = e.target.value; renderTable(); };
+      q("filter-status").onchange = (e) => { S.filter.status = e.target.value; renderTable(); };
+    }
+    if (S.view === "links") {
+      q("suspect-only").onchange = (e) => { S.linksSuspectOnly = e.target.checked; renderLinksView(); };
+      q("clear-all-suspect").onclick = run(async () => {
+        const out = await api("POST", "/api/req/clear-suspect", S.setId ? { element: S.setId } : {});
+        studio.log(`Cleared ${out.cleared} suspect link(s)`, "ok");
+        await afterChange();
+      });
+    }
   }
 
   function implBar(impl) {
@@ -391,10 +453,10 @@ export default async function install(studio) {
   }
 
   // --- tree-table ---------------------------------------------------------
-  function visibleRows() {
+  function visibleRows(f = S.filter) {
     const all = rows();
     const byId = new Map(all.map((r) => [r.id, r]));
-    const f = S.filter, text = f.text.trim().toLowerCase();
+    const text = (f.text || "").trim().toLowerCase();
     const filtering = !!(text || f.type || f.status);
     const match = (r) =>
       (!text || [r.req_id, r.summary, r.description, r.rationale].some((v) => (v || "").toLowerCase().includes(text)))
@@ -484,11 +546,10 @@ export default async function install(studio) {
       if (tr && tr.dataset.id !== S.selId) selectRow(tr.dataset.id);
     });
     tbody.addEventListener("click", (e) => {
+      if (S.view === "links") { run(onLinkAction)(e, S.links); return; }
       const tw = e.target.closest("[data-rq=twisty]");
       if (!tw || tw.classList.contains("empty")) return;
-      const id = tw.closest("tr").dataset.id;
-      if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id);
-      renderTable();
+      toggleCollapsed(tw.closest("tr").dataset.id);
     });
     tbody.addEventListener("change", (e) => {
       const f = e.target.dataset.f;
@@ -515,14 +576,24 @@ export default async function install(studio) {
     tableWrap.addEventListener("keydown", onTableKey);
   }
 
+  function toggleCollapsed(id) {
+    if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id);
+    if (S.view === "requirements") renderTable();
+    renderDock();
+  }
+
   function selectRow(id) {
     if (S.selId === id) return;
     S.selId = id;
     S.tm.element = id;   // the traceability diagram follows the latest selection
-    tbody.querySelectorAll("tr.sel").forEach((t) => t.classList.remove("sel"));
-    tbody.querySelector(`tr[data-id="${CSS.escape(id)}"]`)?.classList.add("sel");
+    for (const host of [tbody, dockBody]) {
+      if (!host) continue;
+      host.querySelectorAll("tr.sel").forEach((t) => t.classList.remove("sel"));
+      host.querySelector(`tr[data-id="${CSS.escape(id)}"]`)?.classList.add("sel");
+    }
     renderDetail();
     updateToolstrip();
+    updateDockButtons();
   }
 
   function onTableKey(e) {
@@ -612,15 +683,17 @@ export default async function install(studio) {
   }
 
   function updateSelectionNote() {
-    if (!selNote) return;
     const ids = studio.getSelection();
-    if (!ids.length) { selNote.textContent = "Selection: none"; return; }
     const names = ids.map((id) => {
       const n = studio.state.treeIndex.get(id);
       return n ? `${n.name || "?"} (${n.kind})` : id.slice(0, 8);
     });
-    selNote.textContent = `Selection: ${names.join(", ")}`;
-    selNote.title = `Current model selection: ${names.join(", ")}`;
+    const text = names.length ? `Selection: ${names.join(", ")}` : "Selection: none";
+    for (const note of [selNote, dockEl?.querySelector('[data-dock="sel-note"]')]) {
+      if (!note) continue;
+      note.textContent = text;
+      note.title = names.length ? `Current model selection: ${names.join(", ")}` : "Select a model element in the tree or on the canvas";
+    }
   }
 
   async function newSetDialog() {
@@ -842,24 +915,61 @@ export default async function install(studio) {
         <a class="rq-a" data-act="nav" data-id="${esc(l.other.id)}" title="${esc(l.other.qualified_name)} (${esc(l.other.kind)})">${esc(otherLabel(l.other))}</a>
         ${sus}<button class="rq-x" data-act="del" data-link="${esc(l.id)}" title="Delete this link" aria-label="Delete link">✕</button></div>`;
     }).join("");
-    host.onclick = run(async (e) => {
-      const b = e.target.closest("[data-act]");
-      if (!b) return;
-      if (b.dataset.act === "nav") { studio.emit("navigate", { id: b.dataset.id }); return; }
-      if (b.dataset.act === "clear") {
-        await api("POST", `/api/req/links/${encodeURIComponent(b.dataset.link)}/clear-suspect`);
-        studio.log("Suspect flag cleared", "ok");
-        await afterChange();
-      }
-      if (b.dataset.act === "del") {
-        const l = links.find((x) => x.id === b.dataset.link);
-        confirmModal("Delete link", `Delete the link <b>${esc(otherLabel(l.source))}</b> ${esc(l.verb)} <b>${esc(otherLabel(l.target))}</b>?`, async () => {
-          await api("DELETE", `/api/req/links/${encodeURIComponent(l.id)}`);
-          studio.log(`Deleted ${l.label} link`, "warning");
-          await afterChange({ tree: true });
-        });
-      }
-    });
+    host.onclick = run((e) => onLinkAction(e, links));
+  }
+
+  // Click on [data-act] inside a link list: nav (navigate), clear (suspect flag), del (delete link).
+  async function onLinkAction(e, links) {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    if (b.dataset.act === "nav") { studio.emit("navigate", { id: b.dataset.id }); return; }
+    if (b.dataset.act === "clear") {
+      await api("POST", `/api/req/links/${encodeURIComponent(b.dataset.link)}/clear-suspect`);
+      studio.log("Suspect flag cleared", "ok");
+      await afterChange();
+    }
+    if (b.dataset.act === "del") {
+      const l = links.find((x) => x.id === b.dataset.link);
+      if (!l) return;
+      confirmModal("Delete link", `Delete the link <b>${esc(otherLabel(l.source))}</b> ${esc(l.verb)} <b>${esc(otherLabel(l.target))}</b>?`, async () => {
+        await api("DELETE", `/api/req/links/${encodeURIComponent(l.id)}`);
+        studio.log(`Deleted ${l.label} link`, "warning");
+        await afterChange({ tree: true });
+      });
+    }
+  }
+
+  // --- links view (System Composer "Show Links": every link with change information) ---------
+  const changeInfo = (l) => {
+    if (l.suspect) {
+      const what = l.suspect_ends.map((end) => (end === "source" ? "Source changed" : "Destination changed")).join(", ");
+      return `<span class="rq-warn" title="The requirement text changed after the link was made">⚠ ${esc(what)}</span>`;
+    }
+    return `<span class="text-slate-400">${l.tracked ? "No change" : "Not tracked yet"}</span>`;
+  };
+
+  function renderLinksView() {
+    theadRow.innerHTML = `<th style="width:118px">Type</th><th>Source</th><th style="width:120px">Relationship</th>
+      <th>Destination</th><th style="width:190px">Change information</th><th style="width:90px"></th>`;
+    const text = S.filter.text.trim().toLowerCase();
+    const all = S.links || [];
+    const list = all.filter((l) => (!S.linksSuspectOnly || l.suspect)
+      && (!text || [otherLabel(l.source), otherLabel(l.target), l.label].some((v) => v.toLowerCase().includes(text))));
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="rq-empty">${all.length ? "No link matches the filter."
+        : "No trace links yet. Use <b>Link to Selection</b>, drag a requirement onto a model element, or click a cell in the Traceability matrix."}</div></td></tr>`;
+      return;
+    }
+    const end = (o) => `<a class="rq-a" data-act="nav" data-id="${esc(o.id)}" title="${esc(o.qualified_name)} (${esc(o.kind)})">${esc(otherLabel(o))}</a>`;
+    tbody.innerHTML = list.map((l) => `
+      <tr class="rq-linkrow${l.suspect ? " suspect" : ""}" data-link-id="${esc(l.id)}" data-type="${esc(l.type)}" data-suspect="${l.suspect}">
+        <td class="rq-pad">${chip(l.type)}</td>
+        <td class="rq-pad">${end(l.source)}</td>
+        <td class="rq-pad text-slate-500">${esc(l.verb)} →</td>
+        <td class="rq-pad">${end(l.target)}</td>
+        <td class="rq-pad">${changeInfo(l)}</td>
+        <td class="rq-pad" style="text-align:right">${l.suspect ? `<button class="rq-mini" data-act="clear" data-link="${esc(l.id)}" title="Mark the link as reviewed">Clear</button>` : ""}<button class="rq-x" data-act="del" data-link="${esc(l.id)}" title="Delete this link" aria-label="Delete link">✕</button></td>
+      </tr>`).join("");
   }
 
   function highlightLinks(id, links) {
@@ -1323,10 +1433,171 @@ export default async function install(studio) {
     run(linkFromDrop)(reqId, node.dataset.id);
   });
 
+  // ------------------------------------------------------------------ Requirements Perspective dock
+  // System Composer's Requirements Perspective docks the requirements browser under the
+  // architecture canvas so requirements can be dragged onto components. The dock shows under
+  // every tab except the Requirements tab itself (which shows the full editor) and shares the
+  // current set, selected requirement and link type with it.
+  dockEl = document.createElement("div");
+  dockEl.className = "rq-dock rq-off";
+  dockEl.dataset.rq = "dock";
+  dockEl.setAttribute("role", "region");
+  dockEl.setAttribute("aria-label", "Requirements perspective");
+  dockEl.innerHTML = `
+    <div class="rq-splitter" data-dock="splitter" title="Drag to resize"></div>
+    <div class="rq-dock-head">
+      <span class="rq-dock-title" title="Requirements Perspective: drag a row onto a model element (tree or canvas) to create an Implement link, or select an element and use Link to Selection. Double-click a row to edit it.">Requirements</span>
+      <select class="rq-small-select" data-dock="set" title="Requirement set"></select>
+      <input class="input rq-filter" data-dock="filter" placeholder="Filter text / ID…" aria-label="Filter requirements" />
+      <select class="rq-small-select" data-dock="link-type" aria-label="Link type">${meta.link_types.map((t) => opt(t.name, `${ICONS[t.name]} ${t.label}`, t.name === S.linkType)).join("")}</select>
+      <button class="rq-mini" data-dock="link-to" title="Link the selected requirement with the selected model element(s)">⇠ Link to Selection</button>
+      <button class="rq-mini" data-dock="link-from" title="Selected model element(s) become the link source">⇢ Link from Selection</button>
+      <span class="rq-ts-note sel" data-dock="sel-note">Selection: none</span>
+      <span class="flex-1"></span>
+      <button class="rq-mini" data-dock="open" title="Edit the selected requirement in the Requirements tab">Open in editor</button>
+      <button class="rq-x" data-dock="close" title="Close the Requirements Perspective (Alt+Shift+R)" aria-label="Close requirements perspective">✕</button>
+    </div>
+    <div class="rq-dock-body" tabindex="0" data-dock="body">
+      <table class="rq-table"><thead><tr><th style="width:70px">#</th><th style="width:96px">ID</th><th>Summary</th>
+        <th style="width:104px">Implemented</th><th style="width:104px">Verified</th><th style="width:56px">Links</th></tr></thead>
+        <tbody data-dock="tbody"></tbody></table>
+    </div>`;
+  {
+    const panes = document.getElementById("tab-panes");
+    panes.parentElement.insertBefore(dockEl, panes.nextSibling);
+  }
+  dockBody = dockEl.querySelector('[data-dock="tbody"]');
+  const dq = (k) => dockEl.querySelector(`[data-dock="${k}"]`);
+
+  const dockVisible = () => S.dockOn && !S.visible.req;
+  function applyDockVisibility() {
+    dockEl.classList.toggle("rq-off", !dockVisible());
+    dockEl.style.height = `${S.dockH}px`;
+    dockBtn?.classList.toggle("rq-on", S.dockOn);
+  }
+
+  function setDock(on) {
+    S.dockOn = on;
+    try { localStorage.setItem("rq.dock", on ? "1" : "0"); } catch { /* storage unavailable */ }
+    applyDockVisibility();
+    if (dockVisible()) {
+      run(async () => { if (S.dirty.req || !S.table) await loadTable(); else renderDock(); })();
+    }
+  }
+
+  function updateDockButtons() {
+    if (!dockVisible()) return;
+    const has = !!selRow();
+    dq("link-to").disabled = dq("link-from").disabled = dq("open").disabled = !has;
+  }
+
+  function renderDock() {
+    if (!dockVisible()) return;
+    dq("set").innerHTML = setOptions();
+    const f = dq("filter");
+    if (document.activeElement !== f) f.value = S.dockFilter;
+    if (!sets().length) {
+      dockBody.innerHTML = `<tr><td colspan="6"><div class="rq-empty">No requirement sets yet. Open the <b>Requirements</b> tab to create or import one.</div></td></tr>`;
+    } else {
+      const vis = visibleRows({ text: S.dockFilter });
+      let lastSet = null;
+      dockBody.innerHTML = vis.length ? vis.map(({ r, dim }) => {
+        const twisty = r.has_children ? (S.collapsed.has(r.id) ? "▸" : "▾") : "";
+        const sus = r.suspect_count ? ` <span class="rq-warn" title="${r.suspect_count} suspect link(s)">⚠</span>` : "";
+        let head = "";
+        if (!S.setId && r.set_id !== lastSet) {
+          lastSet = r.set_id;
+          head = `<tr class="rq-sethead"><td colspan="6" style="background:#f8fafc;padding:2px 8px;font-weight:600;color:#334155">▤ ${esc(sets().find((x) => x.id === r.set_id)?.name || "")}</td></tr>`;
+        }
+        return `${head}<tr class="rq-row${r.id === S.selId ? " sel" : ""}${dim ? " dim" : ""}" draggable="true" data-id="${esc(r.id)}" data-req-id="${esc(r.req_id || "")}" title="Drag onto a model element to create an Implement link">
+          <td class="rq-pad"><div class="rq-idx"><span class="rq-grip">⠿</span><span class="rq-twisty${twisty ? "" : " empty"}" data-rq="twisty">${twisty || "·"}</span>${esc(r.index)}</div></td>
+          <td class="rq-pad">${esc(r.req_id || "")}</td>
+          <td class="rq-pad" style="padding-left:${6 + 16 * r.depth}px">${esc(r.summary || "")}</td>
+          <td data-impl-pct="${r.implementation.pct}">${implBar(r.implementation)}</td>
+          <td data-ver-state="${esc(r.verification.state)}">${verBar(r.verification)}</td>
+          <td class="rq-pad" data-links="${r.link_count}">${r.link_count}${sus}</td></tr>`;
+      }).join("") : `<tr><td colspan="6"><div class="rq-empty">${rows().length ? "No requirement matches the filter." : "This set is empty."}</div></td></tr>`;
+    }
+    updateSelectionNote();
+    updateDockButtons();
+  }
+
+  function openInEditor(id) {
+    if (id) S.selId = id;
+    studio.switchTab("requirements");
+    S.view = "requirements";
+    renderAll();
+    if (S.selId) tbody.querySelector(`tr[data-id="${CSS.escape(S.selId)}"] [data-f=summary]`)?.focus();
+  }
+
+  dq("set").addEventListener("change", run((e) => chooseSet(e.target.value)));
+  dq("filter").addEventListener("input", (e) => { S.dockFilter = e.target.value; renderDock(); });
+  dq("link-type").addEventListener("change", (e) => setLinkType(e.target.value));
+  dq("link-to").addEventListener("click", run(() => linkWithSelection("to")));
+  dq("link-from").addEventListener("click", run(() => linkWithSelection("from")));
+  dq("open").addEventListener("click", () => openInEditor(S.selId));
+  dq("close").addEventListener("click", () => setDock(false));
+  dockBody.addEventListener("mousedown", (e) => {
+    const tr = e.target.closest("tr[data-id]");
+    if (tr && !e.target.closest("[data-rq=twisty]")) selectRow(tr.dataset.id);
+  });
+  dockBody.addEventListener("click", (e) => {
+    const tw = e.target.closest("[data-rq=twisty]");
+    if (tw && !tw.classList.contains("empty")) toggleCollapsed(tw.closest("tr").dataset.id);
+  });
+  dockBody.addEventListener("dblclick", (e) => {
+    const tr = e.target.closest("tr[data-id]");
+    if (tr) openInEditor(tr.dataset.id);
+  });
+  dockBody.addEventListener("dragstart", (e) => {
+    const tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    selectRow(tr.dataset.id);
+    e.dataTransfer.setData("application/x-sysml-element", tr.dataset.id);
+    e.dataTransfer.setData("application/x-sysml-requirement", tr.dataset.id);
+    e.dataTransfer.setData("text/plain", tr.dataset.reqId || tr.dataset.id);
+    e.dataTransfer.effectAllowed = "copyLink";
+  });
+  dockBody.addEventListener("contextmenu", (e) => {
+    const tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    e.preventDefault();
+    selectRow(tr.dataset.id);
+    openRowMenu(e.clientX, e.clientY);
+  });
+  dq("body").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter") return;
+    const vis = [...dockBody.querySelectorAll("tr[data-id]")];
+    if (!vis.length) return;
+    e.preventDefault();
+    if (e.key === "Enter") { openInEditor(S.selId); return; }
+    const i = vis.findIndex((t) => t.dataset.id === S.selId);
+    const next = vis[Math.max(0, Math.min(vis.length - 1, e.key === "ArrowUp" ? i - 1 : i + 1))];
+    selectRow(next.dataset.id);
+    next.scrollIntoView({ block: "nearest" });
+  });
+  dq("splitter").addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const startY = e.clientY, startH = S.dockH;
+    const move = (ev) => { S.dockH = Math.max(110, Math.min(window.innerHeight - 220, startH - (ev.clientY - startY))); dockEl.style.height = `${S.dockH}px`; };
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+
+  dockBtn = studio.registerToolbarButton({
+    id: "req-perspective", label: "Req Perspective", group: "Requirements",
+    title: "Show the requirements browser under the current view (Alt+Shift+R)",
+    onClick: () => setDock(!S.dockOn),
+  });
+  studio.registerShortcut({ key: "r", alt: true, shift: true, handler: () => setDock(!S.dockOn) });
+
   // ------------------------------------------------------------------ events
   studio.on("tab-shown", (id) => {
     S.visible.req = id === "requirements";
     S.visible.tm = id === "traceability";
+    applyDockVisibility();
+    if (dockVisible()) run(async () => { if (S.dirty.req || !S.table) await loadTable(); else renderDock(); })();
   });
   let pendingReload = null;
   studio.on("model-changed", () => {
@@ -1334,7 +1605,7 @@ export default async function install(studio) {
     S.dirty.req = true; S.dirty.tm = true;
     clearTimeout(pendingReload);
     pendingReload = setTimeout(() => {
-      if (S.visible.req) run(loadTable)();
+      if (S.visible.req || dockVisible()) run(loadTable)();
       if (S.visible.tm) run(loadTraceability)();
     }, 40);
   });
@@ -1348,6 +1619,8 @@ export default async function install(studio) {
   });
   studio.on("selection-changed", updateSelectionNote);
   studio.on("navigate", ({ id } = {}) => {
-    if (id && rowById(id) && S.visible.req) selectRow(id);
+    if (id && rowById(id) && (S.visible.req || dockVisible())) selectRow(id);
   });
+
+  applyDockVisibility();   // a dock left open in an earlier session reopens (it loads on the first model-changed)
 }

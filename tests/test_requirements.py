@@ -225,6 +225,27 @@ class LinkTests(unittest.TestCase):
         with self.assertRaises(rq.RequirementsError):
             rq.delete_trace_link(self.repo, link)
 
+    def test_all_links_and_set_scoped_suspect_clearing(self):
+        other = rq.create_requirement_set(self.repo, "HLR", prefix="HLR-")
+        h1 = rq.add_requirement(self.repo, other, {"summary": "Pitch law"})
+        rq.create_trace_link(self.repo, "implement", self.fcc, self.r1)
+        rq.create_trace_link(self.repo, "derive", h1, self.r11)
+        tc = rq.add_test_case(self.repo, other, "HLR test")
+        rq.create_trace_link(self.repo, "verify", tc, h1)
+        self.assertEqual(len(rq.all_links(self.repo)), 3)
+        self.assertEqual({l["type"] for l in rq.all_links(self.repo, self.set)}, {"implement", "derive"})
+        self.assertEqual({l["type"] for l in rq.all_links(self.repo, other)}, {"derive", "verify"})
+        rq.update_requirement(self.repo, self.r1, {"description": "changed"})
+        rq.update_requirement(self.repo, h1, {"description": "changed too"})
+        suspect = rq.all_links(self.repo, suspect_only=True)
+        self.assertEqual({(l["type"], tuple(l["suspect_ends"])) for l in suspect},
+                         {("implement", ("target",)), ("derive", ("source",)), ("verify", ("target",))})
+        table = rq.requirements_table(self.repo, other)
+        self.assertEqual((table["link_count"], table["suspect_link_count"]), (2, 2))
+        # Clearing a set only touches links of its requirements and test cases.
+        self.assertEqual(rq.clear_suspect_for(self.repo, other), 2)
+        self.assertEqual([l["type"] for l in rq.all_links(self.repo, suspect_only=True)], ["implement"])
+
     def test_links_for_and_directions(self):
         rq.create_trace_link(self.repo, "implement", self.fcc, self.r1)
         rq.create_trace_link(self.repo, "derive", self.r11, self.r1)

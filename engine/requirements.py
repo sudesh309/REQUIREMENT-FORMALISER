@@ -847,11 +847,21 @@ def clear_suspect(repo, rel: Relationship) -> Relationship:
     return rel
 
 
+def _set_scope(rset: "RequirementSet") -> set[int]:
+    """id()s of the requirements and test cases of a set (for link filtering)."""
+    return {id(e) for e in rset.walk() if is_requirement(e) or is_test_case(e)}
+
+
 def clear_suspect_for(repo, element: Optional[Element] = None) -> int:
-    """Clear every suspect link touching `element` (or the whole project); returns the count."""
+    """Clear every suspect link touching `element`, the requirements and test cases of a set,
+    or the whole project (no element); returns the count."""
+    scope = _set_scope(element) if isinstance(element, RequirementSet) else None
     n = 0
     for rel in trace_links(repo):
-        if element is not None and element is not rel.source and element is not rel.target:
+        if scope is not None:
+            if id(rel.source) not in scope and id(rel.target) not in scope:
+                continue
+        elif element is not None and element is not rel.source and element is not rel.target:
             continue
         if is_suspect(rel):
             clear_suspect(repo, rel)
@@ -935,6 +945,19 @@ def element_info(e: Element) -> dict:
 def links_for(repo, element: Element, index: Optional[LinkIndex] = None) -> list[dict]:
     index = index or LinkIndex(repo)
     return [link_info(r, element) for r in index.touching(element)]
+
+
+def all_links(repo, rset: Optional["RequirementSet"] = None, *, suspect_only: bool = False,
+              index: Optional[LinkIndex] = None) -> list[dict]:
+    """Every trace link of the project, or those touching the requirements / test cases of `rset`
+    (System Composer's link list with change information)."""
+    index = index or LinkIndex(repo)
+    links = index.links
+    if rset is not None:
+        scope = _set_scope(rset)
+        links = [r for r in links if id(r.source) in scope or id(r.target) in scope]
+    out = [link_info(r) for r in links]
+    return [l for l in out if l["suspect"]] if suspect_only else out
 
 
 # ---------------------------------------------------------------------------
@@ -1072,9 +1095,11 @@ def requirements_table(repo, rset: Optional[RequirementSet] = None) -> dict:
         for req, depth, label in walk_requirements(s):
             rows.append(requirement_row(req, depth, label, status[req.element_id]))
         tests += [test_case_row(repo, t, index) for t in test_cases_in(s)]
+    links = all_links(repo, rset, index=index)
     return {"sets": [set_summary(repo, s, index) for s in sets],
             "set_id": rset.element_id if rset is not None else None,
-            "rows": rows, "test_cases": tests}
+            "rows": rows, "test_cases": tests,
+            "link_count": len(links), "suspect_link_count": sum(1 for l in links if l["suspect"])}
 
 
 def requirement_status(repo, target: Optional[Element] = None) -> dict:

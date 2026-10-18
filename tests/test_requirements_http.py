@@ -95,6 +95,25 @@ class RequirementsApiTests(WebAppTestCase):
         self.call("DELETE", f"/api/req/links/{link['id']}", expect=404)
         self.assertEqual(len(self.call("GET", f"/api/req/links?element={self.fcc['id']}")["links"]), 1)
 
+    def test_link_list_and_set_clear_suspect(self):
+        r1 = self.add(self.set["id"], summary="Pitch control")
+        other = self.call("POST", "/api/req/sets", {"name": "HLR", "prefix": "HLR-"})
+        h1 = self.add(other["id"], summary="Pitch law")
+        self.call("POST", "/api/req/links", {"type": "implement", "source": self.fcc["id"], "target": r1["id"]})
+        self.call("POST", "/api/req/links", {"type": "derive", "source": h1["id"], "target": r1["id"]})
+        everything = self.call("GET", "/api/req/links")
+        self.assertIsNone(everything["element"])
+        self.assertEqual(len(everything["links"]), 2)
+        only_hlr = self.call("GET", f"/api/req/links?set={other['id']}")["links"]
+        self.assertEqual([l["type"] for l in only_hlr], ["derive"])
+        self.call("PATCH", f"/api/req/requirements/{r1['id']}", {"description": "edited"})
+        self.assertEqual(len(self.call("GET", "/api/req/links?suspect=1")["links"]), 2)
+        self.assertEqual(self.table()["suspect_link_count"], 2)
+        self.assertEqual(self.call("POST", "/api/req/clear-suspect", {"element": other["id"]})["cleared"], 1)
+        left = self.call("GET", "/api/req/links?suspect=true")["links"]
+        self.assertEqual([(l["type"], l["suspect_ends"]) for l in left], [("implement", ["target"])])
+        self.call("GET", "/api/req/links?set=nope", expect=404)
+
     def test_batch_links_and_test_cases(self):
         r1 = self.add(self.set["id"], summary="Pitch control")
         adc = self.call("POST", "/api/element", {"kind": "PartUsage", "name": "ADC", "parent": self.arch["id"]})

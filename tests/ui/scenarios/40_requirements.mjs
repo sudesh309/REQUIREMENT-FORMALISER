@@ -111,9 +111,9 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   // --- inspector section on the component ------------------------------------------------
   await page.click('.tab[data-tab="properties"]');
   await page.click(`#tree .tree-node[data-id="${fcc.id}"] > .row`);
-  await page.waitForSelector('[data-section="requirements-links"] .rq-link[data-type="implement"]');
-  const n = await page.$$eval('[data-section="requirements-links"] .rq-link', (els) => els.length);
-  expect(n === 2, `inspector lists both links (${n})`);
+  // FCC was already selected, so wait for the re-rendered section rather than the old one.
+  await page.waitForFunction(() => document.querySelectorAll(
+    '[data-section="requirements-links"] .rq-link[data-type="implement"]').length === 2, null, { timeout: 10000 });
   await page.click('[data-section="requirements-links"] [data-insp="highlight"]');
   await page.click('[data-section="requirements-links"] .rq-link.suspect [data-act="clear"]');
   await idle();

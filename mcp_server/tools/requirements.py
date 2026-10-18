@@ -120,9 +120,16 @@ def tool_link_requirement(type: str, source: str, target: str) -> dict:
 
 
 @_tool
-def tool_requirement_links(ref: str) -> dict:
-    e = _find(ref)
-    return {"element": rq.element_info(e), "links": rq.links_for(SESSION.repo, e)}
+def tool_requirement_links(ref: Optional[str] = None, set: Optional[str] = None,
+                           suspect_only: bool = False) -> dict:
+    if ref:
+        e = _find(ref)
+        links = rq.links_for(SESSION.repo, e)
+        if suspect_only:
+            links = [l for l in links if l["suspect"]]
+        return {"element": rq.element_info(e), "links": links}
+    return {"element": None,
+            "links": rq.all_links(SESSION.repo, _set(set, optional=True), suspect_only=suspect_only)}
 
 
 @_tool
@@ -278,8 +285,12 @@ TOOLS = [
     },
     {
         "name": "sysml_requirement_links",
-        "description": "List the trace links touching an element (direction, type, suspect flag).",
-        "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}}, "required": ["ref"]},
+        "description": "List trace links (type, direction, suspect flag and which end changed): those "
+                       "touching an element (ref), or every link of a set / the whole project.",
+        "inputSchema": {"type": "object", "properties": {
+            "ref": {"type": "string", "description": "Element UUID or qualified name"},
+            "set": {"type": "string", "description": "Without ref: only links of this requirement set"},
+            "suspect_only": {"type": "boolean"}}},
         "handler": tool_requirement_links,
     },
     {
@@ -290,8 +301,8 @@ TOOLS = [
     },
     {
         "name": "sysml_clear_suspect",
-        "description": "Clear the suspect flag of one link (link), of every link of an element (ref), "
-                       "or of the whole project (no arguments).",
+        "description": "Clear the suspect flag of one link (link), of every link of an element or "
+                       "requirement set (ref), or of the whole project (no arguments).",
         "inputSchema": {"type": "object", "properties": {"link": {"type": "string"}, "ref": {"type": "string"}}},
         "handler": tool_clear_suspect,
     },
