@@ -47,7 +47,12 @@ const STYLE = `
 .pf-preview svg { width:16px; height:16px; }
 .pf-line-preview { width:120px; height:10px; }
 .pf-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:6px; max-width:1100px; }
-.pf-table { border-collapse:collapse; width:100%; font-size:12px; min-width:900px; }
+.pf-table { border-collapse:collapse; width:100%; font-size:12px; table-layout:fixed; min-width:640px; }
+.pf-table.pf-auto { table-layout:auto; min-width:0; }
+.pf-table col.c-num { width:26px; } .pf-table col.c-name { width:15%; } .pf-table col.c-type { width:12%; }
+.pf-table col.c-unit { width:9%; } .pf-table col.c-default { width:11%; } .pf-table col.c-min, .pf-table col.c-max { width:7%; }
+.pf-table col.c-lits { width:14%; } .pf-table col.c-act { width:74px; }
+.pf-table th.pf-actions-h { text-align:center; }
 .pf-table th { text-align:left; font-weight:600; color:#475569; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-right:1px solid #f1f5f9; padding:5px 6px; white-space:nowrap; }
 .pf-table td { border-bottom:1px solid #f1f5f9; border-right:1px solid #f1f5f9; padding:0; }
 .pf-table td.pf-num-cell { color:#94a3b8; text-align:center; width:28px; }
@@ -66,7 +71,7 @@ const STYLE = `
 .pf-msg.err { color:#b91c1c; }
 .pf-msg.ok { color:#15803d; }
 .pf-empty { color:#64748b; font-style:italic; padding:24px; font-size:13px; }
-.pf-swatch { width:12px; height:12px; border-radius:3px; border:1px solid #94a3b8; display:inline-block; flex:none; }
+.pf-swatch { width:16px; height:12px; display:inline-block; flex:none; }
 /* inspector section */
 .pf-insp-bar { display:flex; gap:6px; align-items:center; margin-bottom:8px; }
 .pf-insp-bar select { max-width:280px; }
@@ -88,6 +93,13 @@ const STYLE = `
    hide the core's legacy inline «…» text and the raw JSON line */
 #tree li.tree-node > .row > span:nth-child(2) > span { display:none; }
 #props-stereotypes { display:none; }
+/* The Properties pane is a flex row (.tab-pane); give the element form and the
+   inspector sections stable side-by-side columns that wrap on narrow windows. */
+#tab-properties { flex-wrap:wrap; align-content:flex-start; align-items:flex-start; column-gap:1.5rem; }
+#tab-properties > #props-form { flex:1 1 420px; min-width:0; }
+#tab-properties > #inspector-sections { flex:1 1 420px; min-width:0; margin-top:0; }
+/* The Profile Editor and the Stereotypes inspector supersede the raw-JSON legacy dialogs. */
+[data-cmd="define-stereotype"], [data-cmd="apply-stereotype"] { display:none !important; }
 #tree .tree-badge.pf-badge { display:inline-flex; align-items:center; gap:2px; border:1px solid transparent; }
 #tree .tree-badge.pf-badge svg { width:10px; height:10px; }
 `;
@@ -115,10 +127,15 @@ const TOOL_ICONS = {
   export: '<path d="M12 15V3M7 8l5-5 5 5M4 19h16"/>',
   batch: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 17.5h7M17.5 14v7"/>',
   profile: '<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
+  manage: '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="10" cy="18" r="1.6"/>',
 };
 const svg = (paths) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 const DASH = { dashed: "6 4", dotted: "2 3", dashdot: "8 3 2 3" };
+/** Small tag shape filled / outlined with a stereotype's style colours. */
+const swatch = (st = {}) =>
+  `<svg class="pf-swatch" viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 1.5h9l4 4.5-4 4.5h-9z"
+     fill="${esc(st.fill || "#ffffff")}" stroke="${esc(st.stroke || "#94a3b8")}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 const CATEGORY_LABEL = c => c || "All elements";
 const NUMERIC = new Set(["double", "single", "int8", "int16", "int32", "int64",
                          "uint8", "uint16", "uint32", "uint64"]);
@@ -144,8 +161,9 @@ export default async function install(studio) {
   });
   studio.registerToolbarButton({ id: "profile-editor", label: "Profile Editor", group: "Profiles",
                                  title: "Open the Profile Editor", onClick() { studio.switchTab("profiles"); } });
-  studio.registerToolbarButton({ id: "batch-apply-stereotype", label: "Apply stereotype…", group: "Profiles",
-                                 title: "Apply a stereotype to many elements", onClick() { openBatchDialog(studio); } });
+  studio.registerToolbarButton({ id: "batch-apply-stereotype", label: "Apply stereotypes…", group: "Profiles",
+                                 title: "Apply a stereotype to the selection, a composition or the whole model",
+                                 onClick() { openBatchDialog(studio); } });
   studio.on("model-changed", () => {
     decorateTree(studio);
     if (editor.visible()) editor.refresh();
@@ -162,6 +180,19 @@ function option(value, label, selected) {
 }
 
 function errorText(e) { return String(e?.message || e).replace(/^Error:\s*/, ""); }
+
+/** True the first time `value` is committed from `input` (Enter and the following
+ *  change event must not send the same edit twice); typing again re-arms it. */
+function once(input, value) {
+  if (!input._pfArmed) {
+    input._pfArmed = true;
+    input.addEventListener("input", () => { delete input._pfSent; });
+  }
+  const key = String(value);
+  if (input._pfSent === key) return false;
+  input._pfSent = key;
+  return true;
+}
 
 /** studio.modal with keyboard support (Enter submits, Escape cancels) and inline errors. */
 function openModal(studio, title, html, onSubmit) {
@@ -212,16 +243,19 @@ function expandHex(hex) {
 function decorateTree(studio) {
   for (const li of document.querySelectorAll("#tree .tree-node")) {
     const node = studio.state.treeIndex.get(li.dataset.id);
-    if (!node) continue;
-    const st = node.style || {};
-    const badges = [...li.querySelector(":scope > .row").querySelectorAll(":scope > .tree-badge")]
-      .filter(b => b.textContent.startsWith("«"));
-    badges.forEach((b, i) => {
+    if (!node?.stereotypes?.length) continue;
+    const byBadge = new Map(node.stereotypes.map(s => [`«${s.name}»`, s]));
+    for (const b of li.querySelector(":scope > .row").querySelectorAll(":scope > .tree-badge")) {
+      const app = byBadge.get(b.textContent);
+      if (!app) continue;                      // a badge from another feature
+      const st = app.style || {};
       b.classList.add("pf-badge");
+      b.title = app.qualified_name || app.name;
       if (st.fill) { b.style.background = st.fill; b.style.color = st.text || colorFor(expandHex(st.fill)); }
+      else if (st.text) b.style.color = st.text;
       if (st.stroke) b.style.borderColor = st.stroke;
-      if (i === 0 && st.icon && ICONS[st.icon] && !b.querySelector("svg")) b.insertAdjacentHTML("afterbegin", svg(ICONS[st.icon]));
-    });
+      if (st.icon && ICONS[st.icon] && !b.querySelector("svg")) b.insertAdjacentHTML("afterbegin", svg(ICONS[st.icon]));
+    }
   }
 }
 
@@ -240,7 +274,7 @@ function renderInspector(studio, editor, el, box) {
     };
     return;
   }
-  if (el.id === undefined) return false;
+  if (el.id === undefined || !el.owner_id) return false;     // the project root takes no stereotypes
   box.innerHTML = `<div class="text-xs text-slate-400">Loading stereotypes…</div>`;
   box.dataset.pfElement = el.id;
   studio.api("GET", `/api/elements/${encodeURIComponent(el.id)}/stereotypes`)
@@ -253,16 +287,18 @@ function fillInspector(studio, box, view) {
   const applicable = view.applicable || [];
   const bar = `
     <div class="pf-insp-bar">
-      <select class="input" data-pf="add-stereotype" aria-label="Add stereotype" ${applicable.length ? "" : "disabled"}>
+      <select class="input" data-pf="add-stereotype" aria-label="Add stereotype" ${applicable.length ? "" : "disabled"}
+              title="Stereotypes of the model's profiles that apply to this ${esc(view.element.kind)}">
         <option value="">${applicable.length ? "Add stereotype…" : "No applicable stereotypes"}</option>
         ${applicable.map(s => option(s.id, s.qualified_name, false)).join("")}
       </select>
+      <button type="button" class="btn-action" data-pf="open-editor" title="Define profiles and stereotypes">Profile Editor…</button>
       <span class="flex-1"></span>
       <button type="button" class="btn-action" data-pf="remove-all" ${view.applied.length ? "" : "disabled"}>Remove all</button>
     </div>`;
   const groups = view.applied.map(app => {
     const st = app.style || {};
-    const sw = st.fill || st.stroke ? `<span class="pf-swatch" style="background:${esc(st.fill || "#fff")};border-color:${esc(st.stroke || "#94a3b8")}"></span>` : "";
+    const sw = st.fill || st.stroke ? swatch(st) : "";
     const icon = st.icon && ICONS[st.icon] ? `<span class="text-slate-500" style="width:14px;display:inline-flex">${svg(ICONS[st.icon])}</span>` : "";
     const multi = app.groups.filter(g => g.properties.length).length > 1;
     const rows = app.groups.map(g => {
@@ -299,6 +335,7 @@ function fillInspector(studio, box, view) {
       await studio.refreshTree();
     } catch (err) { msg(errorText(err), "err"); e.target.value = ""; }
   });
+  box.querySelector("[data-pf=open-editor]").addEventListener("click", () => studio.switchTab("profiles"));
   box.querySelector("[data-pf=remove-all]").addEventListener("click", async () => {
     try {
       const v = await studio.api("DELETE", `/api/elements/${encodeURIComponent(eid)}/stereotypes`);
@@ -326,6 +363,7 @@ function fillInspector(studio, box, view) {
       const path = input.dataset.path;
       const value = input.type === "checkbox" ? input.checked : input.value;
       if (input.type !== "checkbox" && value === input.dataset.orig) return;
+      if (!once(input, value)) return;
       try {
         const v = await studio.api("PATCH", `/api/elements/${encodeURIComponent(eid)}/stereotypes`, { property: path, value });
         const shown = findValue(v, path);
@@ -451,6 +489,7 @@ class ProfileEditor {
               ${tool("new-profile", "New Profile", "Create a profile")}
               ${tool("import", "Import", "Import a profile file (.json)")}
               ${tool("export", "Export", "Export the selected profile to a file")}
+              ${tool("manage", "Manage", "Profiles in this model and their import history")}
             </div><div class="pf-group-label">Profile</div></div>
           <div class="pf-group"><div class="pf-group-tools">
               ${tool("new-stereotype", "New Stereotype", "Add a stereotype to the selected profile")}
@@ -504,7 +543,7 @@ class ProfileEditor {
           await this.load();
         } while (this.again);
         if (this.pendingSelect) { this.sel = this.pendingSelect; this.pendingSelect = null; }
-        if (this.sel && !this.index.has(this.sel.id)) this.sel = null;
+        if (this.sel && this.sel.kind !== "manage" && !this.index.has(this.sel.id)) this.sel = null;
         if (!this.sel && this.data.profiles.length) this.sel = { kind: "profile", id: this.data.profiles[0].id };
         this.render();
       } catch { /* logged by api() */ }
@@ -550,7 +589,7 @@ class ProfileEditor {
     };
     const stRow = (s) => {
       const st = s.effective_style || {};
-      const sw = `<span class="pf-swatch" style="background:${esc(st.fill || "#fff")};border-color:${esc(st.stroke || "#cbd5e1")}"></span>`;
+      const sw = swatch(st);
       return row("stereotype", s, `«${esc(s.name)}»`, s.applies_to || (s.effective_applies_to ? `(${s.effective_applies_to})` : "All"), sw);
     };
     let html = "";
@@ -606,6 +645,7 @@ class ProfileEditor {
     if (cmd === "delete" && c) return this.deleteCurrent();
     if (cmd === "export") return this.exportProfile();
     if (cmd === "import") return this.importProfile();
+    if (cmd === "manage") return this.select("manage", "manage");
     if (cmd === "batch") return openBatchDialog(this.studio, c?.kind === "stereotype" ? c.obj.id : undefined);
   }
 
@@ -657,9 +697,8 @@ class ProfileEditor {
     } catch (e) { this.message(errorText(e), "err"); }
   }
 
-  deleteCurrent() {
-    const c = this.current();
-    if (!c) return;
+  deleteCurrent(c = this.current()) {
+    if (!c?.obj) return;
     const isProfile = c.kind === "profile";
     const o = c.obj;
     const apps = isProfile ? o.stereotypes.reduce((n, s) => n + (s.application_count || 0), 0) : (o.application_count || 0);
@@ -673,14 +712,13 @@ class ProfileEditor {
         const url = isProfile ? `/api/profiles/${encodeURIComponent(o.id)}` : `/api/stereotypes/${encodeURIComponent(o.id)}`;
         const out = await this.studio.api("DELETE", url);
         this.studio.log(`Deleted ${out.deleted} (${out.applications_removed} application(s) removed)`, "warning");
-        this.sel = isProfile ? null : { kind: "profile", id: c.profile?.id };
+        if (this.sel?.kind !== "manage") this.sel = isProfile || !c.profile ? null : { kind: "profile", id: c.profile.id };
         await this.studio.refreshTree();
         await this.refresh();
       });
   }
 
-  async exportProfile() {
-    const prof = this.currentProfile();
+  async exportProfile(prof = this.currentProfile()) {
     if (!prof) return;
     try {
       const out = await this.studio.api("GET", `/api/profiles/${encodeURIComponent(prof.id)}/export`);
@@ -690,7 +728,14 @@ class ProfileEditor {
   }
 
   importProfile() {
-    this.studio.openFile(".json,application/json", async (text, file) => this.importText(text, file));
+    // Own picker (not studio.openFile) so the import log records the file name.
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".json,application/json";
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      if (f) await this.importText(await f.text(), f.name);
+    };
+    inp.click();
   }
 
   /** Import profile file content; asks before replacing an existing profile. */
@@ -719,6 +764,7 @@ class ProfileEditor {
 
   renderDetails() {
     const host = this.pane.querySelector("[data-pf=details]");
+    if (this.sel?.kind === "manage") return this.renderManage(host);
     const c = this.current();
     if (!c) {
       host.innerHTML = `<div class="pf-empty">Create a profile with <b>New Profile</b>, or import one, then add stereotypes
@@ -728,6 +774,42 @@ class ProfileEditor {
     }
     if (c.kind === "profile") this.renderProfile(host, c.obj);
     else this.renderStereotype(host, c.obj, c.profile);
+  }
+
+  /** Profiles in the model with their provenance, and the import history. */
+  renderManage(host) {
+    const profiles = this.data.profiles;
+    const apps = (p) => p.stereotypes.reduce((n, s) => n + (s.application_count || 0), 0);
+    const source = (p) => p.source?.imported_at
+      ? `${esc(p.source.file || "file")} <span class="text-slate-400">(${esc(p.source.imported_at)})</span>` : "created in this model";
+    const imports = this.data.imports || [];
+    host.innerHTML = `
+      <div class="pf-h"><span class="pf-title">Profiles in this model</span><span class="pf-chip">${profiles.length} profile(s)</span></div>
+      <p class="text-sm text-slate-600 mb-3" style="max-width:760px">Profiles are stored in the project. Export one to share it as a
+        <code>.profile.json</code> file; import a file to add it to another model (an import with the same name updates the
+        profile in place). Removing a profile removes its stereotypes from every element.</p>
+      ${profiles.length ? `<div class="pf-table-wrap" style="max-width:900px"><table class="pf-table pf-auto" data-pf="manage-table">
+        <thead><tr><th>Profile</th><th>Version</th><th>Stereotypes</th><th>Applications</th><th>Source</th><th class="pf-actions-h">Actions</th></tr></thead><tbody>
+        ${profiles.map(p => `<tr data-profile-id="${esc(p.id)}"><td style="padding:5px 6px"><a href="#" data-goto-profile="${esc(p.id)}" class="text-blue-700">${esc(p.name)}</a></td>
+          <td style="padding:5px 6px">${esc(p.version)}</td><td style="padding:5px 6px">${p.stereotype_count}</td>
+          <td style="padding:5px 6px">${apps(p)}</td><td style="padding:5px 6px">${source(p)}</td>
+          <td class="pf-actions" style="width:150px"><button type="button" class="pf-icon-btn" data-export-profile="${esc(p.id)}">Export</button>
+            <button type="button" class="pf-icon-btn danger" data-remove-profile="${esc(p.id)}">Remove</button></td></tr>`).join("")}
+        </tbody></table></div>` : `<div class="pf-empty">No profiles yet. Use <b>New Profile</b> or <b>Import</b>.</div>`}
+      <div class="pf-section-title">Import history</div>
+      ${imports.length ? `<ul class="text-sm space-y-1" data-pf="import-log">${imports.map(x => `<li><b>${esc(x.name)}</b> ${esc(x.version || "")}
+          — ${esc(x.mode)} from <code>${esc(x.file || "(text)")}</code> on ${esc(x.imported_at)}</li>`).join("")}</ul>`
+        : `<div class="text-sm text-slate-500">No profile has been imported into this model.</div>`}
+      <div class="pf-msg" data-pf="msg"></div>`;
+    for (const a of host.querySelectorAll("[data-goto-profile]")) {
+      a.addEventListener("click", (e) => { e.preventDefault(); this.select("profile", a.dataset.gotoProfile); });
+    }
+    for (const b of host.querySelectorAll("[data-export-profile]")) {
+      b.addEventListener("click", () => this.exportProfile(profiles.find(p => p.id === b.dataset.exportProfile)));
+    }
+    for (const b of host.querySelectorAll("[data-remove-profile]")) {
+      b.addEventListener("click", () => this.deleteCurrent({ kind: "profile", obj: profiles.find(p => p.id === b.dataset.removeProfile) }));
+    }
   }
 
   renderProfile(host, p) {
@@ -750,7 +832,7 @@ class ProfileEditor {
       </div>
       <div class="pf-msg" data-pf="msg"></div>
       <div class="pf-section-title">Stereotypes</div>
-      ${p.stereotypes.length ? `<table class="pf-table" style="min-width:0;max-width:760px"><thead><tr><th>Stereotype</th><th>Applies to</th><th>Base</th><th>Properties</th><th>Applied to</th></tr></thead><tbody>
+      ${p.stereotypes.length ? `<table class="pf-table pf-auto" style="max-width:760px" data-pf="profile-stereotypes"><thead><tr><th>Stereotype</th><th>Applies to</th><th>Base</th><th>Properties</th><th>Applied to</th></tr></thead><tbody>
         ${p.stereotypes.map(s => `<tr class="pf-inherited" style="cursor:pointer" data-goto="${esc(s.id)}"><td style="color:#334155">«${esc(s.name)}»${s.abstract ? " <i>(abstract)</i>" : ""}</td>
           <td>${esc(CATEGORY_LABEL(s.effective_applies_to))}</td><td>${esc(s.base || "")}</td><td>${s.properties.length}</td><td>${s.application_count}</td></tr>`).join("")}
         </tbody></table>` : `<div class="text-sm text-slate-500">No stereotypes yet — use <b>New Stereotype</b>.</div>`}`;
@@ -811,6 +893,10 @@ class ProfileEditor {
         <div class="pf-inline"><input type="checkbox" id="pf-s-abstract" data-field="abstract" data-focus-key="s-abstract" ${s.abstract ? "checked" : ""}/>
           <span class="text-xs text-slate-500">abstract stereotypes cannot be applied; use them as a base</span></div>
       </div>
+      <div class="pf-section-title">Properties</div>
+      ${this.propertyTable(s)}
+      <div class="mt-2 flex gap-2"><button type="button" class="btn-action" data-pf="add-prop">+ Add property</button></div>
+      <div class="pf-msg" data-pf="msg"></div>
       <div class="pf-section-title">Style</div>
       <div class="pf-form">
         ${colorField("fill", "Fill colour")}
@@ -823,11 +909,7 @@ class ProfileEditor {
         <label>Preview</label><div class="pf-inline">${preview}</div>
       </div>
       ${isComp ? `<div class="pf-section-title">Default stereotypes for new elements inside</div>
-      <div class="pf-form">${defaultSelect("component", "Component")}${defaultSelect("port", "Port")}${defaultSelect("connector", "Connector")}</div>` : ""}
-      <div class="pf-section-title">Properties</div>
-      ${this.propertyTable(s)}
-      <div class="mt-2 flex gap-2"><button type="button" class="btn-action" data-pf="add-prop">+ Add property</button></div>
-      <div class="pf-msg" data-pf="msg"></div>`;
+      <div class="pf-form">${defaultSelect("component", "Component")}${defaultSelect("port", "Port")}${defaultSelect("connector", "Connector")}</div>` : ""}`;
     host.querySelector("[data-pf=add-prop]").onclick = () => this.addProperty(s);
     this.bindFields(host.querySelector("[data-pf=stereotype-form]"), async (field, value) => {
       const body = { [field]: field === "base" ? (value || null) : value };
@@ -859,8 +941,10 @@ class ProfileEditor {
   propertyTable(s) {
     const groups = s.groups || [];
     const inherited = groups.filter(g => g.id !== s.id && g.properties.length);
-    const head = `<thead><tr><th>#</th><th>Name</th><th>Type</th><th>Unit</th><th>Default</th><th>Min</th><th>Max</th>
-      <th>Enumeration literals</th><th>Description</th><th class="pf-actions">Order</th></tr></thead>`;
+    const cols = `<colgroup><col class="c-num"><col class="c-name"><col class="c-type"><col class="c-unit"><col class="c-default">
+      <col class="c-min"><col class="c-max"><col class="c-lits"><col class="c-desc"><col class="c-act"></colgroup>`;
+    const head = `${cols}<thead><tr><th>#</th><th>Name</th><th>Type</th><th>Unit</th><th>Default</th><th>Min</th><th>Max</th>
+      <th title="Enumeration literals, comma separated">Literals</th><th>Description</th><th class="pf-actions-h">Order</th></tr></thead>`;
     const fmt = (v) => v === null || v === undefined ? "" : String(v);
     let body = "";
     for (const g of inherited) {
@@ -933,6 +1017,7 @@ class ProfileEditor {
         if (col === "default" && prop.type === "boolean") body = { default: value === "true" };
         if ((col === "min" || col === "max" || col === "default") && value === "" && col !== "default") body = { [col]: null };
         if (col === "default" && value === "" ) body = { default: null };
+        if (!once(input, JSON.stringify(body))) return;
         await this.save(async () => {
           const out = await this.studio.api("PATCH", url, body);
           this.pendingEnum.delete(pid);

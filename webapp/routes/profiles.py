@@ -335,7 +335,8 @@ def _summary(e: Element, d: dict) -> None:
     for entry, app in zip(d.get("stereotypes") or [], stereotypes_on(e)):
         st = app.stereotype
         entry.update(id=st.element_id, qualified_name=st.full_name,
-                     profile=st.profile.name if st.profile else None)
+                     profile=st.profile.name if st.profile else None,
+                     style=st.effective_style())
     if isinstance(e, StereotypeTag):
         d["stereotype_property"] = e.describe()
     elif isinstance(e, Stereotype):
