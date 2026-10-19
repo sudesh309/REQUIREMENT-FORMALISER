@@ -1504,9 +1504,23 @@ def effective_box(c: Element, composition: Optional[Element] = None,
     return dict(defaults.get(id(c)) or {"x": _GRID_X0, "y": _GRID_Y0, "w": w, "h": h})
 
 
+def _merged_box(e: Element, item: dict) -> dict:
+    """A component's new box: x/y replaced, w/h kept unless given (``null`` = back to auto size)."""
+    box = clean_box(item)
+    old = e.tool_data.get("layout")
+    if isinstance(old, dict):
+        for k in ("w", "h"):
+            if k not in item and isinstance(old.get(k), (int, float)) and old[k] > 0:
+                box[k] = old[k]
+    return box
+
+
 def apply_layout(repo, items: list) -> int:
     """Batch-save layout: ``{id, x, y, w?, h?}`` for components, ``{id, side, offset}`` for
-    ports, ``{id, points}`` for connectors. Validates everything before writing anything."""
+    ports, ``{id, points}`` for connectors. Validates everything before writing anything.
+
+    Moving a component keeps a size set earlier by a resize; ``w``/``h`` set to null
+    return it to the automatic size (which grows with the number of ports)."""
     if not isinstance(items, list):
         raise ArchitectureError("items must be a list")
     planned = []
@@ -1522,7 +1536,7 @@ def apply_layout(repo, items: list) -> int:
             pts = item.get("points")
             planned.append((e, "points", None if pts is None else clean_points(pts)))
         elif isinstance(e, (PartUsage, PartDefinition)):
-            planned.append((e, "layout", clean_box(item)))
+            planned.append((e, "layout", _merged_box(e, item)))
         else:
             raise ArchitectureError(f"{e.qualified_name} ({e.kind}) has no canvas layout")
     for e, key, value in planned:
@@ -1670,6 +1684,9 @@ def component_view(c: PartUsage, composition: Element, decorate: Optional[Callab
         # Viewing a reference component: this sub-component belongs to the shared definition.
         "from_definition": c.owner is not composition,
         "layout": effective_box(c, composition, _defaults),
+        # True once the user resized the block (moving keeps the size; null w/h resets it).
+        "sized": isinstance(c.tool_data.get("layout"), dict)
+                 and any(isinstance(c.tool_data["layout"].get(k), (int, float)) for k in ("w", "h")),
         "has_children": bool(components_of(c)),
         "has_state_machine": owns_state_machine(c),
         "ports": [port_view(p, c, pl[id(p)], decorate) for p in ports_of(c)],
