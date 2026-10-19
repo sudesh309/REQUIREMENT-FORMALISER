@@ -1423,6 +1423,11 @@ export default async function install(studio) {
     }
   });
 
+  // The studio's Validate (button or F5) also refreshes the Model Check results and badge.
+  const afterValidate = () => setTimeout(() => runChecks().catch(() => {}), 0);
+  document.addEventListener("click", (e) => { if (e.target?.closest?.('[data-cmd="validate"]')) afterValidate(); }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.target.closest?.("input, textarea, select")) afterValidate(); });
+
   // Keyboard: Ctrl+Shift+K opens Model Check and runs it.
   studio.registerShortcut({
     key: "k", ctrl: true, shift: true,
