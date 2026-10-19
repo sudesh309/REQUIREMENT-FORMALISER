@@ -1455,22 +1455,40 @@ def port_layouts(owner: Element) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for side in SIDES:
         on_side = [p for p in ports if sides[id(p)] == side]
-        for i, p in enumerate(on_side):
+        # Evenly spaced slots: each port with a stored place claims the slot nearest to
+        # it, the others fill the remaining slots in order, so no two ports overlap.
+        slots = [round((i + 1) / (len(on_side) + 1), 4) for i in range(len(on_side))]
+        for p in on_side:
             if id(p) in stored:
                 off = stored[id(p)].get("offset", 0.5)
-                out[id(p)] = {"side": side, "offset": off if isinstance(off, (int, float)) else 0.5}
-            else:
-                out[id(p)] = {"side": side, "offset": round((i + 1) / (len(on_side) + 1), 4)}
+                off = off if isinstance(off, (int, float)) else 0.5
+                out[id(p)] = {"side": side, "offset": off}
+                slots.remove(min(slots, key=lambda s: abs(s - off)))
+        free = iter(slots)
+        for p in on_side:
+            if id(p) not in stored:
+                out[id(p)] = {"side": side, "offset": next(free)}
     return out
 
 
+NAME_CHAR_W, PORT_CHAR_W, MAX_AUTO_W = 7.4, 5.8, 320
+
+
 def default_size(c: Element) -> tuple[int, int]:
+    """Automatic block size: tall enough for the ports on the left/right, wide enough for
+    the ports on the top/bottom and for the name between the left and right port labels
+    (up to MAX_AUTO_W; the canvas truncates beyond)."""
     counts = {s: 0 for s in SIDES}
-    for lay in port_layouts(c).values():
-        counts[lay["side"]] += 1
+    label = {s: 0 for s in SIDES}
+    layouts = port_layouts(c)
+    for p in ports_of(c):
+        side = layouts[id(p)]["side"]
+        counts[side] += 1
+        label[side] = max(label[side], len(p.name or ""))
     h = max(DEFAULT_H, 30 + PORT_PITCH * max(counts["left"], counts["right"]))
-    w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]))
-    return w, h
+    name_w = len(c.name or "") * NAME_CHAR_W + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
+    w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]), min(MAX_AUTO_W, name_w))
+    return int(-(-w // 10) * 10), h
 
 
 def _default_boxes(composition: Element) -> dict[int, dict]:

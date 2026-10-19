@@ -170,6 +170,34 @@ class LocateAndLayoutTests(unittest.TestCase):
                          {"x": 50, "y": 60})
 
 
+class AutomaticPlacementTests(unittest.TestCase):
+
+    def test_unplaced_ports_avoid_placed_ones(self):
+        repo, root, adc, *_ = _model()
+        pwr = A.add_port(repo, adc, "pwr", kind="physical")            # left, automatic
+        pitot = A.add_port(repo, adc, "pitot", "in", layout={"side": "left", "offset": 0.3})
+        lay = A.port_layouts(adc)
+        self.assertEqual(lay[id(pitot)], {"side": "left", "offset": 0.3})
+        self.assertGreater(abs(lay[id(pwr)]["offset"] - 0.3), 0.2)
+        # without stored places the order is kept: 1/4, 2/4, 3/4
+        repo2, root2, adc2, *_ = _model()
+        ps = [A.add_port(repo2, adc2, f"i{i}", "in") for i in range(3)]
+        self.assertEqual([A.port_layouts(adc2)[id(p)]["offset"] for p in ps], [0.25, 0.5, 0.75])
+
+    def test_automatic_width_follows_the_name(self):
+        repo, root, *_ = _model()
+        short = A.add_component(repo, root, "GPS")
+        long = A.add_component(repo, root, "FlightManagementSystem")
+        A.add_port(repo, long, "air1", "in")
+        self.assertEqual(A.default_size(short), (A.DEFAULT_W, A.DEFAULT_H))
+        w, _h = A.default_size(long)
+        self.assertGreater(w, A.DEFAULT_W)
+        self.assertLessEqual(w, A.MAX_AUTO_W)
+        self.assertEqual(w % 10, 0)
+        A.apply_layout(repo, [{"id": long.element_id, "x": 0, "y": 0, "w": 200, "h": 90}])
+        self.assertEqual(A.effective_box(long, root)["w"], 200)          # a user size wins
+
+
 def big_model(n_components=60, n_connectors=200, seed=7):
     """60 components with 2 outputs and 4 inputs each, wired by 200 valid connectors."""
     rng = random.Random(seed)

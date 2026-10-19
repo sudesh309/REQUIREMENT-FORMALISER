@@ -10,7 +10,7 @@
 // with studio.setSelection / studio.selectElement; emits drop-on-element for HTML5
 // drops of application/x-sysml-element onto a block, port or connector.
 import * as G from "./geometry.js";
-import { Markers, blockSvg, connectorColor, connectorSvg, frameSvg, portSvg, staticDefs } from "./render.js";
+import { Markers, blockSvg, connectorColor, connectorLabelSvg, connectorSvg, frameSvg, labelText, portSvg, staticDefs } from "./render.js";
 import { icon, toolstripHtml, updateToolstrip } from "./toolstrip.js";
 import { createInlineEditor, createMenu, createToasts } from "./ui.js";
 import { createDock } from "./dock.js";
@@ -101,7 +101,7 @@ class CanvasEditor {
             <rect class="arch-bgrect" width="100%" height="100%" fill="url(#arch-grid)"/>
             <g class="arch-vp">
               <g class="arch-l-frame"></g><g class="arch-l-conns"></g><g class="arch-l-blocks"></g>
-              <g class="arch-l-bports"></g><g class="arch-l-over"><g class="arch-o-handles"></g><g class="arch-o-temp"></g></g>
+              <g class="arch-l-labels"></g><g class="arch-l-bports"></g><g class="arch-l-over"><g class="arch-o-handles"></g><g class="arch-o-temp"></g></g>
             </g>
           </svg>
           <div class="arch-empty" hidden><div class="arch-empty-card">
@@ -123,7 +123,7 @@ class CanvasEditor {
     this.svg = $(".arch-svg");
     this.vpG = $(".arch-vp");
     this.L = { frame: $(".arch-l-frame"), conns: $(".arch-l-conns"), blocks: $(".arch-l-blocks"),
-               bports: $(".arch-l-bports"), handles: $(".arch-o-handles"), temp: $(".arch-o-temp") };
+               labels: $(".arch-l-labels"), bports: $(".arch-l-bports"), handles: $(".arch-o-handles"), temp: $(".arch-o-temp") };
     this.markerDefs = $(".arch-markers");
     this.grid = $("#arch-grid");
     this.empty = $(".arch-empty");
@@ -336,6 +336,8 @@ class CanvasEditor {
       sc.connByKey.set(k.key, k);
       for (const e of [a, b]) { push(sc.byPort, e.key, k); push(sc.byComp, e.ctx ? ck(e.ctx) : "frame", k); }
     }
+    const boxes = blocks.map(b => b.box);
+    for (const k of sc.conns) k.labelPos = k.c.label ? G.labelPlacement(k.pts, labelText(k.c), boxes) : null;
     return sc;
   }
 
@@ -374,6 +376,7 @@ class CanvasEditor {
     this.L.blocks.innerHTML = sc.blocks.map(b => blockSvg(b, b.ports, o)).join("");
     this.L.bports.innerHTML = sc.bports.map(pt => portSvg(pt, o)).join("");
     this.L.conns.innerHTML = sc.conns.map(k => connectorSvg(k, o)).join("");
+    this.L.labels.innerHTML = sc.conns.map(k => connectorLabelSvg(k, o)).join("");
     this.markerDefs.innerHTML = this.markers.defs();
     this.indexDom();
     if (this.connect) this.dom.get(this.connect.from)?.classList.add("source");
@@ -385,6 +388,8 @@ class CanvasEditor {
   indexDom() {
     this.dom = new Map();
     for (const el of this.svg.querySelectorAll("[data-key]")) this.dom.set(el.dataset.key, el);
+    this.labels = new Map();
+    for (const el of this.L.labels.querySelectorAll("[data-label-for]")) this.labels.set(el.dataset.labelFor, el);
   }
 
   replaceEl(key, html) {
@@ -406,12 +411,12 @@ class CanvasEditor {
     const d = G.pathD(k.pts);
     el.querySelector(".arch-conn-hit")?.setAttribute("d", d);
     el.querySelector(".arch-conn-line")?.setAttribute("d", d);
-    const t = el.querySelector(".arch-conn-label");
+    const t = this.labels?.get(k.key)?.querySelector("text");
     if (t) {
-      const a = G.labelAnchor(k.pts);
-      t.setAttribute("x", a.horizontal ? a.x : a.x + 6);
-      t.setAttribute("y", a.horizontal ? a.y - 6 : a.y + 4);
-      t.setAttribute("text-anchor", a.horizontal ? "middle" : "start");
+      k.labelPos = G.labelPlacement(k.pts, labelText(k.c), this.scene.blocks.map(b => b.box));
+      t.setAttribute("x", Math.round(k.labelPos.x * 10) / 10);
+      t.setAttribute("y", Math.round(k.labelPos.y * 10) / 10);
+      t.setAttribute("text-anchor", k.labelPos.anchor);
     }
   }
 
@@ -439,6 +444,7 @@ class CanvasEditor {
 
   applySelectionClasses() {
     for (const [k, el] of this.dom) el.classList.toggle("sel", this.sel.has(k));
+    for (const [k, el] of this.labels || []) el.classList.toggle("sel", this.sel.has(k));
   }
 
   // ------------------------------------------------------------------ chrome
@@ -680,7 +686,7 @@ class CanvasEditor {
     const el = target?.closest?.("[data-kind]");
     if (!el || !this.svg.contains(el)) return null;
     const role = target.closest("[data-role]")?.dataset.role || null;
-    return { kind: el.dataset.kind, key: el.dataset.key || null, id: el.dataset.id, el, role };
+    return { kind: el.dataset.kind, key: el.dataset.key || el.dataset.labelFor || null, id: el.dataset.id, el, role };
   }
 
   hitAt(e) { return this.hit(document.elementFromPoint(e.clientX, e.clientY)); }
@@ -1460,7 +1466,7 @@ class CanvasEditor {
     } else {
       const k = this.scene.connByKey.get(key);
       if (!k) return;
-      this.inline.edit(el.querySelector('[data-role="conn-label"]') || el.querySelector(".arch-conn-line"), k.c.name,
+      this.inline.edit(this.labels.get(key)?.querySelector("text") || el.querySelector(".arch-conn-line"), k.c.name,
                        n => this.commitRename(key, n));
     }
   }

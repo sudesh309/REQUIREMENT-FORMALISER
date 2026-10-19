@@ -86,6 +86,16 @@ test("segment handles and moving a segment", () => {
   assert.deepEqual(again.map(p => [p.x, p.y]), [[0, 0], [140, 0], [140, 100], [200, 100]]);
 });
 
+test("labels go beside the longest free segment", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 200 }, { x: 120, y: 200 }];
+  const right = G.labelPlacement(pts, "NavData");                     // longest = the vertical one
+  assert.deepEqual([right.x, right.anchor], [66, "start"]);
+  const blocked = G.labelPlacement(pts, "NavData", [{ x: 64, y: 80, w: 100, h: 60 }]);
+  assert.deepEqual([blocked.x, blocked.anchor], [54, "end"]);           // moved to the other side
+  const h = G.labelPlacement([{ x: 0, y: 50 }, { x: 300, y: 50 }], "airBus1 : AirData");
+  assert.deepEqual([h.x, h.y, h.anchor], [150, 45, "middle"]);
+});
+
 test("frame, bbox and rubber band helpers", () => {
   const boxes = [{ x: 160, y: 60, w: 160, h: 90 }, { x: 430, y: 220, w: 160, h: 90 }];
   const f = G.frameFor(boxes);

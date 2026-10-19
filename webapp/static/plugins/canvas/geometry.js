@@ -210,15 +210,33 @@ export function pathD(points) {
 
 const round1 = v => Math.round(v * 10) / 10;
 
-// Label anchor: the middle of the longest segment.
-export function labelAnchor(points) {
-  let best = null, len = -1;
+// Where to write a connector label of `text` (about charW px per character): beside one
+// of its segments, longest first, at the first spot whose box misses the obstacles.
+// Returns {x, y, anchor} for an SVG <text> (y is the baseline).
+export function labelPlacement(points, text, obstacles = [], charW = 5.8) {
+  const w = String(text).length * charW, h = 11;
+  const segs = [];
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
-    const l = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    if (l > len) { len = l; best = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, horizontal: Math.abs(a.y - b.y) < 0.01 }; }
+    segs.push({ a, b, len: Math.abs(a.x - b.x) + Math.abs(a.y - b.y), horizontal: Math.abs(a.y - b.y) < 0.01 });
   }
-  return best || { x: 0, y: 0, horizontal: true };
+  segs.sort((p, q) => q.len - p.len);
+  const candidates = [];
+  for (const s of segs) {
+    const mx = (s.a.x + s.b.x) / 2, my = (s.a.y + s.b.y) / 2;
+    if (s.horizontal) {
+      const x0 = Math.min(s.a.x, s.b.x);
+      candidates.push({ x: mx, y: my - 5, anchor: "middle", box: { x: mx - w / 2, y: my - 5 - h, w, h } });
+      candidates.push({ x: x0 + 6, y: my - 5, anchor: "start", box: { x: x0 + 6, y: my - 5 - h, w, h } });
+      candidates.push({ x: mx, y: my + 13, anchor: "middle", box: { x: mx - w / 2, y: my + 2, w, h } });
+    } else {
+      candidates.push({ x: mx + 6, y: my + 4, anchor: "start", box: { x: mx + 6, y: my - 7, w, h } });
+      candidates.push({ x: mx - 6, y: my + 4, anchor: "end", box: { x: mx - 6 - w, y: my - 7, w, h } });
+    }
+  }
+  const free = candidates.find(c => !obstacles.some(r => intersects(c.box, r)));
+  const pick = free || candidates[0] || { x: 0, y: 0, anchor: "middle" };
+  return { x: pick.x, y: pick.y, anchor: pick.anchor };
 }
 
 // Draggable segments of a route: every segment but the two port stubs.

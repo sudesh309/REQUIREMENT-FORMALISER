@@ -2,7 +2,7 @@
 // Pure string builders (no DOM access) so the editor can redraw a single block or
 // connector cheaply while dragging.
 import { esc } from "./common.js";
-import { fit, glyphPath, hashColor, labelAnchor, pathD, PORT } from "./geometry.js";
+import { fit, glyphPath, hashColor, pathD, PORT } from "./geometry.js";
 
 const KIND_COLOR = { data: "#334155", physical: "#a16207", client: "#6d28d9", server: "#6d28d9" };
 const CONN_COLOR = { data: "#1e293b", physical: "#a16207", "client-server": "#6d28d9", unknown: "#64748b" };
@@ -93,6 +93,10 @@ export function blockSvg(b, ports, opts = {}) {
   if (filter && !filter.ids.has(c.id)) cls.push(filter.hide ? "f-hidden" : "f-dim");
   const stereo = stereoText(c.stereotypes);
   const nameY = h / 2 + (stereo ? 8 : 4) - (c.definition ? 6 : 0);
+  // The centred name keeps clear of the port labels inside the left and right edges.
+  const labelW = side => Math.max(0, ...ports.filter(pt => pt.p.side === side)
+    .map(pt => fit(pt.p.name, pt.labelWidth || 90, 5.8).length * 5.8 + 14));
+  const nameMax = Math.max(40, w - 2 * Math.max(labelW("left"), labelW("right")) - 12);
   const fill = st.fill || (c.is_reference ? "#f4f8ff" : "#ffffff");
   const stroke = st.stroke || "#475569";
   const dash = st.dash ? ` stroke-dasharray="${esc(st.dash)}"` : "";
@@ -117,8 +121,8 @@ export function blockSvg(b, ports, opts = {}) {
     <rect class="arch-hl-ring" x="-5" y="-5" width="${w + 10}" height="${h + 10}" rx="10"/>
     <rect class="arch-body" width="${w}" height="${h}" rx="6" fill="${esc(fill)}" stroke="${esc(stroke)}"${dash}/>
     ${stereo ? `<text class="arch-stereo" x="${w / 2}" y="${r1(nameY - 15)}" text-anchor="middle">${esc(fit(stereo, w - 16, 5.6))}</text>` : ""}
-    <text class="arch-name" data-role="name" x="${w / 2}" y="${r1(nameY)}" text-anchor="middle" fill="${esc(textColor)}">${esc(fit(c.name, w - 20, 7.2))}</text>
-    ${c.definition ? `<text class="arch-def" x="${w / 2}" y="${r1(nameY + 14)}" text-anchor="middle">${esc(fit(c.definition.name, w - 20, 6))}</text>` : ""}
+    <text class="arch-name" data-role="name" x="${w / 2}" y="${r1(nameY)}" text-anchor="middle" fill="${esc(textColor)}">${esc(fit(c.name, nameMax, 7.4))}</text>
+    ${c.definition ? `<text class="arch-def" x="${w / 2}" y="${r1(nameY + 14)}" text-anchor="middle">${esc(fit(c.definition.name, nameMax, 6))}</text>` : ""}
     ${c.is_reference ? `<g class="arch-refmark" transform="translate(7,${h - 15})"><title>Reference component: ports and internals are shared by every usage of ${esc(c.definition?.name || "")}</title>
       <rect x="0" y="2" width="9" height="7" rx="3.5"/><rect x="5" y="2" width="9" height="7" rx="3.5"/></g>` : ""}
     ${c.has_children ? `<g class="arch-compmark" transform="translate(${w - 18},6)"><title>Composite: double-click to open</title>
@@ -130,25 +134,40 @@ export function blockSvg(b, ports, opts = {}) {
   </g>`;
 }
 
+function connClasses(k, base, opts) {
+  const cls = [base, `k-${k.c.kind}`];
+  if (opts.sel?.has(k.key)) cls.push("sel");
+  if (k.c.issues?.length) cls.push("bad");
+  if (opts.filter && k.filtered) cls.push(opts.filter.hide ? "f-hidden" : "f-dim");
+  return cls.join(" ") + hlStyle(k.c.id, opts.hl);
+}
+
+export const LABEL_MAX = 180;
+export const labelText = c => fit(c.label || "", LABEL_MAX, 5.8);
+
+// The connector line (drawn under the blocks).
 export function connectorSvg(k, opts = {}) {
   const { c, pts, key, color } = k;
-  const { sel, hl, filter, markers } = opts;
-  const cls = ["arch-conn", `k-${c.kind}`];
-  if (sel?.has(key)) cls.push("sel");
-  if (c.issues?.length) cls.push("bad");
-  if (filter && k.filtered) cls.push(filter.hide ? "f-hidden" : "f-dim");
   const d = pathD(pts);
   const arrow = c.kind === "data" || c.kind === "client-server";
-  const marker = arrow && markers ? ` marker-end="url(#${markers.id(c.issues?.length ? "#dc2626" : color)})"` : "";
-  const a = labelAnchor(pts);
-  const label = c.label || "";
-  const lx = a.horizontal ? a.x : a.x + 6, ly = a.horizontal ? a.y - 6 : a.y + 4;
-  const tip = [label || c.name, ...(c.issues || [])].filter(Boolean).join("\n");
-  return `<g class="${cls.join(" ")}${hlStyle(c.id, hl)}" data-kind="connector" data-key="${esc(key)}" data-id="${esc(c.id)}">
+  const stroke = c.issues?.length ? "#dc2626" : color;
+  const marker = arrow && opts.markers ? ` marker-end="url(#${opts.markers.id(stroke)})"` : "";
+  const tip = [c.label || c.name, ...(c.issues || [])].filter(Boolean).join("\n");
+  return `<g class="${connClasses(k, "arch-conn", opts)}" data-kind="connector" data-key="${esc(key)}" data-id="${esc(c.id)}">
     <title>${esc(tip)}</title>
     <path class="arch-conn-hit" d="${d}"/>
-    <path class="arch-conn-line" d="${d}" stroke="${esc(c.issues?.length ? "#dc2626" : color)}"${marker}/>
-    ${label ? `<text class="arch-conn-label" data-role="conn-label" x="${r1(lx)}" y="${r1(ly)}" text-anchor="${a.horizontal ? "middle" : "start"}">${esc(fit(label, 180, 5.8))}</text>` : ""}
+    <path class="arch-conn-line" d="${d}" stroke="${esc(stroke)}"${marker}/>
+  </g>`;
+}
+
+// The connector label (drawn above the blocks so it stays readable); k.labelPos from
+// geometry.labelPlacement.
+export function connectorLabelSvg(k, opts = {}) {
+  const text = labelText(k.c);
+  if (!text || !k.labelPos) return "";
+  const { x, y, anchor } = k.labelPos;
+  return `<g class="${connClasses(k, "arch-clabel", opts)}" data-kind="connector" data-label-for="${esc(k.key)}" data-id="${esc(k.c.id)}">
+    <text class="arch-conn-label" data-role="conn-label" x="${r1(x)}" y="${r1(y)}" text-anchor="${anchor}">${esc(text)}</text>
   </g>`;
 }
 

@@ -114,6 +114,12 @@ export function injectCanvasStyles() {
   .arch-conn.hl .arch-conn-hit { stroke:var(--hl); stroke-opacity:.45; }
   .arch-conn.drop-target .arch-conn-hit { stroke:rgb(22 163 74 / .45); }
   .arch-conn-label { font-size:10.5px; fill:#1e293b; paint-order:stroke; stroke:#fff; stroke-width:3.5px; stroke-linejoin:round; cursor:text; }
+  .arch-clabel { cursor:pointer; }
+  .arch-clabel.sel .arch-conn-label { fill:#1d4ed8; font-weight:600; }
+  .arch-clabel.hl .arch-conn-label { fill:var(--hl); font-weight:600; }
+  .arch-clabel.bad .arch-conn-label { fill:#b91c1c; }
+  .arch-clabel.f-dim { opacity:.14; }
+  .arch-clabel.f-hidden { display:none; }
   /* overlay */
   .arch-l-over { pointer-events:none; }
   .arch-seg { fill:#fff; stroke:#2563eb; stroke-width:1.4; pointer-events:all; }
