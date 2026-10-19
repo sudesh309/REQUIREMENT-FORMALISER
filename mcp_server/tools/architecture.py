@@ -116,6 +116,56 @@ def tool_connect_ports(composition: str, source_port: str, target_port: str,
     return _run("Connect", go)
 
 
+def tool_connect_to_new_port(composition: str, source_port: str,
+                             source_component: Optional[str] = None,
+                             target_component: Optional[str] = None,
+                             port_name: Optional[str] = None, name: Optional[str] = None,
+                             side: Optional[str] = None, offset: float = 0.5) -> dict:
+    def go():
+        comp = _find(composition, "composition")
+        layout = {"side": side, "offset": offset} if side else None
+        port, conn = A.connect_new_port(
+            SESSION.repo, comp,
+            {"component": _find(source_component, "source component", False), "port": _port_ref(source_port)},
+            _find(target_component, "target component", False),
+            name=name, port_name=port_name, layout=layout)
+        end = 1 if conn.ends[1] is port else 0
+        owner = conn.end_contexts[end] or comp         # the component (or composition) showing it
+        out = A.connector_view(conn, comp)
+        out["created_port"] = A.port_view(port, owner, A.port_layouts(owner)[id(port)])
+        return out
+    return _run("Connect", go)
+
+
+def tool_connect_targets(composition: str, source_port: str,
+                         source_component: Optional[str] = None) -> dict:
+    def go():
+        comp = _find(composition, "composition")
+        ctx = _find(source_component, "source component", False)
+        port = A.resolve_port(ctx or comp, _port_ref(source_port))
+        targets = A.connect_targets(comp, (ctx, port))
+        names = {(c.element_id if c is not None else None, p.element_id): A._label((c, p))
+                 for c, p in A.view_ports(comp)}
+        for t in targets:
+            t["label"] = names.get((t["component_id"], t["port_id"]))
+        return {"targets": targets}
+    return _run(None, go)
+
+
+def tool_set_layout(items: list) -> dict:
+    return _run("Move", lambda: {"updated": A.apply_layout(SESSION.repo, items)})
+
+
+def tool_locate(element: str) -> dict:
+    def go():
+        hit = A.locate(_find(element, "element"))
+        if hit is None:
+            return {"composition": None, "select": None}
+        return {"composition": hit["composition"].element_id,
+                "select": hit["select"].element_id if hit["select"] is not None else None}
+    return _run(None, go)
+
+
 def tool_arrange(composition: str) -> dict:
     return _run("Arrange", lambda: {"positions": A.auto_layout(
         SESSION.repo, _find(composition, "composition"))})
@@ -253,6 +303,36 @@ TOOLS = [
                              "target_component": _REF, "target_port": _S, "name": _S},
                             ["composition", "source_port", "target_port"]),
      "handler": tool_connect_ports},
+    {"name": "sysml_connect_to_new_port",
+     "description": "Connect a port to a NEW port created for it (System Composer: drop a connector "
+                    "on a block): on 'target_component' (a direct sub-component; on a reference "
+                    "component the port goes to its definition) or, without it, a new boundary port of "
+                    "the composition. The new port mirrors the source's kind and interface with the "
+                    "opposite role and is named after it unless port_name is given. side/offset place it.",
+     "inputSchema": _schema({"composition": _REF, "source_component": _REF, "source_port": _S,
+                             "target_component": _REF, "port_name": _S, "name": _S,
+                             "side": {"type": "string", "enum": list(A.SIDES)},
+                             "offset": {"type": "number", "minimum": 0, "maximum": 1}},
+                            ["composition", "source_port"]),
+     "handler": tool_connect_to_new_port},
+    {"name": "sysml_connect_targets",
+     "description": "Which ports of a composition's view a connector from the given source port may "
+                    "end at: every port with ok, the reason when not, the connector kind and whether "
+                    "the connection would be turned around. Changes nothing.",
+     "inputSchema": _schema({"composition": _REF, "source_component": _REF, "source_port": _S},
+                            ["composition", "source_port"]),
+     "handler": tool_connect_targets},
+    {"name": "sysml_set_layout",
+     "description": "Move/resize components ({id, x, y, w?, h?}; w/h null = automatic size), move ports "
+                    "along their block border ({id, side: left|right|top|bottom, offset: 0..1}) or route "
+                    "connectors ({id, points: [[x, y], ...] | null}). Validated before anything is written.",
+     "inputSchema": _schema({"items": {"type": "array", "items": {"type": "object"}}}, ["items"]),
+     "handler": tool_set_layout},
+    {"name": "sysml_arch_locate",
+     "description": "The composition whose canvas view shows an element, and what to select there "
+                    "(a component, port or connector; an architecture opens itself).",
+     "inputSchema": _schema({"element": _REF}, ["element"]),
+     "handler": tool_locate},
     {"name": "sysml_arrange",
      "description": "Auto-layout a composition left to right in layers following connector direction.",
      "inputSchema": _schema({"composition": _REF}, ["composition"]),

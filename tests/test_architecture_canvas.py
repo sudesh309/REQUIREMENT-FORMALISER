@@ -286,6 +286,54 @@ class CanvasHttpTests(WebAppTestCase):
         self.call("POST", "/api/arch/layout", {"items": [{"id": cid, "x": 1, "y": 1, "w": -5}]}, expect=400)
 
 
+class CanvasMcpTests(unittest.TestCase):
+
+    def setUp(self):
+        from mcp_server import server as m
+        m.SESSION.set_repo(Repository("Mcp"))
+        self.m = m
+
+    def ok(self, tool, /, **kw):
+        out = self.m.TOOL_BY_NAME[tool]["handler"](**kw)
+        self.assertTrue(out["ok"], out)
+        return out["result"]
+
+    def fail(self, tool, /, **kw):
+        out = self.m.TOOL_BY_NAME[tool]["handler"](**kw)
+        self.assertFalse(out["ok"], out)
+        return out["error"]
+
+    def test_targets_new_port_layout_locate_and_undo(self):
+        root = self.ok("sysml_new_architecture", name="Aircraft")
+        adc = self.ok("sysml_add_component", composition=root["id"], name="ADC")
+        fms = self.ok("sysml_add_component", composition=root["id"], name="FMS")
+        out = self.ok("sysml_add_port", owner=adc["id"], name="airData", direction="out")
+        self.ok("sysml_add_port", owner=fms["id"], name="cmd", direction="out")
+        targets = self.ok("sysml_connect_targets", composition=root["id"], source_component=adc["id"],
+                          source_port="airData")["targets"]
+        self.assertEqual([(t["label"], t["ok"]) for t in targets], [("FMS.cmd", False)])
+        self.assertIn("data connectors go", targets[0]["reason"])
+        c = self.ok("sysml_connect_to_new_port", composition=root["id"], source_component=adc["id"],
+                    source_port=out["id"], target_component=fms["id"], side="top", offset=0.25)
+        self.assertEqual((c["created_port"]["name"], c["created_port"]["direction"]), ("airData", "in"))
+        self.assertEqual((c["created_port"]["side"], c["created_port"]["offset"]), ("top", 0.25))
+        b = self.ok("sysml_connect_to_new_port", composition=root["id"], source_component=adc["id"],
+                    source_port="airData", port_name="adcOut")
+        self.assertEqual((b["created_port"]["name"], b["created_port"]["direction"]), ("adcOut", "out"))
+        self.assertIn("own component", self.fail("sysml_connect_to_new_port", composition=root["id"],
+                                                 source_component=adc["id"], source_port="airData",
+                                                 target_component=adc["id"]))
+        self.assertEqual(self.ok("sysml_set_layout", items=[{"id": adc["id"], "x": 400, "y": 80}])["updated"], 1)
+        self.assertIn("finite number", self.fail("sysml_set_layout", items=[{"id": adc["id"], "x": "a", "y": 0}]))
+        view = self.ok("sysml_arch_view", composition=root["id"])
+        self.assertEqual(next(x for x in view["components"] if x["id"] == adc["id"])["layout"]["x"], 400)
+        self.assertEqual(self.ok("sysml_arch_locate", element=c["created_port"]["id"]),
+                         {"composition": root["id"], "select": c["created_port"]["id"]})
+        self.assertTrue(self.ok("sysml_undo")["undone"])           # the move
+        view = self.ok("sysml_arch_view", composition=root["id"])
+        self.assertNotEqual(next(x for x in view["components"] if x["id"] == adc["id"])["layout"]["x"], 400)
+
+
 @unittest.skipUnless(shutil.which("node"), "node not available")
 class CanvasJavaScriptTests(unittest.TestCase):
 
