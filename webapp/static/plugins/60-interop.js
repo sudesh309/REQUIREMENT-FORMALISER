@@ -356,7 +356,11 @@ export default async function install(studio) {
       else if (action === "import-tables") importTablesDialog();
       else if (action === "import-sysml") importSysmlDialog();
       else if (action === "import-xmi") importXmiDialog();
-      else if (action === "report") { showView("report"); await generateReport(); }
+      else if (action === "report") {
+        const shown = !!IO.report;      // showing the view generates the first report itself
+        showView("report");
+        if (shown) await generateReport();
+      }
       else if (action === "compare-file") compareFileDialog();
       else if (action === "compare-saved") { studio.switchTab("compare"); await compareSnapshot(); }
       else if (action === "merge") mergeDialog();
@@ -1022,14 +1026,15 @@ export default async function install(studio) {
   }
 
   async function compareSnapshot() {
-    try {
-      await runCompare({ against: "snapshot" });
-    } catch (e) {
+    const snap = await studio.api("GET", "/api/interop/snapshot");
+    if (snap.exists === false) {
       CMP.mode = "message";
       CMP.message = { kind: "info", text: "There is no saved version of this project yet. Use Save JSON (or Set Baseline) first, or compare with a file." };
       studio.switchTab("compare");
       renderCompare();
+      return;
     }
+    await runCompare({ against: "snapshot" });
   }
 
   function compareFileDialog() {
