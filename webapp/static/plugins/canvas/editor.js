@@ -323,7 +323,7 @@ class CanvasEditor {
       const b = ports.get(pk(c.target.component_id, c.target.port_id));
       if (!a || !b) continue;
       const k = { key: kk(c.id), c, a, b, color: connectorColor(c, a.p), filtered: false, pts: null };
-      k.pts = this.routeOf(k, frame);
+      k.pts = this.routeOf(k, frame, blocks);
       if (this.filter) k.filtered = [a, b].some(e => e.ctx && !this.filter.ids.has(e.ctx));
       sc.conns.push(k);
       sc.connByKey.set(k.key, k);
@@ -337,10 +337,12 @@ class CanvasEditor {
       : G.attachPoint(frame, pt.p.side, pt.p.offset, true);
   }
 
-  routeOf(k, frame) {
+  routeOf(k, frame, blocks = this.scene?.blocks || []) {
     const points = this.over.points.has(k.key) ? this.over.points.get(k.key) : k.c.points;
+    const ends = [k.a.owner, k.b.owner];
+    const obstacles = points ? [] : blocks.filter(b => !ends.includes(b)).map(b => b.box);
     return G.route(this.attachOf(k.a, frame), this.attachOf(k.b, frame),
-                   { points, avoid: [k.a.owner?.box, k.b.owner?.box].filter(Boolean) });
+                   { points, avoid: ends.filter(Boolean).map(b => b.box), obstacles });
   }
 
   renderOpts() {
@@ -1280,7 +1282,7 @@ class CanvasEditor {
     const k = this.scene.connByKey.get(h.key);
     return [
       { label: "Rename", cmd: "rename", hint: "F2" },
-      { label: "Reset route", cmd: "reset-route", disabled: !k?.c.points },
+      { label: "Reset route", cmd: "reset-route", disabled: !(k?.c.points || this.over.points.get(h.key)) },
       "-",
       { label: "Properties", cmd: "properties" },
       { label: "Delete", cmd: "delete", hint: "Del", danger: true },

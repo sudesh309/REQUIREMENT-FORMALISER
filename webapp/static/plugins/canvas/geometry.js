@@ -107,10 +107,34 @@ function link(out, p, q, horizontalFirst) {
   out.push(horizontalFirst ? { x: q.x, y: p.y } : { x: p.x, y: q.y });
 }
 
+// True when the axis-aligned segment (x1, y1)-(x2, y2) passes through one of the boxes.
+export function segmentHits(x1, y1, x2, y2, boxes, pad = 6) {
+  const lx = Math.min(x1, x2), hx = Math.max(x1, x2), ly = Math.min(y1, y2), hy = Math.max(y1, y2);
+  return boxes.some(r => lx < r.x + r.w + pad && hx > r.x - pad && ly < r.y + r.h + pad && hy > r.y - pad);
+}
+
+// The bend position of a Z route closest to the middle whose three segments miss the
+// obstacles (the middle when there is none).
+function freeChannel(p, q, horizontal, obstacles) {
+  const mid = horizontal ? (p.x + q.x) / 2 : (p.y + q.y) / 2;
+  if (!obstacles.length) return mid;
+  const ok = (m) => (horizontal
+    ? !segmentHits(p.x, p.y, m, p.y, obstacles) && !segmentHits(m, p.y, m, q.y, obstacles) && !segmentHits(m, q.y, q.x, q.y, obstacles)
+    : !segmentHits(p.x, p.y, p.x, m, obstacles) && !segmentHits(p.x, m, q.x, m, obstacles) && !segmentHits(q.x, m, q.x, q.y, obstacles));
+  if (ok(mid)) return mid;
+  const half = Math.abs(horizontal ? q.x - p.x : q.y - p.y) / 2;
+  for (let d = GRID; d < half; d += GRID) {
+    if (ok(mid - d)) return mid - d;
+    if (ok(mid + d)) return mid + d;
+  }
+  return mid;
+}
+
 // Orthogonal (elbow) route from attach point a to attach point b. Both carry the unit
 // direction (nx, ny) the line leaves them in. `points` (stored interior points of a
-// manual route) are kept and joined orthogonally; `avoid` boxes help backward routes.
-export function route(a, b, { points = null, stub = STUB, avoid = [] } = {}) {
+// manual route) are kept and joined orthogonally; `avoid` boxes (the two end blocks) help
+// backward routes; Z routes bend where they miss the `obstacles` (other blocks).
+export function route(a, b, { points = null, stub = STUB, avoid = [], obstacles = [] } = {}) {
   const a1 = { x: a.x + a.nx * stub, y: a.y + a.ny * stub };
   const b1 = { x: b.x + b.nx * stub, y: b.y + b.ny * stub };
   const out = [{ x: a.x, y: a.y }, a1];
@@ -133,7 +157,7 @@ export function route(a, b, { points = null, stub = STUB, avoid = [] } = {}) {
     if (ah && bh) {
       if (a.nx === -b.nx) {
         if ((b1.x - a1.x) * a.nx >= 0) {
-          const mx = (a1.x + b1.x) / 2;
+          const mx = freeChannel(a1, b1, true, obstacles);
           out.push({ x: mx, y: a1.y }, { x: mx, y: b1.y });
         } else {
           const my = detourY(a, b, stub, avoid);
@@ -146,7 +170,7 @@ export function route(a, b, { points = null, stub = STUB, avoid = [] } = {}) {
     } else if (!ah && !bh) {
       if (a.ny === -b.ny) {
         if ((b1.y - a1.y) * a.ny >= 0) {
-          const my = (a1.y + b1.y) / 2;
+          const my = freeChannel(a1, b1, false, obstacles);
           out.push({ x: a1.x, y: my }, { x: b1.x, y: my });
         } else {
           const mx = detourX(a, b, stub, avoid);
