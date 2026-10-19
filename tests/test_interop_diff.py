@@ -39,7 +39,7 @@ class CompareTests(unittest.TestCase):
         pfd.feature_typings = []
         pfd.add_type(r.resolve("Components::GPSReceiver"))
         fmc = r.resolve("Components::FlightManagementComputer")
-        stereotypes_on(fmc)[0].values["mass"] = 5.0
+        stereotypes_on(fmc)[0].set("mass", 5.0)      # .values is a fresh dict (profiles)
         part = r.resolve("FlightDeck::ims::partition1")
         from engine.interop.common import move_element
         move_element(part, r.resolve("FlightDeck"))
@@ -125,7 +125,8 @@ class MergeTests(unittest.TestCase):
         self.theirs.resolve("FlightDeck::gps").name = "gnssTheirs"
         fm = stereotypes_on(self.mine.resolve("Components::FlightManagementComputer"))[0]
         ft = stereotypes_on(self.theirs.resolve("Components::FlightManagementComputer"))[0]
-        fm.values["mass"], ft.values["mass"] = 5.0, 6.0
+        fm.set("mass", 5.0)                          # .values is a fresh dict (profiles)
+        ft.set("mass", 6.0)
         res = three_way_merge(self.base, to_json(self.theirs), to_json(self.mine))
         by_prop = {c.property: c for c in res.conflicts}
         self.assertEqual(set(by_prop), {"name", "«LRU».mass"})

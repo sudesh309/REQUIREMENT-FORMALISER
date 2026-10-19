@@ -26,6 +26,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from engine.profiles import element_stereotypes
 from engine.structure import component_tree, components_of, connectors_of, definition_of, ports_of
 from kerml.elements import Element
 from kerml.features import Feature, FeatureDirection
@@ -38,7 +39,7 @@ from sysmlv2.definitions import (
 from .checks import run_model_check
 from .common import (
     documentation, extra_attributes, format_multiplicity, in_library, is_profile_content,
-    link_kind_name, model_links, project_elements, relative_qname, stereotype_full_name,
+    link_kind_name, model_links, project_elements, relative_qname,
 )
 from .tables import _connection_end, _is_interface, table_of
 
@@ -109,7 +110,7 @@ def _label(text: Any) -> str:
 
 
 def _stereo_names(e: Element) -> str:
-    return ", ".join(stereotype_full_name(a.stereotype) for a in stereotypes_on(e))
+    return ", ".join(a.stereotype.full_name for a in stereotypes_on(e))
 
 
 def _type_names(e: Element, repo) -> str:
@@ -345,10 +346,10 @@ class _Report:
         doc = documentation(comp) or (documentation(d) if d is not None else "")
         if doc:
             self.w(f'<p class="doc">{_e(doc)}</p>')
-        values = []
-        for app in stereotypes_on(comp):
-            for k, v in (app.values or {}).items():
-                values.append([_e(stereotype_full_name(app.stereotype)), _e(k), _e(v)])
+        # Values as the profiles feature displays them (with units), base properties first.
+        values = [[_e(st["qualified_name"]), _e(p["name"]), _e(p["display"])]
+                  for st in element_stereotypes(comp)
+                  for group in st["groups"] for p in group["properties"]]
         if values:
             self.w("<h4>Stereotype properties</h4>")
             self.table(["Stereotype", "Property", "Value"], values)

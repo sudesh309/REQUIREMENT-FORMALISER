@@ -35,7 +35,7 @@ from sysmlv2.definitions import (
 
 from .common import (
     documentation, format_multiplicity, in_library, link_kind_name, model_links,
-    relative_qname, stereotype_full_name,
+    relative_qname,
 )
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -214,11 +214,19 @@ class _Writer:
         self.emit(depth, text, True)
 
     def stereotype_comments(self, e: Element, depth: int) -> None:
+        """``#Profile.Stereotype { mass = 1.5 [kg]; }`` (metadata usage with unit literals)."""
         for app in stereotypes_on(e):
-            values = "; ".join(f"{k} = {self.literal(v)}" for k, v in (app.values or {}).items()
-                               if v is not None)
-            body = f" {{ {values}; }}" if values else ""
-            self.comment(depth, f"#{stereotype_full_name(app.stereotype)}{body}")
+            values = []
+            tags = [t for _st, props in app.stereotype.property_groups() for t in props]
+            for tag in tags:                    # inherited (base) properties first
+                v = app.get(tag.name)
+                if v is None:
+                    continue
+                unit = f" [{tag.unit}]" if tag.unit and isinstance(v, (int, float)) \
+                    and not isinstance(v, bool) else ""
+                values.append(f"{tag.name} = {self.literal(v)}{unit}")
+            body = f" {{ {'; '.join(values)}; }}" if values else ""
+            self.comment(depth, f"#{app.stereotype.full_name}{body}")
 
     @staticmethod
     def literal(v) -> str:
@@ -295,7 +303,7 @@ class _Writer:
 
     def stereotype_def(self, st: Stereotype, depth: int) -> None:
         tags = [t for t in getattr(st, "tags", [])]
-        base = f" :> {stereotype_full_name(st.base)}" if getattr(st, "base", None) else ""
+        base = f" :> {st.base.full_name}" if st.base is not None else ""
         self.comment(depth, f"metadata def {self.show_name(st.name)}{base} {{")
         for t in tags:
             typ = getattr(t, "prop_type", "") or ""

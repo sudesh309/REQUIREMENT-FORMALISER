@@ -1,8 +1,11 @@
 """Helpers shared by the interop modules (tables, report, diff, SysML text, XMI).
 
 Everything here reads elements *generically* (``getattr`` with defaults) so
-attributes added by features built in parallel (interfaces, profiles,
-requirements, allocation, ...) are picked up without importing them.
+attributes added by features built in parallel (interfaces, requirements,
+allocation, ...) are picked up without importing them. Stereotypes are the
+exception: the profiles feature (``engine.profiles``) is the authority for
+their names (``Profile.Stereotype``), lookup, typed values and units, and
+interop goes through its public API instead of re-implementing those rules.
 """
 from __future__ import annotations
 
@@ -10,13 +13,13 @@ import importlib
 import json
 import pkgutil
 import re
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from kerml.elements import Annotation, Documentation, Element, Relationship
 from kerml.features import Feature, FeatureDirection, MultiplicityRange
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, StereotypeTag, stereotypes_on
+from kerml.stereotypes import Profile, Stereotype
 from sysmlv2.library import SYSML_LIBRARY
 
 
@@ -101,6 +104,30 @@ _EXTRA_KINDS: dict[str, type] = {}
 _engine_modules_loaded = False
 
 
+def load_feature_modules() -> None:
+    """Import every engine feature module once (idempotent).
+
+    Interop exchanges whole projects, so it needs every feature's element kinds,
+    link kinds and persistence codecs registered. Loading them here, when the
+    ``engine.interop`` package is imported, keeps imports free of side effects:
+    loading a feature module mid-import registers its codecs, which changes how
+    *every* project serializes (an ``ext`` entry appears), so a failed import
+    would no longer leave the project byte-identical.
+    """
+    global _engine_modules_loaded
+    if _engine_modules_loaded:
+        return
+    _engine_modules_loaded = True
+    import engine
+    for info in pkgutil.iter_modules(engine.__path__):
+        if info.name.startswith("_") or info.name in ("cli",):
+            continue
+        try:
+            importlib.import_module(f"engine.{info.name}")
+        except Exception:  # noqa: BLE001 - a broken optional module must not stop interop
+            continue
+
+
 def register_table_kind(name: str, cls: type) -> None:
     """Make an element class creatable by kind name in table / builder imports."""
     _EXTRA_KINDS[name] = cls
@@ -133,23 +160,9 @@ def kind_classes() -> dict[str, type]:
 
 
 def class_for_kind(kind: str) -> Optional[type]:
-    """The class for `kind`; imports the engine's feature modules once if unknown."""
-    global _engine_modules_loaded
-    classes = kind_classes()
-    if kind in classes:
-        return classes[kind]
-    if not _engine_modules_loaded:
-        _engine_modules_loaded = True
-        import engine
-        for info in pkgutil.iter_modules(engine.__path__):
-            if info.name.startswith("_") or info.name in ("cli",):
-                continue
-            try:
-                importlib.import_module(f"engine.{info.name}")
-            except Exception:  # noqa: BLE001 - a broken optional module must not stop imports
-                continue
-        classes = kind_classes()
-    return classes.get(kind)
+    """The class for `kind` among every loaded element class (feature modules included)."""
+    load_feature_modules()          # no-op after the package import
+    return kind_classes().get(kind)
 
 
 def new_element(cls: type, name: Optional[str], element_id: Optional[str] = None) -> Element:
@@ -374,6 +387,26 @@ def infer_scalar(value: Any) -> Any:
     return s
 
 
+def decode_untyped_cell(reference: Any, value: Any) -> Any:
+    """A table cell for a legacy *untyped* stereotype property, as a value.
+
+    Typed properties are converted by the profiles feature (units, expressions,
+    ranges); an untyped one accepts any value as given, so the text of a CSV cell
+    would be stored as text (``'4.2'`` instead of ``4.2``). Text is read like the
+    property's current value (or default): text stays text, a number or boolean
+    is parsed as one (falling back to inference when the text is not of that type).
+    """
+    if not isinstance(value, str) or isinstance(reference, str):
+        return value
+    if isinstance(reference, (bool, int, float)):
+        try:
+            return coerce_like(reference, value)
+        except ValueError:
+            pass
+    v = coerce_like(None, value)            # JSON lists / objects, else stripped text
+    return infer_scalar(v) if isinstance(v, str) else v
+
+
 def cell_text(value: Any) -> str:
     """Render a value for a text cell (CSV)."""
     if value is None:
@@ -387,59 +420,38 @@ def cell_text(value: Any) -> str:
     return str(value)
 
 
-# --- stereotypes -----------------------------------------------------------
+# --- stereotypes (the profiles feature is the authority) ---------------------
 
-def stereotype_full_name(st: Stereotype) -> str:
-    """``Profile.Stereotype`` when the stereotype lives in a profile, else its name."""
-    full = getattr(st, "full_name", None)
-    if isinstance(full, str) and full:
-        return full
-    owner = st.owner
-    if isinstance(owner, Package) and owner.owner is not None and owner.name:
-        return f"{owner.name}.{st.name}"
-    return str(st.name)
+def find_stereotype(repo, ref: str) -> Optional[Stereotype]:
+    """A stereotype by reference, through ``engine.profiles.find_stereotype``.
 
-
-def all_stereotypes(repo) -> list[Stereotype]:
-    return [e for e in repo.root_package.walk() if isinstance(e, Stereotype)]
-
-
-def stereotype_tags(st: Stereotype) -> list[StereotypeTag]:
-    try:
-        return list(st.all_tags())
-    except Exception:  # noqa: BLE001
-        return list(getattr(st, "tags", []))
-
-
-def find_stereotype(repo, ref: str, extra: Optional[Iterable[Stereotype]] = None) -> Optional[Stereotype]:
-    """By id, ``Profile.Stereotype`` full name, ``Profile::Stereotype`` or plain name."""
+    That accepts an id, a qualified name (``Pkg::Name``), ``Profile.Stereotype``
+    and a unique bare name. Tables exported before the profiles feature named a
+    stereotype kept in a plain package ``Package.Stereotype``; that form is still
+    read, as the qualified name ``Package::Stereotype``. None when nothing matches;
+    an ambiguous name raises InteropError with the candidates.
+    """
+    from engine import profiles as P
     ref = (ref or "").strip()
     if not ref:
         return None
-    hit = repo.by_id(ref)
-    if isinstance(hit, Stereotype):
-        return hit
-    pool = list(all_stereotypes(repo)) + list(extra or [])
-    for st in pool:
-        if stereotype_full_name(st) == ref:
-            return st
-    norm = ref.replace("::", ".")
-    for st in pool:
-        if stereotype_full_name(st) == norm:
-            return st
-    named = [st for st in pool if st.name == ref or st.name == norm.rsplit(".", 1)[-1]]
-    return named[0] if len(named) == 1 else None
-
-
-def stereotype_values(e: Element) -> list[tuple[Stereotype, dict]]:
-    return [(app.stereotype, dict(getattr(app, "values", {}) or {})) for app in stereotypes_on(e)]
+    candidates = [ref]
+    if "." in ref and "::" not in ref:
+        candidates.append(ref.replace(".", "::"))
+    for cand in candidates:
+        try:
+            return P.find_stereotype(repo, cand)
+        except P.ProfileError as ex:
+            if ex.status != 404:
+                raise InteropError(str(ex)) from None
+    return None
 
 
 def is_profile_content(e: Element) -> bool:
-    """Stereotypes, their properties and profile packages (exported in the Profiles table)."""
+    """Profiles, their stereotypes and stereotype properties (exported in the Profiles table)."""
     node: Optional[Element] = e
     while node is not None:
-        if isinstance(node, Stereotype) or getattr(node, "kind", "") == "Profile":
+        if isinstance(node, (Profile, Stereotype)):
             return True
         node = node.owner
     return False

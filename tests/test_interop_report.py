@@ -34,8 +34,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("SRS-001", h)
         self.assertIn("RNP 0.3", h)
         self.assertIn("advisor.unconnected-port", h)
-        self.assertIn("AvionicsProfile.LRU", h)
-        self.assertIn(">4.2<", h)                        # stereotype property value
+        # Stereotype name as engine.profiles reports it (plain package: no profile prefix).
+        self.assertIn("<span class=stereo>«LRU»</span>", h)
+        self.assertIn("<td>LRU</td><td>mass</td><td>4.2</td>", h)   # stereotype property value
         self.assertIn("2 of 3 requirements are implemented", h)
         # Hierarchy lists the architecture with nested components.
         hier = h[h.index('id="sec-hierarchy"'):h.index('id="sec-components"')]
