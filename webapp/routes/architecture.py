@@ -13,12 +13,15 @@ Canvas
     GET   /api/arch/view/<composition>?path=id,id,...                      -> view model
     GET   /api/arch/tree/<composition>                                     -> model browser tree
     GET   /api/arch/can-connect?composition&source_component&source_port&target_component&target_port
+    GET   /api/arch/connect-targets?composition&source_component&source_port  -> {source, targets}
+    GET   /api/arch/locate/<id>                                            -> {composition, select}
 Editing
     POST  /api/arch/component                  {composition, name?, definition?, layout?}
     PATCH /api/arch/component/<id>             {name?, definition? (id | null)}
     POST  /api/arch/port                       {owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}
     PATCH /api/arch/port/<id>                  {name?, direction?, kind?, interface? (id | null), force?}
     POST  /api/arch/connector                  {composition, source: {component?, port}, target: {component?, port}, name?}
+                                               (one end may be {component?, new_port: true | {name?, side?, offset?}})
     PATCH /api/arch/connector/<id>             {name?, points? ([[x, y], ...] | null)}
     POST  /api/arch/delete                     {ids}
     POST  /api/arch/duplicate                  {ids, target?, offset?: [dx, dy]}
@@ -184,6 +187,30 @@ def api_can_connect(req):
     return ok(A.can_connect(comp, (src["component"], src["port"]), (dst["component"], dst["port"])))
 
 
+@arch_route("GET", r"^/api/arch/connect-targets$")
+def api_connect_targets(req):
+    """Every port of the view with whether a connector from the source may end there."""
+    q = req.get("query") or {}
+    comp = _find(q.get("composition"), "composition")
+    src = _endpoint({"component": q.get("source_component"), "port": q.get("source_port")}, "source")
+    port = src["port"] if isinstance(src["port"], PortUsage) else A.resolve_port(
+        src["component"] or comp, src["port"])
+    return ok({"source": {"component_id": src["component"].element_id if src["component"] else None,
+                          "port_id": port.element_id},
+               "targets": A.connect_targets(comp, (src["component"], port))})
+
+
+@arch_route("GET", r"^/api/arch/locate/(?P<eid>[^/]+)$")
+def api_locate(_req, eid):
+    """The composition whose canvas view shows an element, and what to select there."""
+    hit = A.locate(_find(eid, "element"))
+    if hit is None:
+        return ok({"composition": None, "select": None})
+    sel = hit["select"]
+    return ok({"composition": hit["composition"].element_id,
+               "select": sel.element_id if sel is not None else None})
+
+
 # --- components -----------------------------------------------------------------
 
 @arch_route("POST", r"^/api/arch/component$")
@@ -291,9 +318,34 @@ def api_update_port(req, eid):
 def api_connect(req):
     b = _body(req)
     comp = _find(b.get("composition"), "composition")
-    conn = A.connect(_repo(), comp, _endpoint(b.get("source"), "source"),
-                     _endpoint(b.get("target"), "target"), b.get("name"))
+    ends = {"source": b.get("source"), "target": b.get("target")}
+    for what, spec in ends.items():
+        if not isinstance(spec, dict):
+            raise A.ArchitectureError(f"{what} must be an object {{component?, port}}")
+    fresh = [w for w, spec in ends.items() if spec.get("new_port")]
+    if len(fresh) > 1:
+        raise A.ArchitectureError("only one end can be a new port")
+    if fresh:
+        return ok(_connect_new_port(b, comp, fresh[0], "target" if fresh[0] == "source" else "source"))
+    conn = A.connect(_repo(), comp, _endpoint(ends["source"], "source"),
+                     _endpoint(ends["target"], "target"), b.get("name"))
     return ok(A.connector_view(conn, comp, _decorate))
+
+
+def _connect_new_port(b: dict, comp: Element, fresh: str, other: str) -> dict:
+    """`{component?, new_port: true | {name?, side?, offset?}}` at one end: create that port."""
+    spec = b[fresh]
+    opts = spec["new_port"] if isinstance(spec["new_port"], dict) else {}
+    component = _find(spec.get("component"), f"{fresh} component", required=False)
+    layout = {"side": opts["side"], "offset": opts.get("offset", 0.5)} if opts.get("side") else None
+    port_name = opts.get("name")
+    if port_name is not None and not isinstance(port_name, str):
+        raise A.ArchitectureError("new_port name must be a string")
+    port, conn = A.connect_new_port(_repo(), comp, _endpoint(b[other], other), component,
+                                    name=b.get("name"), port_name=port_name or None, layout=layout)
+    out = A.connector_view(conn, comp, _decorate)
+    out["created_port"] = _port_json(port, component or comp)
+    return out
 
 
 @arch_route("PATCH", r"^/api/arch/connector/(?P<eid>[^/]+)$")
