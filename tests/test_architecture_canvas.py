@@ -344,9 +344,7 @@ class CanvasJavaScriptTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, f"{f.name}: {r.stderr}")
 
     def test_geometry_unit_tests(self):
-        script = ROOT / "tests/ui/canvas_geometry_test.mjs"
-        if not script.exists():
-            self.skipTest("geometry tests not present")
+        script = ROOT / "tests/ui/10_canvas_geometry.test.mjs"
         r = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 

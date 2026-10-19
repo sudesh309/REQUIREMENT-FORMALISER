@@ -3,6 +3,8 @@
 export default async function ({ page, fresh, waitReady, expect, api }) {
   await fresh("ArchUi");
   await waitReady();
+  // The Architecture canvas is the start-up tab; this scenario drives the inspector tables.
+  await page.click('.tab[data-tab="properties"]');
 
   const section = '[data-section="architecture"]';
   const compNames = () => page.$$eval(`${section} [data-table="components"] input[data-rename]`,
