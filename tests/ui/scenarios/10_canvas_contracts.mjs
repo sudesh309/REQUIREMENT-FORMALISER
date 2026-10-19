@@ -144,4 +144,13 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   await page.waitForSelector(".arch-inline-edit:not([hidden])");
   await page.press(".arch-inline-edit", "Escape");
   await page.waitForSelector(`${block("PFD")} .arch-port.k-client`);
+
+  step("elements the canvas does not draw");
+  await page.click(`#tree .tree-node[data-id="${req.id}"] > .row`);
+  await page.waitForFunction(() => document.querySelector(".arch-dock")?.textContent.includes("not drawn on this canvas"));
+  expect((await page.textContent(".arch-dock")).includes("REQ_001"), "dock shows the tree selection");
+  expect(!(await page.$(".arch-block.sel")), "canvas selection cleared");
+  await page.click('.arch-dock [data-dock-act="properties"]');
+  await page.waitForFunction(() => document.querySelector(".tab.tab-active")?.dataset.tab === "properties"
+    && document.querySelector("#props-kind")?.textContent === "RequirementDefinition");
 }

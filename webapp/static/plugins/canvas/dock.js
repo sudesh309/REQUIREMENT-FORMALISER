@@ -139,11 +139,29 @@ export function createDock(el, studio, act) {
       </div>`;
   }
 
+  // An element selected elsewhere (the tree, another tab) that this canvas does not draw.
+  function externalHtml(e) {
+    const doc = (e.doc || "").trim();
+    return `
+      <div class="arch-dock-kind">${esc(e.kind)}</div>
+      <div class="arch-kv"><span>Name</span><b>${esc(e.name || "—")}</b></div>
+      <div class="arch-dock-muted" style="word-break:break-all">${esc(e.qualified_name || "")}</div>
+      ${e.req_id ? `<div class="arch-kv"><span>Id</span><b>${esc(e.req_id)}</b></div>` : ""}
+      ${e.text ? `<div class="arch-dock-sub">Text</div><div>${esc(e.text)}</div>` : ""}
+      ${doc ? `<div class="arch-dock-sub">Documentation</div><div>${esc(doc.length > 300 ? doc.slice(0, 299) + "…" : doc)}</div>` : ""}
+      <div class="arch-dock-sub">Stereotypes</div>${stereoRows(e.stereotypes)}
+      <p class="arch-dock-muted">Selected in the model browser; not drawn on this canvas.</p>
+      <div class="arch-dock-btns">
+        <button type="button" class="btn-action" data-dock-act="properties" data-id="${esc(e.id)}">Properties tab ↗</button>
+      </div>`;
+  }
+
   function render(snapshot) {
     last = snapshot;
-    const { view: v, sel, primary, info } = snapshot;
+    const { view: v, sel, primary, info, external } = snapshot;
     let body;
     if (!v) body = `<div class="arch-dock-muted">No architecture open.</div>`;
+    else if (!sel.length && external) body = externalHtml(external);
     else if (sel.length > 1) body = multiHtml(sel);
     else if (!primary) body = compositionHtml(v);
     else if (info?.type === "component") body = componentHtml(info.c, v);
@@ -198,7 +216,7 @@ export function createDock(el, studio, act) {
     else if (a === "reset-size") act.resetSize(info.c.id);
     else if (a === "reset-route") act.resetRoute(info.k.id);
     else if (a === "open") act.open(info.c.id);
-    else if (a === "properties") act.showProperties();
+    else if (a === "properties") act.showProperties(b.dataset.id || null);
     else if (a === "delete") act.deleteSelection();
     else if (a === "arrange") act.arrange();
     else if (a === "fit") act.fit();

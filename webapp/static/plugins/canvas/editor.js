@@ -469,7 +469,8 @@ class CanvasEditor {
     this.updateStatus();
     this.dockEl.hidden = !this.dockOpen;
     if (this.dockOpen) {
-      this.dock.render({ view: this.view, sel: [...this.sel], primary: this.primary, info: this.primaryInfo() });
+      const external = this.external && this.studio.state.treeIndex.has(this.external.id) ? this.external : null;
+      this.dock.render({ view: this.view, sel: [...this.sel], primary: this.primary, info: this.primaryInfo(), external });
     }
   }
 
@@ -525,6 +526,7 @@ class CanvasEditor {
   }
 
   setViewport(vp) {
+    if (this.inline.active) this.inline.el.blur();     // commit an open name edit before the view moves
     this.vp = vp;
     this.applyViewport();
     this.updateStatus();
@@ -597,6 +599,7 @@ class CanvasEditor {
 
   // ------------------------------------------------------------------ selection
   setSel(keys, { emit = false, primary = null } = {}) {
+    this.external = null;
     this.sel = new Set(keys);
     this.primary = primary && this.sel.has(primary) ? primary : (keys.length ? keys[keys.length - 1] : null);
     this.applySelectionClasses();
@@ -633,7 +636,19 @@ class CanvasEditor {
     if (!this.view || el.id === this.compId) return;
     const key = this.keyFor(el.id);
     if (key) { this.setSel([key]); this.scrollIntoView(key); return; }
-    if (FOLLOW_KINDS.has(el.kind)) this.reveal(el.id);     // the canvas follows the model browser
+    // The canvas follows the model browser; anything it does not draw is shown in the dock.
+    if (FOLLOW_KINDS.has(el.kind)) this.reveal(el.id).then(found => { if (!found) this.showExternal(el); });
+    else this.showExternal(el);
+  }
+
+  showExternal(el) {
+    if (this.studio.state.selectedId !== el.id) return;      // the selection moved on meanwhile
+    this.external = el;
+    this.sel = new Set();
+    this.primary = null;
+    this.applySelectionClasses();
+    this.renderHandles();
+    this.updateChrome();
   }
 
   onStudioSelection(ids) {
@@ -650,12 +665,12 @@ class CanvasEditor {
   // Open the composition that shows an element and select it there (navigate contract).
   async reveal(id) {
     const s = this.studio;
-    if (!s.state.treeIndex.has(id)) return;
+    if (!s.state.treeIndex.has(id)) return false;
     const here = this.keyFor(id);
-    if (here) { this.setSel([here]); this.scrollIntoView(here); return; }
+    if (here) { this.setSel([here]); this.scrollIntoView(here); return true; }
     let r;
-    try { r = await s.api("GET", `/api/arch/locate/${encodeURIComponent(id)}`); } catch { return; }
-    if (!r.composition) return;
+    try { r = await s.api("GET", `/api/arch/locate/${encodeURIComponent(id)}`); } catch { return false; }
+    if (!r.composition) return false;
     if (r.composition !== this.compId) {
       if (this.view) this.viewports.set(this.compId, { ...this.vp });
       this.cancelInteractions();
@@ -667,6 +682,7 @@ class CanvasEditor {
     }
     const key = r.select ? this.keyFor(r.select) : null;
     if (key) { this.setSel([key]); this.scrollIntoView(key); }
+    return true;
   }
 
   // ------------------------------------------------------------------ contracts
@@ -1630,7 +1646,7 @@ class CanvasEditor {
       resetSize: id => this.resetSize(id),
       resetRoute: id => this.resetRoute(id),
       open: id => this.openComponent(id),
-      showProperties: () => this.showProperties(),
+      showProperties: id => this.showProperties(id),
       arrange: () => this.arrange(),
       fit: () => this.fit(),
       group: () => this.group(),
