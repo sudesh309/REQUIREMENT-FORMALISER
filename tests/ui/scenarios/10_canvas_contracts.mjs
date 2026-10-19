@@ -19,6 +19,7 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   const conn = await api("POST", "/api/arch/connector", { composition: root.id, source: { component: adc.id, port: "airData" }, target: { component: fms.id, port: "air" } });
   const req = await api("POST", "/api/element", { kind: "RequirementDefinition", name: "REQ_001" });
   const unit = await api("POST", "/api/element", { kind: "PartDefinition", name: "AdcUnit" });
+  const airDataIf = await api("POST", "/api/element", { kind: "PortDefinition", name: "AirData" });
   await waitReady();
   await page.waitForSelector('.arch-block[data-name="Display"]');
   await page.evaluate(() => {
@@ -93,6 +94,13 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
                          { targetPosition: { x: host.width / 2, y: host.height - 120 } });
   await page.waitForSelector(`${block("AdcUnit")} .arch-refmark`);
   expect((await page.textContent(`${block("AdcUnit")} .arch-def`)) === "AdcUnit", "reference component shows its definition");
+
+  step("drop an interface on a port");
+  await page.dragAndDrop(`#tree .tree-node[data-id="${airDataIf.id}"] > .row`,
+                         `${block("ADC")} .arch-port[data-name="airData"] .arch-port-hit`);
+  await page.waitForFunction(id => document.querySelector(`.arch-clabel[data-id="${id}"]`)?.textContent.includes("AirData"), conn.id);
+  const typed = (await api("GET", `/api/arch/view/${root.id}`)).components.find(c => c.name === "ADC").ports[0];
+  expect(typed.interface?.name === "AirData", `port typed by the dropped interface: ${JSON.stringify(typed.interface)}`);
 
   step("keyboard: drill down, up, rename");
   await page.mouse.click(fmsBody.x + 12, fmsBody.y + 10);

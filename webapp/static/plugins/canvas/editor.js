@@ -15,7 +15,7 @@ import { icon, toolstripHtml, updateToolstrip } from "./toolstrip.js";
 import { createInlineEditor, createMenu, createToasts } from "./ui.js";
 import { createDock } from "./dock.js";
 import { injectCanvasStyles } from "./styles.js";
-import { clipboard, copyComponents, esc, openForm, reload } from "./common.js";
+import { INTERFACE_KINDS, clipboard, copyComponents, esc, openForm, reload } from "./common.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const STORE = "sysml.archCanvas";
@@ -1242,11 +1242,17 @@ class CanvasEditor {
     const dragged = e.dataTransfer.getData(ELEMENT_MIME);
     if (!dragged) return;
     const h = this.hit(e.target);
+    const node = this.studio.state.treeIndex.get(dragged);
     if (h && h.kind !== "frame") {
       this.studio.emit("drop-on-element", { dragged_id: dragged, target_id: h.id });
+      // System Composer: drop an interface on a port to type it.
+      const pt = h.kind === "port" ? this.scene?.ports.get(h.key) : null;
+      if (pt && node && INTERFACE_KINDS.has(node.kind) && pt.p.interface?.id !== dragged) {
+        this.run(() => this.studio.api("PATCH", `/api/arch/port/${pt.p.id}`, { interface: dragged }),
+                 { selectKeys: () => [h.key], ok: `Port ${pt.p.name} now uses interface ${node.name}` });
+      }
       return;
     }
-    const node = this.studio.state.treeIndex.get(dragged);
     if (node?.kind === "PartDefinition" && dragged !== this.compId && !this.path.includes(dragged)) {
       const m = this.toModel(e);
       this.run(() => this.studio.api("POST", "/api/arch/component", {
