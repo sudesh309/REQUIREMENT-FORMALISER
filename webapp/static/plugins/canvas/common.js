@@ -34,6 +34,16 @@ export function treeNodes(studio, kinds) {
   return [...studio.state.treeIndex.values()].filter(n => want.has(n.kind));
 }
 
+// Choices for a port's interface: SysML definitions plus the interfaces feature's dictionary
+// items (summaries with interface_category "Interface": data / physical / service interfaces
+// and value types). An interface owned by a port is listed only as that port's current one.
+export function interfaceChoices(studio, currentId) {
+  return [...studio.state.treeIndex.values()]
+    .filter(n => INTERFACE_KINDS.has(n.kind)
+      || (n.interface_category === "Interface" && (!n.owned || n.id === currentId)))
+    .map(n => [n.id, `${n.name} (${n.owned ? "owned" : (n.interface_kind || n.kind).replace("Definition", "")})`]);
+}
+
 export function options(items, selected, { empty } = {}) {
   const head = empty !== undefined ? `<option value="">${esc(empty)}</option>` : "";
   return head + items.map(([value, label]) =>

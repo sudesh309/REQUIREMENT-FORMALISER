@@ -5,6 +5,8 @@
 //   * Inspector sections: port interface assignment (+ connect), connector
 //     compatibility with bus element selection, adapter mappings, interface summary.
 //   * Toolbar group "Interfaces": Interface Editor, Adapter.
+//   * Drag and drop: list rows are drag sources (application/x-sysml-element); an interface
+//     dropped on a canvas port (drop-on-element) is assigned to that port.
 //
 // Backend: webapp/routes/interfaces.py (see docs/features/interfaces.md).
 
@@ -23,6 +25,10 @@ const KIND_LABEL = {
 };
 const WITH_ELEMENTS = new Set(["DataInterface", "PhysicalInterface", "ServiceInterface", "Enumeration"]);
 const WITH_COLOR = new Set(["DataInterface", "PhysicalInterface", "ServiceInterface", "ValueType"]);
+// Kinds a port can be typed by (engine/interfaces.py INTERFACE_KINDS).
+const PORT_TYPES = new Set(["DataInterface", "ValueType", "PhysicalInterface", "ServiceInterface"]);
+// Cross-feature drag data type (docs/EXTENDING.md, "Dragging elements").
+const ELEMENT_MIME = "application/x-sysml-element";
 
 const STYLES = `
 .ifc-pane { background:#fff; }
@@ -267,6 +273,14 @@ export default function install(studio) {
     });
     tableWrap.addEventListener("keydown", onTableKey);
     listEl.addEventListener("keydown", onListKey);
+    listEl.addEventListener("dragstart", (e) => {
+      const item = e.target.closest?.('.ifc-item[draggable="true"]');
+      if (!item || !e.dataTransfer) return;
+      const it = allItems().find((i) => i.id === item.dataset.id);
+      e.dataTransfer.setData(ELEMENT_MIME, item.dataset.id);
+      e.dataTransfer.setData("text/plain", it?.qualified_name || item.dataset.id);
+      e.dataTransfer.effectAllowed = "copyLink";
+    });
     pane.addEventListener("keydown", (e) => {
       const inField = e.target.closest("input, select, textarea");
       if (e.key === "Insert" && !inField) { e.preventDefault(); run(action)("add-element"); }
@@ -324,8 +338,12 @@ export default function install(studio) {
     if (!listEl) return;
     const f = S.filter;
     const match = (i) => !f || i.name.toLowerCase().includes(f);
+    // Shared interfaces and value types can be dragged onto a port on the Architecture canvas.
     const row = (i, label) =>
-      `<div class="ifc-item${i.id === S.currentId ? " sel" : ""}" data-id="${esc(i.id)}" title="${esc(i.qualified_name)}">` +
+      `<div class="ifc-item${i.id === S.currentId ? " sel" : ""}" data-id="${esc(i.id)}"` +
+      (PORT_TYPES.has(i.kind) && !i.owned
+        ? ` draggable="true" title="${esc(i.qualified_name)}\nDrag onto a port on the Architecture canvas to assign it (hold over the Architecture tab to switch)">`
+        : ` title="${esc(i.qualified_name)}">`) +
       `<span class="ifc-swatch" style="background:${esc(i.color || "transparent")}"></span>` +
       `<span class="truncate">${esc(label ?? i.name)}</span>` +
       (WITH_ELEMENTS.has(i.kind) ? `<span class="ifc-count">${i.element_count}</span>` : "") + `</div>`;
@@ -552,7 +570,7 @@ export default function install(studio) {
         ${ports.length ? `<button type="button" class="btn-action" data-ifc-act="highlight" title="Highlight these ports on the canvas">Highlight</button>` : ""}</div>
       <div data-ifc="ports">${ports.length
         ? ports.map((p) => `<div><a href="#" class="ifc-link" data-nav="${esc(p.id)}">${esc(p.qualified_name)}</a> <span class="text-slate-400">${esc(p.direction)}</span></div>`).join("")
-        : `<div class="text-slate-400 italic">No port uses this interface yet. Select a port and pick it in Properties › Interface.</div>`}</div>
+        : `<div class="text-slate-400 italic">No port uses this interface yet. Drag it from the list onto a port on the Architecture canvas, or select a port and pick it in Properties › Interface.</div>`}</div>
       ${users.length ? `<div class="ifc-usage-head mt-1">Nested in (${users.length})</div>` +
         users.map((u) => `<div><a href="#" class="ifc-link" data-nav="${esc(u.id)}">${esc(u.qualified_name)}</a></div>`).join("") : ""}`;
   }
@@ -793,6 +811,35 @@ export default function install(studio) {
     },
   });
   studio.registerShortcut({ key: "i", alt: true, handler() { studio.switchTab("interfaces"); } });
+
+  // ------------------------------------------------------------------ drag and drop
+  // The canvas reports HTML5 drops as drop-on-element (docs/EXTENDING.md). An interface or
+  // value type (from this editor's list or the containment tree) dropped on a port becomes the
+  // port's interface, as in System Composer. Other dragged elements belong to other features.
+  const canTypePort = (n) => n?.interface_category === "Interface" || n?.kind === "PortDefinition";
+  studio.on("drop-on-element", (p) => {
+    if (!p?.dragged_id || !p?.target_id) return;
+    const iface = studio.state.treeIndex.get(p.dragged_id);
+    if (!canTypePort(iface)) return;
+    const target = studio.state.treeIndex.get(p.target_id);
+    if (target?.kind !== "PortUsage") {
+      studio.log(`Drop ${iface.name} on a port to make it the port's interface.`, "info");
+      return;
+    }
+    run(assignDropped)(iface, target);
+  });
+
+  async function assignDropped(iface, port) {
+    if (port.interface?.id === iface.id) { studio.log(`${port.name} already uses ${iface.name}`, "info"); return; }
+    if (iface.owned) {
+      studio.log(`${iface.name} is owned by another port; convert it to a shared interface to reuse it.`, "warning");
+      return;
+    }
+    await api("POST", "/api/interfaces/assign", { port: port.id, interface: iface.id });
+    studio.log(`Port ${port.name} now uses interface ${iface.name}`, "ok");
+    await studio.refreshTree();
+    await studio.selectElement(port.id);
+  }
 
   // ------------------------------------------------------------------ inspector: port
   studio.registerInspectorSection({
