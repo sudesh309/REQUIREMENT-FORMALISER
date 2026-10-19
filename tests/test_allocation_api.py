@@ -188,7 +188,9 @@ class AllocationApiTests(WebAppTestCase):
                       expect=400)
         self.assertIn("cannot be applied", e["error"])
         el = self.call("GET", f"/api/element/{a['id']}")
-        self.assertEqual(el["stereotypes"], [{"name": "Binding", "values": {"latency_ms": 2}}])
+        # Other features may add keys to stereotype entries (profiles adds id, style, ...).
+        self.assertEqual([(st["name"], st["values"]) for st in el["stereotypes"]],
+                         [("Binding", {"latency_ms": 2})])
 
     def test_chain_endpoint(self):
         func = self.call("POST", "/api/element", {"kind": "Package", "name": "Functions"})
