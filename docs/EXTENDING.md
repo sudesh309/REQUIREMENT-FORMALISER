@@ -143,6 +143,15 @@ connector is a `ConnectionUsage` owned by the composition it wires, with
 `components_of`, `ports_of`, `connectors_of`, `component_tree`,
 `definition_of` instead of walking `owned_elements` yourself.
 
+**Stereotypes** (`engine/profiles.py` is the authority): a stereotype is named
+`Stereotype.full_name` everywhere (`Profile.Stereotype`; a stereotype outside a
+profile, e.g. in a plain package, is just its name), looked up with
+`engine.profiles.find_stereotype` (id, qualified name, `Profile.Stereotype`, unique
+bare name) and its values are set through the profiles API (`set_property_value(s)`,
+`StereotypeApplication.set`), which checks types and ranges and converts units. Read
+`StereotypeApplication.values` as a snapshot: it is a fresh dict, assigning into it
+changes nothing. Do not re-derive names from owning packages or coerce values yourself.
+
 **Element JSON display fields**: every summary has `badges` (list of short
 strings) and `style` (dict with optional `fill`, `stroke`, `text`, `dash`,
 `icon`). Summary hooks *append* badges and *set* style keys; the tree shows

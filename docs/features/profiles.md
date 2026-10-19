@@ -369,6 +369,13 @@ The legacy API still works: `Stereotype(name, applies_to=[cls])`,
 - Reading values from other features: `engine.profiles.get_property_value(e,
   "Avionics.Equipment.mass")` (unit = the property's unit) or
   `element_stereotypes(e)` for everything with units and display strings.
+- **Interop** (tables, report, Compare / merge, SysML text, XMI; see
+  [interop.md](interop.md)) names stereotypes by `full_name`, finds them with
+  `find_stereotype`, creates and edits profiles, stereotypes and properties from the
+  tables' Profiles sheet with the functions above, and sets values through
+  `StereotypeApplication.set`, so imported values get the same checks and unit
+  conversion as the inspector. A stereotype kept in a plain package (legacy API) has no
+  profile prefix (`LRU`, not `Package.LRU`).
 - The plugin styles the Properties pane as two wrapping columns (element form,
   inspector sections) and hides the core's raw-JSON *Define stereotype...* /
   *Apply stereotype...* buttons, the core's inline `«...»` tree text and the raw
