@@ -490,7 +490,12 @@ class LayoutAndViewTests(unittest.TestCase):
         xs = [pos[c.element_id]["x"] for c in (adc, fms, disp)]
         self.assertEqual(xs, sorted(xs))
         self.assertLess(xs[0], xs[1])
-        self.assertEqual(fms.tool_data["layout"], pos[fms.element_id])
+        # positions are stored; sizes stay automatic unless the user resized the block
+        self.assertEqual(fms.tool_data["layout"], {k: pos[fms.element_id][k] for k in ("x", "y")})
+        self.assertEqual(A.effective_box(fms, root), pos[fms.element_id])
+        A.apply_layout(repo, [{"id": disp.element_id, "x": 0, "y": 0, "w": 300, "h": 200}])
+        pos = A.auto_layout(repo, root)
+        self.assertEqual((pos[disp.element_id]["w"], disp.tool_data["layout"]["w"]), (300, 300))
         sides = {p.name: p.tool_data["port_layout"]["side"] for p in ports_of(fms)}
         self.assertEqual(sides, {"airData": "left", "route": "right"})
 

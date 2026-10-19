@@ -16,6 +16,7 @@ export function installUndo(studio) {
     redoBtn.disabled = !s.can_redo;
     undoBtn.title = s.can_undo ? `Undo ${s.undo_label} (Ctrl+Z)` : "Nothing to undo (Ctrl+Z)";
     redoBtn.title = s.can_redo ? `Redo ${s.redo_label} (Ctrl+Y)` : "Nothing to redo (Ctrl+Y)";
+    studio.emit("undo-state", s);      // the canvas toolstrip mirrors these buttons
   }
 
   async function refreshState() {

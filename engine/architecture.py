@@ -675,15 +675,22 @@ def connector_kind(composition: Element, conn: ConnectionUsage) -> str:
     return "data"
 
 
-def _existing_conflict(composition: Element, kind: str, src: Endpoint, dst: Endpoint,
-                       exclude: Optional[ConnectionUsage] = None) -> Optional[str]:
+def _connector_index(composition: Element) -> list[tuple[ConnectionUsage, Endpoint, Endpoint]]:
+    """``(connector, source end, target end)`` for the two-ended connectors of a composition."""
+    out = []
     for c in connectors_of(composition):
+        ends = connector_ends(c, composition)
+        if len(ends) == 2:
+            out.append((c, ends[0], ends[1]))
+    return out
+
+
+def _existing_conflict(composition: Element, kind: str, src: Endpoint, dst: Endpoint,
+                       exclude: Optional[ConnectionUsage] = None,
+                       index: Optional[list] = None) -> Optional[str]:
+    for c, a, b in (index if index is not None else _connector_index(composition)):
         if c is exclude:
             continue
-        ends = connector_ends(c, composition)
-        if len(ends) != 2:
-            continue
-        a, b = ends[0], ends[1]
         if (_same(a, src) and _same(b, dst)) or (_same(a, dst) and _same(b, src)):
             return f"{_label(src)} and {_label(dst)} are already connected ({c.name})"
         if (kind == "data" and _same(b, dst) and isinstance(dst[1], PortUsage)
@@ -727,6 +734,38 @@ def can_connect(composition: Element, src: Endpoint, dst: Endpoint) -> dict:
         problem = _existing_conflict(composition, chk.kind, chk.source, chk.target)
     return {"ok": problem is None, "reason": problem, "kind": chk.kind,
             "swapped": problem is None and not (_same(chk.source, src) and _same(chk.target, dst))}
+
+
+def view_ports(composition: Element) -> list[Endpoint]:
+    """Every port drawn in a composition's view: its boundary ports, then its sub-components' ports."""
+    return ([(None, p) for p in ports_of(composition)]
+            + [(c, p) for c in components_of(composition) for p in ports_of(c)])
+
+
+def connect_targets(composition: Element, src: Endpoint) -> list[dict]:
+    """:func:`can_connect` from `src` to every other port of the view, in one pass.
+
+    The canvas asks once when a connector drag starts and dims the invalid
+    targets (with the reason as tooltip) instead of asking port by port.
+    """
+    comp = require_composition(composition)
+    if not isinstance(src[1], PortUsage):
+        raise ArchitectureError("the source of a connection must be a port")
+    problem = _scope_problem(comp, src)
+    if problem:
+        raise ArchitectureError(problem)
+    index = _connector_index(comp)
+    out = []
+    for ep in view_ports(comp):
+        if _same(ep, src):
+            continue
+        chk = classify(comp, src, ep)
+        reason = chk.problem or _existing_conflict(comp, chk.kind, chk.source, chk.target, index=index)
+        out.append({"component_id": ep[0].element_id if ep[0] is not None else None,
+                    "port_id": ep[1].element_id, "ok": reason is None, "reason": reason,
+                    "kind": chk.kind,
+                    "swapped": reason is None and not _same(chk.source, src)})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -847,6 +886,81 @@ def connect(repo, composition: Element, source: Any, target: Any, name: Optional
     owner.own(conn)
     notify_created(conn, repo)
     return conn
+
+
+def new_port_spec(src: Endpoint, on_component: bool) -> dict:
+    """Kind, direction, interface and name of a port that can take a connector from `src`.
+
+    `on_component` is True for a port on a sub-component, False for a new
+    boundary port of the composition (whose role inside is the opposite of its
+    direction). Data: the new port plays the opposite role (an input for an
+    output); physical stays physical; a client gets a server and vice versa.
+    """
+    sp = src[1]
+    boundary_src = src[0] is None
+    if sp.port_kind == "data":
+        role = data_role(sp, boundary_src)
+        want = {"out": "in", "in": "out"}.get(role, "inout")
+        kind, direction = "data", (want if on_component else _flip(want))
+    elif sp.port_kind == "physical":
+        kind, direction = "physical", "inout"
+    else:
+        want = _flip(service_role(sp, boundary_src))
+        kind, direction = (want if on_component else _flip(want)), "inout"
+    return {"kind": kind, "direction": direction,
+            "interface": sp.types[0] if sp.types else None, "name": sp.name or None}
+
+
+def connect_new_port(repo, composition: Element, source: Any, component: Optional[Element] = None,
+                     *, name: Optional[str] = None, port_name: Optional[str] = None,
+                     layout: Optional[dict] = None) -> tuple[PortUsage, ConnectionUsage]:
+    """Connect `source` to a port created for it (System Composer: drop a connector on a block).
+
+    `component` is a direct sub-component of `composition` (the port goes to its
+    definition when it is a reference component, so every usage shows it) or
+    None for a new boundary port of the composition. The port is named after
+    the source port (made unique) unless `port_name` is given, and mirrors the
+    source's kind and interface with the opposite role. Nothing is created when
+    the connection is refused.
+    """
+    comp = require_composition(composition)
+    if component is not None:
+        component = require_component(component)
+        if not any(component is c for c in components_of(comp)):
+            raise ArchitectureError(f"{component.name} is not a direct sub-component of {comp.name}")
+    if name is not None:
+        name = check_name(name)
+        if name in member_names(comp):
+            raise _conflict(f"{comp.name} already has a member named {name!r}")
+    lay = clean_port_layout(layout) if layout else None
+    created: list[Element] = []
+    try:
+        src = _endpoint(repo, comp, source, created)
+        if component is not None and src[0] is component:
+            raise ArchitectureError(f"cannot connect {_label(src)} to a new port of its own component")
+        spec = new_port_spec(src, component is not None)
+        owner = component if component is not None else comp
+        target = edit_owner(owner)
+        taken = member_names(owner)
+        if isinstance(target, PartDefinition):
+            for u in _usages_of(repo, target):
+                taken |= _names_in([u])
+        if port_name:
+            pname = check_name(port_name)
+            if pname in taken:
+                raise _conflict(f"{owner.name} already has a port or member named {pname!r}")
+        else:
+            pname = unique_name(spec["name"], taken) if spec["name"] else None
+        port = add_port(repo, owner, pname, spec["direction"], spec["kind"], spec["interface"],
+                        layout=lay)
+        created.append(port)
+        conn = connect(repo, comp, src, (component, port), name)
+    except ArchitectureError:
+        for e in reversed(created):
+            if e.owner is not None and repo.by_id(e.element_id) is not None:
+                repo.remove(e)
+        raise
+    return port, conn
 
 
 def set_connector_points(conn: ConnectionUsage, points: Optional[list]) -> None:
@@ -1341,22 +1455,40 @@ def port_layouts(owner: Element) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for side in SIDES:
         on_side = [p for p in ports if sides[id(p)] == side]
-        for i, p in enumerate(on_side):
+        # Evenly spaced slots: each port with a stored place claims the slot nearest to
+        # it, the others fill the remaining slots in order, so no two ports overlap.
+        slots = [round((i + 1) / (len(on_side) + 1), 4) for i in range(len(on_side))]
+        for p in on_side:
             if id(p) in stored:
                 off = stored[id(p)].get("offset", 0.5)
-                out[id(p)] = {"side": side, "offset": off if isinstance(off, (int, float)) else 0.5}
-            else:
-                out[id(p)] = {"side": side, "offset": round((i + 1) / (len(on_side) + 1), 4)}
+                off = off if isinstance(off, (int, float)) else 0.5
+                out[id(p)] = {"side": side, "offset": off}
+                slots.remove(min(slots, key=lambda s: abs(s - off)))
+        free = iter(slots)
+        for p in on_side:
+            if id(p) not in stored:
+                out[id(p)] = {"side": side, "offset": next(free)}
     return out
 
 
+NAME_CHAR_W, PORT_CHAR_W, MAX_AUTO_W = 7.4, 5.8, 320
+
+
 def default_size(c: Element) -> tuple[int, int]:
+    """Automatic block size: tall enough for the ports on the left/right, wide enough for
+    the ports on the top/bottom and for the name between the left and right port labels
+    (up to MAX_AUTO_W; the canvas truncates beyond)."""
     counts = {s: 0 for s in SIDES}
-    for lay in port_layouts(c).values():
-        counts[lay["side"]] += 1
+    label = {s: 0 for s in SIDES}
+    layouts = port_layouts(c)
+    for p in ports_of(c):
+        side = layouts[id(p)]["side"]
+        counts[side] += 1
+        label[side] = max(label[side], len(p.name or ""))
     h = max(DEFAULT_H, 30 + PORT_PITCH * max(counts["left"], counts["right"]))
-    w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]))
-    return w, h
+    name_w = len(c.name or "") * NAME_CHAR_W + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
+    w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]), min(MAX_AUTO_W, name_w))
+    return int(-(-w // 10) * 10), h
 
 
 def _default_boxes(composition: Element) -> dict[int, dict]:
@@ -1390,16 +1522,31 @@ def effective_box(c: Element, composition: Optional[Element] = None,
     return dict(defaults.get(id(c)) or {"x": _GRID_X0, "y": _GRID_Y0, "w": w, "h": h})
 
 
+def _merged_box(e: Element, item: dict) -> dict:
+    """A component's new box: x/y replaced, w/h kept unless given (``null`` = back to auto size)."""
+    box = clean_box(item)
+    old = e.tool_data.get("layout")
+    if isinstance(old, dict):
+        for k in ("w", "h"):
+            if k not in item and isinstance(old.get(k), (int, float)) and old[k] > 0:
+                box[k] = old[k]
+    return box
+
+
 def apply_layout(repo, items: list) -> int:
     """Batch-save layout: ``{id, x, y, w?, h?}`` for components, ``{id, side, offset}`` for
-    ports, ``{id, points}`` for connectors. Validates everything before writing anything."""
+    ports, ``{id, points}`` for connectors. Validates everything before writing anything.
+
+    Moving a component keeps a size set earlier by a resize; ``w``/``h`` set to null
+    return it to the automatic size (which grows with the number of ports)."""
     if not isinstance(items, list):
         raise ArchitectureError("items must be a list")
     planned = []
     for item in items:
-        if not isinstance(item, dict) or not item.get("id"):
+        if not isinstance(item, dict) or not item.get("id") or not isinstance(item["id"], str):
             raise ArchitectureError("every layout item needs an id")
-        e = repo.by_id(item["id"])
+        ref = item["id"]
+        e = repo.by_id(ref) or (repo.resolve(ref) if "::" in ref else None)    # id or qualified name
         if e is None:
             raise _not_found(f"element {item['id']!r}")
         if isinstance(e, PortUsage):
@@ -1408,7 +1555,7 @@ def apply_layout(repo, items: list) -> int:
             pts = item.get("points")
             planned.append((e, "points", None if pts is None else clean_points(pts)))
         elif isinstance(e, (PartUsage, PartDefinition)):
-            planned.append((e, "layout", clean_box(item)))
+            planned.append((e, "layout", _merged_box(e, item)))
         else:
             raise ArchitectureError(f"{e.qualified_name} ({e.kind}) has no canvas layout")
     for e, key, value in planned:
@@ -1484,7 +1631,16 @@ def auto_layout(repo, composition: Element) -> dict:
     for c in comps:
         _spread_ports(c)
     _spread_ports(comp)
-    sizes = [default_size(c) for c in comps]
+
+    def size(c: Element) -> tuple:
+        """A size the user set by resizing, else the automatic one (which follows the ports)."""
+        w, h = default_size(c)
+        lay = c.tool_data.get("layout")
+        if isinstance(lay, dict):
+            w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
+            h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
+        return w, h
+    sizes = [size(c) for c in comps]
     col_w = max([w for w, _ in sizes] or [DEFAULT_W])
     pos_rank: dict[int, float] = {}
     positions: dict[str, dict] = {}
@@ -1498,7 +1654,10 @@ def auto_layout(repo, composition: Element) -> dict:
         for rank, i in enumerate(members):
             w, h = sizes[i]
             box = {"x": _GRID_X0 + k * (col_w + _GAP_X), "y": round(y), "w": w, "h": h}
-            comps[i].tool_data["layout"] = box
+            old = comps[i].tool_data.get("layout")
+            # Only positions are stored: a size stays automatic unless the user resized it.
+            comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
+                k2: old[k2] for k2 in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k2), (int, float))}}
             positions[comps[i].element_id] = box
             pos_rank[i] = rank
             y += h + _GAP_Y
@@ -1556,6 +1715,9 @@ def component_view(c: PartUsage, composition: Element, decorate: Optional[Callab
         # Viewing a reference component: this sub-component belongs to the shared definition.
         "from_definition": c.owner is not composition,
         "layout": effective_box(c, composition, _defaults),
+        # True once the user resized the block (moving keeps the size; null w/h resets it).
+        "sized": isinstance(c.tool_data.get("layout"), dict)
+                 and any(isinstance(c.tool_data["layout"].get(k), (int, float)) for k in ("w", "h")),
         "has_children": bool(components_of(c)),
         "has_state_machine": owns_state_machine(c),
         "ports": [port_view(p, c, pl[id(p)], decorate) for p in ports_of(c)],
@@ -1625,6 +1787,32 @@ def breadcrumbs(composition: Element, path: Optional[list[Element]] = None) -> l
         node = node.owner
         chain.insert(0, node)
     return [{"id": e.element_id, "name": e.name, "kind": e.kind} for e in chain]
+
+
+def locate(e: Element) -> Optional[dict]:
+    """Where the canvas shows `e`: ``{"composition": C, "select": X}`` or None.
+
+    A component, a component's port or a connector is shown (and selected) in the
+    view of the composition that owns it; an architecture or definition is
+    opened itself, and its own ports are its boundary ports. Other elements (an
+    attribute, a state machine, a stereotype value) reveal the nearest
+    enclosing component or architecture. None when `e` is not part of one.
+    """
+    node: Optional[Element] = e
+    while node is not None:
+        owner = node.owner
+        if isinstance(node, ConnectionUsage) and isinstance(owner, (PartUsage, PartDefinition)):
+            return {"composition": owner, "select": node}
+        elif isinstance(node, PortUsage) and isinstance(owner, (PartUsage, PartDefinition)):
+            if is_component(owner):
+                return {"composition": owner.owner, "select": node}
+            return {"composition": owner, "select": node}
+        elif is_component(node):
+            return {"composition": owner, "select": node}
+        elif isinstance(node, (PartDefinition, PartUsage)):
+            return {"composition": node, "select": None}
+        node = owner
+    return None
 
 
 def view(repo, composition: Element, *, path: Optional[list[Element]] = None,
