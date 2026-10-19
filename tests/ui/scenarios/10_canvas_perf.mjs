@@ -65,6 +65,7 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
     return { x: r.x + 10, y: r.y + 8 };
   }, sel);
   await page.waitForTimeout(50);
+  const depth0 = (await api("GET", "/api/undo/state")).undo_depth;
   const before = await page.$eval(sel, e => e.getAttribute("transform"));
   const t3 = Date.now();
   await page.mouse.move(handle.x, handle.y);
@@ -74,8 +75,12 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   const dragMs = Date.now() - t3;
   await page.waitForFunction(([s, b]) => document.querySelector(s)?.getAttribute("transform") !== b, [sel, before]);
   expect(dragMs < 3000, `20-step drag took ${dragMs} ms`);
+  // The block moves at once; the layout is saved when the drag ends (asynchronously): wait
+  // for the toolstrip's Undo to name it before reading the history.
+  await page.waitForFunction(() => document.querySelector('[data-canvas-act="undo"]')?.title.includes("Move"));
   const undo = await api("GET", "/api/undo/state");
-  expect(undo.undo_label === "Move", `one Move step: ${undo.undo_label}`);
+  expect(undo.undo_label === "Move" && undo.undo_depth === depth0 + 1,
+         `one Move step: ${undo.undo_label}, ${undo.undo_depth - depth0} new step(s)`);
 
   // Arrange and Fit stay responsive.
   const t4 = Date.now();
