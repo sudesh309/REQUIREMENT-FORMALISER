@@ -110,6 +110,8 @@ opens the architecture you last viewed (else the first one with components).
 | Open another architecture or definition | **Open ▾** at the right of the breadcrumb bar; or click it in the containment tree (the canvas follows the tree) |
 | Add a component | **Component** (toolstrip; placed at a free spot in view), or right-click the background → *Add Component here*; type the name, Enter (Escape keeps `Component`, `Component1`, …) |
 | Add a reference component | Drag a part definition from the containment tree onto the canvas background |
+| Assign an interface to a port | Drag an interface from the **Interfaces** tab's list (hold it over the **Architecture** tab to switch to the canvas) or from the containment tree, and drop it on the port; the port and its connectors take the interface colour and the connector label shows the name |
+| Link a requirement | Drag a requirement (Requirements editor grip, Requirements Perspective dock row) onto a block or another canvas element (see docs/features/requirements.md) |
 | Rename | Double-click a name (block, port label, connector label, frame title) or select and press **F2**; Enter commits, Escape cancels. A taken name is refused with a message |
 | Add a port | Select one or more blocks, then **In / Out / InOut / Physical** (**Client / Server** in a Software model); or right-click a block → *Add port*; or the **+ In / + Out …** buttons of the Property Inspector |
 | Add a boundary port | **Boundary ▾** (port on the frame of what you are viewing), or right-click the background → *Boundary port* (placed on the nearest frame edge) |
@@ -129,7 +131,7 @@ opens the architecture you last viewed (else the first one with components).
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
 | Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view |
 | Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool |
-| Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface, side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. *Properties tab ↗* opens the full studio inspector |
+| Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface (SysML definitions and the interface dictionary's interfaces and value types), side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. *Properties tab ↗* opens the full studio inspector |
 | Context menu | Right-click anything, or **Shift+F10** / the Menu key for the selection; arrow keys move in the menu |
 
 ### Keyboard (canvas focused)
@@ -165,7 +167,7 @@ opens the architecture you last viewed (else the first one with components).
 | `canvas-filter {ids, label, hide?}` / `null` | other components (and connectors to them) are dimmed, or hidden with *hide others*; banner with the label, count and a clear button that emits `canvas-filter null` |
 | `selection-changed` | both ways: canvas selection → `studio.setSelection` (+ `selectElement` for the primary element); another feature's selection is shown on the canvas |
 | `model-changed` | the current view is reloaded (falls back to another architecture when it was deleted) |
-| HTML5 drop of `application/x-sysml-element` | on a block, port or connector: `studio.emit("drop-on-element", {dragged_id, target_id})` (requirements linking reacts); a part definition on the background: new reference component; anything else on the background: `drop-on-element` with the composition as target. Containment-tree rows are draggable |
+| HTML5 drop of `application/x-sysml-element` | on a block, port or connector: `studio.emit("drop-on-element", {dragged_id, target_id})` — the canvas only reports it: the requirements feature links a dropped requirement, the interfaces feature assigns an interface dropped on a port; a part definition on the background: new reference component; anything else on the background: `drop-on-element` with the composition as target. Containment-tree rows are draggable. Holding such a drag over the **Architecture** tab for 300 ms opens the canvas (spring-loaded tab), so drags can start in another tab (Interface Editor, Requirements editor) |
 
 ### Studio toolstrip and Properties tab
 
@@ -428,6 +430,7 @@ package Avionics {
 | connector-routing-editor | closed (basic) | orthogonal auto-routing that avoids other blocks; drag middle segments to reroute (`points`), *Reset route* |
 | drill-down-breadcrumbs | closed | double-click / Enter to open, breadcrumbs, Alt+↑; reference components open their shared definition |
 | model-browser | closed | the containment tree acts as model browser: the canvas follows its selection and its rows can be dragged onto the canvas; *Open ▾* lists the architectures; `GET /api/arch/tree` / `sysml_arch_tree` for clients |
+| drag-and-drop onto the canvas | closed | HTML5 drops of any element (`drop-on-element`): interfaces onto ports (assigned by the interfaces feature), requirements onto elements (linked by the requirements feature), part definitions onto the background; the Architecture tab is spring-loaded so drags can start in other tabs |
 | property-inspector | closed | docked Property Inspector on the canvas (component, port, connector, composition, multi-selection) plus the full Properties tab |
 | create-component-from-selection | closed | Group (Ctrl+G) with boundary ports per crossing connector; Expand as the inverse |
 | reference-components | closed | save as reference / inline; reference marker and `: Definition` on the block |

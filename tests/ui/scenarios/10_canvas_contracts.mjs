@@ -1,8 +1,9 @@
 // Cross-feature contracts of the canvas (docs/EXTENDING.md): highlight, canvas-filter,
 // navigate, selection-changed / getSelection, the canvas following the model browser,
 // HTML5 drops (drop-on-element; a part definition dragged from the tree becomes a
-// reference component), plus zoom/fit, keyboard drill-down / rename and the software
-// model's port kinds.
+// reference component; an interface dragged from the Interface Editor, through the
+// spring-loaded Architecture tab, or from the tree onto a port is assigned to it), plus
+// zoom/fit, keyboard drill-down / rename and the software model's port kinds.
 export default async function (ctx) {
   let step = "setup";
   try { await run(ctx, (name) => { step = name; }); } catch (e) { throw new Error(`[${step}] ${e.message}`); }
@@ -14,12 +15,13 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   const mk = (composition, name, x, y) => api("POST", "/api/arch/component", { composition, name, layout: { x, y } });
   const adc = await mk(root.id, "ADC", 140, 80), fms = await mk(root.id, "FMS", 420, 80), disp = await mk(root.id, "Display", 700, 80);
   const filter = await mk(fms.id, "Filter", 200, 100);
-  await api("POST", "/api/arch/port", { owner: adc.id, name: "airData", direction: "out" });
-  await api("POST", "/api/arch/port", { owner: fms.id, name: "air", direction: "in" });
+  const adcOut = await api("POST", "/api/arch/port", { owner: adc.id, name: "airData", direction: "out" });
+  const fmsIn = await api("POST", "/api/arch/port", { owner: fms.id, name: "air", direction: "in" });
   const conn = await api("POST", "/api/arch/connector", { composition: root.id, source: { component: adc.id, port: "airData" }, target: { component: fms.id, port: "air" } });
   const req = await api("POST", "/api/element", { kind: "RequirementDefinition", name: "REQ_001" });
   const unit = await api("POST", "/api/element", { kind: "PartDefinition", name: "AdcUnit" });
-  const airDataIf = await api("POST", "/api/element", { kind: "PortDefinition", name: "AirData" });
+  const IF_COLOR = "#0891b2";
+  const airDataIf = await api("POST", "/api/interfaces", { kind: "DataInterface", name: "AirData", color: IF_COLOR });
   await waitReady();
   await page.waitForSelector('.arch-block[data-name="Display"]');
   await page.evaluate(() => {
@@ -87,6 +89,9 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   }, { id: req.id });
   const drop = await page.evaluate(() => window.__events.drop[0]);
   expect(drop?.dragged_id === req.id && drop?.target_id === fms.id, `drop-on-element: ${JSON.stringify(drop)}`);
+  // the requirements feature links them and refreshes the tree: let it finish before the
+  // next step drags a tree row (a row replaced mid-drag never drops)
+  await page.waitForFunction(() => document.body.dataset.rqPending === "0");
 
   step("drag a definition from the tree");
   const host = await (await page.$(".arch-host")).boundingBox();
@@ -95,12 +100,66 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   await page.waitForSelector(`${block("AdcUnit")} .arch-refmark`);
   expect((await page.textContent(`${block("AdcUnit")} .arch-def`)) === "AdcUnit", "reference component shows its definition");
 
-  step("drop an interface on a port");
-  await page.dragAndDrop(`#tree .tree-node[data-id="${airDataIf.id}"] > .row`,
-                         `${block("ADC")} .arch-port[data-name="airData"] .arch-port-hit`);
+  step("Interface Editor rows carry the drag data");
+  await page.click('.tab[data-tab="interfaces"]');
+  const ifcRow = `.ifc-item[data-id="${airDataIf.id}"][draggable="true"]`;
+  await page.waitForSelector(ifcRow);
+  const dragData = await page.$eval(ifcRow, (el) => {
+    const dt = new DataTransfer();
+    el.dispatchEvent(new DragEvent("dragstart", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    return { id: dt.getData("application/x-sysml-element"), text: dt.getData("text/plain") };
+  });
+  expect(dragData.id === airDataIf.id && dragData.text.endsWith("::AirData"), `drag data: ${JSON.stringify(dragData)}`);
+
+  step("drag an interface from the Interface Editor onto a port");
+  // A real HTML5 drag: hold over the Architecture tab (spring-loaded) to switch to the canvas,
+  // then release on the port. The tab opens after a short hold, so wait for it before moving on.
+  const portSel = (comp, name) => `${block(comp)} .arch-port[data-name="${name}"]`;
+  const centre = async (sel) => { const b = await (await page.$(sel)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const src = await centre(ifcRow);
+  await page.mouse.move(src.x, src.y);
+  await page.mouse.down();
+  await page.mouse.move(src.x + 20, src.y + 4, { steps: 4 });
+  const tab = await centre('.tab[data-tab="architecture"]');
+  await page.mouse.move(tab.x, tab.y, { steps: 6 });
+  await page.waitForFunction(() => document.querySelector(".tab.tab-active")?.dataset.tab === "architecture");
+  const adcPort = await centre(`${portSel("ADC", "airData")} .arch-port-hit`);
+  await page.mouse.move(adcPort.x, adcPort.y, { steps: 8 });
+  await page.mouse.up();
   await page.waitForFunction(id => document.querySelector(`.arch-clabel[data-id="${id}"]`)?.textContent.includes("AirData"), conn.id);
+  await page.waitForFunction(([sel, color]) => document.querySelector(`${sel} .arch-port-glyph`)?.getAttribute("stroke") === color,
+                             [portSel("ADC", "airData"), IF_COLOR]);
+  const dropped = await page.evaluate(() => window.__events.drop.at(-1));
+  expect(dropped?.dragged_id === airDataIf.id && dropped?.target_id === adcOut.id, `drop-on-element: ${JSON.stringify(dropped)}`);
   const typed = (await api("GET", `/api/arch/view/${root.id}`)).components.find(c => c.name === "ADC").ports[0];
   expect(typed.interface?.name === "AirData", `port typed by the dropped interface: ${JSON.stringify(typed.interface)}`);
+  // the dropped-on port is selected and the Property Inspector shows its interface
+  await page.waitForFunction(() => document.querySelector('.arch-dock [data-dock="port-interface"]')?.selectedOptions[0]?.textContent.startsWith("AirData"));
+  expect((await page.textContent("#log")).includes("Port airData now uses interface AirData"), "assignment logged");
+  await page.waitForFunction(() => document.body.dataset.ifcPending === "0");
+
+  step("drop an interface from the tree on a port");
+  await page.dragAndDrop(`#tree .tree-node[data-id="${airDataIf.id}"] > .row`, portSel("FMS", "air"));
+  await page.waitForFunction(([sel, color]) => document.querySelector(`${sel} .arch-port-glyph`)?.getAttribute("stroke") === color,
+                             [portSel("FMS", "air"), IF_COLOR]);
+  await page.waitForFunction(() => document.body.dataset.ifcPending === "0");
+  const fmsTyped = (await api("GET", `/api/interfaces/port/${fmsIn.id}`)).interface;
+  expect(fmsTyped?.id === airDataIf.id, `FMS.air typed by AirData: ${JSON.stringify(fmsTyped)}`);
+  // both ends use AirData: the connector is compatible and drawn in the interface colour
+  await page.waitForFunction(([id, color]) => document.querySelector(`.arch-conn[data-id="${id}"] .arch-conn-line`)?.getAttribute("stroke") === color,
+                             [conn.id, IF_COLOR]);
+
+  step("an interface dropped on a block is not assigned");
+  await page.evaluate(({ id }) => {
+    const el = document.querySelector('.arch-block[data-name="Display"] .arch-body');
+    const r = el.getBoundingClientRect();
+    const dt = new DataTransfer();
+    dt.setData("application/x-sysml-element", id);
+    const o = { dataTransfer: dt, bubbles: true, cancelable: true, clientX: r.x + 20, clientY: r.y + 20 };
+    el.dispatchEvent(new DragEvent("dragover", o));
+    el.dispatchEvent(new DragEvent("drop", o));
+  }, { id: airDataIf.id });
+  await page.waitForFunction(() => document.querySelector("#log").textContent.includes("Drop AirData on a port"));
 
   step("keyboard: drill down, up, rename");
   await page.mouse.click(fmsBody.x + 12, fmsBody.y + 10);

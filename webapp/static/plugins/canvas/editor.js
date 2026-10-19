@@ -8,19 +8,21 @@
 // Cross-feature contracts (docs/EXTENDING.md): listens to navigate, highlight,
 // canvas-filter, selection-changed, select and model-changed; publishes its selection
 // with studio.setSelection / studio.selectElement; emits drop-on-element for HTML5
-// drops of application/x-sysml-element onto a block, port or connector.
+// drops of application/x-sysml-element onto a block, port or connector (holding such a
+// drag over the Architecture tab opens the canvas).
 import * as G from "./geometry.js";
 import { Markers, blockSvg, connectorColor, connectorLabelSvg, connectorSvg, frameSvg, labelText, portSvg, staticDefs } from "./render.js";
 import { icon, toolstripHtml, updateToolstrip } from "./toolstrip.js";
 import { createInlineEditor, createMenu, createToasts } from "./ui.js";
 import { createDock } from "./dock.js";
 import { injectCanvasStyles } from "./styles.js";
-import { INTERFACE_KINDS, clipboard, copyComponents, esc, openForm, reload } from "./common.js";
+import { clipboard, copyComponents, esc, openForm, reload } from "./common.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const STORE = "sysml.archCanvas";
 const DRAG_START = 4;
 const ELEMENT_MIME = "application/x-sysml-element";
+const SPRING_OPEN_MS = 300;
 const EDGE_ZONE = 28;
 const SIDES = ["left", "right", "top", "bottom"];
 const FOLLOW_KINDS = new Set(["PartUsage", "PortUsage", "ConnectionUsage", "PartDefinition"]);
@@ -201,6 +203,17 @@ class CanvasEditor {
       e.dataTransfer.setData("text/plain", s.state.treeIndex.get(li.dataset.id)?.qualified_name || li.dataset.id);
       e.dataTransfer.effectAllowed = "copyLink";
     });
+    // Spring-loaded tab: holding a dragged element over the Architecture tab opens the canvas,
+    // so elements can be dragged here from other tabs (Interface Editor, Requirements editor).
+    const tabBtn = document.querySelector('#tab-bar .tab[data-tab="architecture"]');
+    let spring = 0;
+    tabBtn?.addEventListener("dragenter", (e) => {
+      if (!e.dataTransfer?.types?.includes(ELEMENT_MIME) || s.state.tab === "architecture") return;
+      e.preventDefault();      // become the drag's current target so dragleave reaches the tab
+      clearTimeout(spring);
+      spring = setTimeout(() => { if (s.state.tab !== "architecture") s.switchTab("architecture"); }, SPRING_OPEN_MS);
+    });
+    tabBtn?.addEventListener("dragleave", () => clearTimeout(spring));
   }
 
   shown() {
@@ -1242,17 +1255,13 @@ class CanvasEditor {
     const dragged = e.dataTransfer.getData(ELEMENT_MIME);
     if (!dragged) return;
     const h = this.hit(e.target);
-    const node = this.studio.state.treeIndex.get(dragged);
+    // The canvas only reports the drop; the feature that owns the dragged element reacts
+    // (requirements link it, the interfaces feature assigns an interface dropped on a port).
     if (h && h.kind !== "frame") {
       this.studio.emit("drop-on-element", { dragged_id: dragged, target_id: h.id });
-      // System Composer: drop an interface on a port to type it.
-      const pt = h.kind === "port" ? this.scene?.ports.get(h.key) : null;
-      if (pt && node && INTERFACE_KINDS.has(node.kind) && pt.p.interface?.id !== dragged) {
-        this.run(() => this.studio.api("PATCH", `/api/arch/port/${pt.p.id}`, { interface: dragged }),
-                 { selectKeys: () => [h.key], ok: `Port ${pt.p.name} now uses interface ${node.name}` });
-      }
       return;
     }
+    const node = this.studio.state.treeIndex.get(dragged);
     if (node?.kind === "PartDefinition" && dragged !== this.compId && !this.path.includes(dragged)) {
       const m = this.toModel(e);
       this.run(() => this.studio.api("POST", "/api/arch/component", {

@@ -3,7 +3,7 @@
 // duplicate, create-component-from-selection, expand, save as reference, inline,
 // arrange. Everything goes through /api/arch/* (see docs/features/architecture.md).
 import {
-  DIRECTIONS, INTERFACE_KINDS, clipboard, copyComponents, esc, injectStyles, isComponent,
+  DIRECTIONS, clipboard, copyComponents, esc, injectStyles, interfaceChoices, isComponent,
   isComposition, openForm, options, reload, treeNodes,
 } from "./common.js";
 
@@ -23,8 +23,7 @@ export function installInspector(studio) {
 }
 
 function interfaceOptions(studio, selectedId) {
-  const items = treeNodes(studio, INTERFACE_KINDS).map(n => [n.id, `${n.name} (${n.kind.replace("Definition", "")})`]);
-  return options(items, selectedId || "", { empty: "— none —" });
+  return options(interfaceChoices(studio, selectedId), selectedId || "", { empty: "— none —" });
 }
 
 function interfaceIdOf(studio, port) {

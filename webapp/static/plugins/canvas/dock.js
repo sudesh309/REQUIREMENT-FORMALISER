@@ -1,14 +1,13 @@
 // Property Inspector docked at the right of the canvas (System Composer style): edits the
 // selected component, port or connector, or summarizes the composition being viewed.
 // Reads the editor's view model; every change goes through the editor's actions.
-import { DIRECTIONS, INTERFACE_KINDS, esc, options, treeNodes } from "./common.js";
+import { DIRECTIONS, esc, interfaceChoices, options, treeNodes } from "./common.js";
 import { icon } from "./toolstrip.js";
 
 const SIDES = ["left", "right", "top", "bottom"];
 
 function interfaceOptions(studio, selectedId) {
-  const items = treeNodes(studio, INTERFACE_KINDS).map(n => [n.id, `${n.name} (${n.kind.replace("Definition", "")})`]);
-  return options(items, selectedId || "", { empty: "— none —" });
+  return options(interfaceChoices(studio, selectedId), selectedId || "", { empty: "— none —" });
 }
 
 function stereoRows(stereotypes) {

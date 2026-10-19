@@ -115,6 +115,7 @@ the filter box to narrow it. The right pane edits the selected item.
 | Physical elements | Name, Domain (electrical, three-phase, mechanical translational / rotational, hydraulic, isothermal / thermal liquid, thermal, magnetic, gas, moist air, two-phase fluid, pneumatic), Description. |
 | Service functions | Name, Function prototype (`[y1, y2] = name(u1, u2)`, the name must match), Asynchronous. Click ▸ to edit argument types, dimensions and units. |
 | Enumerations / constants | Literal, value (integer), description, and a **Default** literal; constants have value, type and units. |
+| Assign an interface by drag and drop | Drag a shared interface or value type from the list (or its containment-tree node) and drop it on a port on the **Architecture** canvas. To reach the canvas from this tab, hold the drag over the **Architecture** tab until it opens. The port is selected, takes the interface colour, and the change is one undo step. Dropping on a block, connector or the background only shows a hint; owned interfaces are not draggable (convert them to shared first). |
 | See who uses an interface | Bottom pane **Ports using this interface**: click a port to select it (tree + Properties), **Highlight** emits a `highlight` event for the canvas. Value types / enumerations show the elements typed by them. |
 | Delete | Toolstrip **Edit › Delete** (or Delete in the list) asks for confirmation; ports using it end up with no interface, elements typed by it fall back to `double`. |
 | Export the dictionary | Toolstrip **Dictionary › Export** downloads `Interfaces.json`. |
@@ -346,6 +347,12 @@ nesting cycles) on a copy of the project before anything changes.
   `GET /api/interfaces/compatibility?source=&target=` before drawing a
   connector, and store bus element selections with
   `PATCH /api/element/<connector> {"props": {"source_element": "pos.lat"}}`.
+* Drag and drop (docs/EXTENDING.md): the editor's list rows are drag sources
+  (`application/x-sysml-element` = the interface id). The plugin listens for
+  `drop-on-element` and, when the dragged element is an interface, value type
+  or plain port definition and the target a `PortUsage`, calls
+  `POST /api/interfaces/assign` and refreshes the tree (the canvas redraws the
+  port in the interface colour). Every other drop is left to other features.
 * Everything created here goes through `engine.notify_created`; deletions use
   `Repository.remove`.
 
@@ -360,7 +367,7 @@ nesting cycles) on a copy of the project before anything changes.
 | `interface-dictionary-sldd` | closed (copy semantics) | project dictionary package; export / import JSON. A *live* link to one external dictionary file shared by several models is deferred (single-user, browser-only file access) |
 | `save-to-dictionary-collision` | closed | keep / replace / rename on save-to-dictionary and on import |
 | `dictionary-api` | closed | HTTP, MCP and Python APIs, move all owned interfaces into the dictionary |
-| `assign-interface-to-port` | closed | inspector dropdown, element preview, badge + `style.stroke` colour |
+| `assign-interface-to-port` | closed | inspector dropdown, drag an interface from the editor (or tree) onto a canvas port, element preview, badge + `style.stroke` colour |
 | `connector-compatibility` | closed | `check_compatibility`, validator rule over every connector, `GET /api/interfaces/compatibility` |
 | `port-element-connections` | closed | `source_element` / `target_element` on connectors (persisted), element pickers, compatibility uses them; element renames follow |
 | `physical-interfaces` | closed | 13 physical domains; domain mismatch detection |
