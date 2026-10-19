@@ -275,7 +275,9 @@ def export_tables(repo) -> Sheets:
             buckets[table].append(_element_row(repo, e, table))
     sheets: Sheets = {
         "Model": [["Property", "Value"], ["Format", FORMAT], ["Name", repo.name],
-                  ["Root ID", repo.root_package.element_id]],
+                  ["Root ID", repo.root_package.element_id]]
+                 + ([["Documentation", documentation(repo.root_package)]]
+                    if documentation(repo.root_package) else []),
         "Profiles": _sheet(PROFILE_COLUMNS, _profile_rows(repo)),
     }
     for t in ELEMENT_TABLES:
@@ -949,6 +951,72 @@ class _Importer:
             self.repo.registry.register(rel)
             self.report.links_created += 1
 
+    # --- sibling order --------------------------------------------------------------
+    def restore_order(self) -> None:
+        """Order new elements among their siblings as the table rows imply.
+
+        Rows of each table are in containment (walk) order, but owners are created on
+        demand, so a package referenced by an early row can land ahead of siblings listed
+        before it. Consecutive rows of a table give "branch A before branch B" at their
+        common ancestor; each owner that received new elements is sorted to satisfy those
+        constraints (stable, so unconstrained siblings keep their order). This makes
+        export -> import -> export reproduce the same rows in the same order.
+        """
+        touched = {id(s.element.owner) for s in self.specs
+                   if s.created and s.element is not None and s.element.owner is not None}
+        if not touched:
+            return
+
+        def chain(e: Element) -> list[Element]:
+            out: list[Element] = []
+            while e is not None:
+                out.append(e)
+                e = e.owner
+            return out[::-1]
+
+        edges: dict[int, dict[int, set[int]]] = {}
+        owners: dict[int, Element] = {}
+        for table in ELEMENT_TABLES:
+            seq = [s.element for s in self.specs if s.table == table and s.element is not None]
+            for a, b in zip(seq, seq[1:]):
+                ca, cb = chain(a), chain(b)
+                i = 0
+                while i < min(len(ca), len(cb)) and ca[i] is cb[i]:
+                    i += 1
+                if i == 0 or i >= len(ca) or i >= len(cb):
+                    continue                  # different trees, or one contains the other
+                owner = ca[i - 1]
+                if id(owner) in touched:
+                    owners[id(owner)] = owner
+                    edges.setdefault(id(owner), {}).setdefault(id(ca[i]), set()).add(id(cb[i]))
+        import heapq
+        for key, owner in owners.items():
+            children = list(owner.owned_elements)
+            pos = {id(c): n for n, c in enumerate(children)}
+            succ = edges[key]
+            indeg = dict.fromkeys(pos, 0)
+            for a, bs in succ.items():
+                for b in bs:
+                    if a in pos and b in pos:
+                        indeg[b] += 1
+            heap = [(pos[k], k) for k, d in indeg.items() if d == 0]
+            heapq.heapify(heap)
+            ordered: list[Element] = []
+            while heap:
+                _, k = heapq.heappop(heap)
+                ordered.append(children[pos[k]])
+                for b in succ.get(k, ()):
+                    if b in indeg:
+                        indeg[b] -= 1
+                        if indeg[b] == 0:
+                            heapq.heappush(heap, (pos[b], b))
+            if len(ordered) != len(children) or ordered == children:
+                continue                      # inconsistent rows (cycle) or already in order
+            owner.owned_elements[:] = ordered
+            rank = {id(c): n for n, c in enumerate(ordered)}
+            if isinstance(getattr(owner, "memberships", None), list):
+                owner.memberships.sort(key=lambda m: rank.get(id(m.member), len(rank)))
+
     # --- driver -----------------------------------------------------------------
     def run(self) -> ImportReport:
         from engine.hooks import notify_created
@@ -965,6 +1033,7 @@ class _Importer:
         for spec in self.specs:
             self.apply_stereotypes(spec)
         self.import_links()
+        self.restore_order()
         self.repo.registry.register_tree(self.repo.root_package)
         for spec in self.specs:
             eid = spec.element.element_id  # type: ignore[union-attr]
@@ -1016,6 +1085,8 @@ def tables_to_project(sheets: Any, name: Optional[str] = None):
         repo.registry.unregister(repo.root_package)
         repo.root_package.element_id = root_id
         repo.registry.register(repo.root_package)
+    if _text(info.get("Documentation")):
+        set_documentation(repo.root_package, cell_text(info.get("Documentation")))
     report = _Importer(repo, sheets).run()
     return repo, report
 

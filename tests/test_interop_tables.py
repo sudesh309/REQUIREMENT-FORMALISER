@@ -125,15 +125,39 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(app.values, {"mass": 4.2, "dal": "A"})
         port = new.resolve("Components::FlightManagementComputer::navIn")
         self.assertIs(port.direction, FeatureDirection.IN)
-        again = export_tables(new)
-        for table, rows in self.sheets.items():
-            # Sibling order across tables may differ (one table is imported after another).
-            self.assertEqual(again[table][0], rows[0], table)
-            self.assertEqual(sorted(map(str, again[table][1:])), sorted(map(str, rows[1:])), table)
+        # Export -> import -> export gives the same rows in the same order.
+        self.assertEqual(export_tables(new), self.sheets)
+        self.assertEqual(new.root_package.annotations[0].body,
+                         self.repo.root_package.annotations[0].body)
+
+    def test_round_trip_keeps_row_order_when_owners_are_created_on_demand(self):
+        from engine.interop.xmi_import import xmi_to_project
+        from tests.test_interop_fixtures import XMI_FIXTURE
+        repo, _ = xmi_to_project(XMI_FIXTURE.read_bytes())
+        sheets = export_tables(repo)
+        # The Structure package (an Elements row) is created early because Components rows
+        # reference it; it must still come after the Interfaces package.
+        new, _ = tables_to_project(read_xlsx(write_xlsx(sheets)))
+        self.assertEqual([e.name for e in new.root_package.owned_elements],
+                         [e.name for e in repo.root_package.owned_elements])
+        self.assertEqual(export_tables(new), sheets)
 
     def test_csv_round_trip(self):
         new, _ = tables_to_project(read_csv_zip(write_csv_zip(self.sheets)))
         self._assert_same(new)
+
+    def test_single_csv_file_is_one_table(self):
+        from engine.interop.xlsx import write_csv
+        repo = Repository(name="Single")
+        csv_bytes = ("﻿" + write_csv([["Name", "Kind", "Parent"], ["Aircraft", "PartDefinition", ""],
+                                           ["fms", "PartUsage", "Aircraft"]])).encode("utf-8")
+        sheets = read_tables_file(csv_bytes, "uploads/components.csv")
+        self.assertEqual(list(sheets), ["components"])
+        report = import_tables(repo, sheets)
+        self.assertEqual(len(report.created), 2)
+        self.assertIsInstance(repo.resolve("Aircraft::fms"), PartUsage)
+        with self.assertRaises(InteropError):          # not CSV-named, not a ZIP
+            read_tables_file(csv_bytes, "components.txt")
 
     def test_read_tables_file_detects_format(self):
         self.assertEqual(read_tables_file(write_xlsx(self.sheets), "x.xlsx")["Ports"],

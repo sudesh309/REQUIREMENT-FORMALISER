@@ -402,8 +402,20 @@ def read_csv_zip(data: bytes) -> Sheets:
     return sheets
 
 
+def read_single_csv(data: bytes, filename: str) -> Sheets:
+    """One CSV file; the table name is the file name (``Components.csv`` -> ``Components``)."""
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("cp1252", errors="replace")
+    name = filename.replace("\\", "/").rsplit("/", 1)[-1][:-4].strip() or "Components"
+    return {name: read_csv(text)}
+
+
 def read_any(data: bytes, filename: str = "") -> Sheets:
-    """Read .xlsx or a ZIP of CSV files (detected from content, then from the name)."""
+    """Read .xlsx, a ZIP of CSV files or one .csv file (detected from content, then the name)."""
+    if filename.lower().endswith(".csv") and not data.startswith(b"PK"):
+        return read_single_csv(data, filename)
     zf = open_zip(data)
     names = zf.namelist()
     if "xl/workbook.xml" in names:
