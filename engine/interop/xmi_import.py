@@ -39,11 +39,12 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 import xml.etree.ElementTree as ET
 
+from engine import profiles as P
 from kerml.elements import Element, Relationship
 from kerml.features import Feature, FeatureDirection, MultiplicityRange
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, StereotypeError, stereotypes_on
 from sysmlv2.definitions import (
     ActionDefinition, AttributeDefinition, AttributeUsage, ConnectionUsage,
     ConstraintDefinition, EnumerationDefinition, EnumerationUsage, ItemDefinition,
@@ -52,8 +53,8 @@ from sysmlv2.definitions import (
 )
 
 from .common import (
-    InteropError, infer_scalar, move_element, set_documentation, set_feature_types,
-    set_specializations,
+    InteropError, find_stereotype, infer_scalar, move_element, set_documentation,
+    set_feature_types, set_specializations,
 )
 from .xlsx import local, safe_xml
 
@@ -506,23 +507,39 @@ class _XmiImporter:
             app = next((a for a in stereotypes_on(e) if a.stereotype is st), None)
             try:
                 if app is None:
-                    app = st.apply(e, {})
+                    app = P.apply_stereotype(self.repo, e, st)
                     self.report.stereotypes_applied += 1
-                for k, v in values.items():
-                    setter = getattr(app, "set", None)
-                    if callable(setter):
-                        setter(k, v)
-                    else:
-                        app.values[k] = v
-            except Exception as ex:  # noqa: BLE001 - report and continue
-                self.report.warnings.append(f"stereotype «{tag}» on {e.name!r}: {ex}")
+            except StereotypeError as ex:
+                self.report.warnings.append(f"stereotype «{st.full_name}» on {e.name!r}: {ex}")
+                continue
+            for k, v in values.items():
+                try:
+                    app.set(k, v)        # typed properties: checked and converted by profiles
+                except StereotypeError as ex:
+                    self.report.warnings.append(f"stereotype «{st.full_name}» on {e.name!r}: {ex}")
 
     def user_stereotype(self, tag: str, ns: str, values: dict) -> Stereotype:
-        st = next((s for s in self.repo.root_package.walk()
-                   if isinstance(s, Stereotype) and s.name == tag), None)
+        """The project's stereotype for an XMI profile stereotype (``Avionics:LRU``).
+
+        Looked up through ``engine.profiles``: ``Profile.Stereotype`` with the profile
+        named after the last segment of the XMI namespace URI, then a stereotype from
+        an earlier XMI import, then a unique stereotype of that name. A stereotype of a
+        real profile is used as defined (unknown XMI attributes are reported when set);
+        otherwise one is created in the package ``XMI_Profiles`` with untyped
+        properties for the XMI attributes.
+        """
+        holder = next((p for p in self.repo.root_package.owned_elements
+                       if isinstance(p, Package) and p.name == "XMI_Profiles"), None)
+        profile = ns.rstrip("/#").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+        st = self._existing_stereotype(f"{profile}.{tag}") if profile else None
+        if st is None and holder is not None:
+            st = next((s for s in holder.owned_elements
+                       if isinstance(s, Stereotype) and s.name == tag), None)
         if st is None:
-            holder = next((p for p in self.repo.root_package.owned_elements
-                           if isinstance(p, Package) and p.name == "XMI_Profiles"), None)
+            st = self._existing_stereotype(tag)
+        if st is not None and st.profile is not None:
+            return st
+        if st is None:
             if holder is None:
                 holder = Package(name="XMI_Profiles")
                 self.repo.root_package.own(holder)
@@ -534,11 +551,17 @@ class _XmiImporter:
             self.created_ids.add(st.element_id)
             self.report.created.append(st.element_id)
         known = {t.name for t in st.all_tags()}
-        for k, v in values.items():
+        for k in values:
             if k not in known:
                 st.define_tag(k, default=None)
         self.repo.registry.register_tree(st)
         return st
+
+    def _existing_stereotype(self, ref: str) -> Optional[Stereotype]:
+        try:
+            return find_stereotype(self.repo, ref)
+        except InteropError:                     # ambiguous name: not a usable match
+            return None
 
     # --- driver ---------------------------------------------------------------------
     def run(self) -> XmiReport:

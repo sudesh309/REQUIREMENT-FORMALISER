@@ -19,37 +19,46 @@ Links          typed links (satisfy, verify, derive, allocate, ...)
 Every element row has an ``ID``; reference columns come in pairs (``X ID`` holds
 element ids, ``X`` the qualified names, ``;``-separated when there are several).
 Applied stereotypes are listed in ``Stereotypes`` and their property values in
-``Profile.Stereotype.property`` columns. Further columns are discovered from the
-elements themselves (any JSON-able attribute whose value differs from the
-default, e.g. ``port_kind`` or ``rationale``), so attributes added by other
-features round-trip without changes here.
+``Profile.Stereotype.property`` columns, named as the profiles feature names them
+(``Stereotype.full_name``: ``Avionics.LRU``; a stereotype kept in a plain package
+is just ``LRU``). Further columns are discovered from the elements themselves
+(any JSON-able attribute whose value differs from the default, e.g. ``port_kind``
+or ``rationale``), so attributes added by other features round-trip without
+changes here.
 
 ``import_tables(repo, sheets)`` creates or updates elements matched by ``ID``
 (falling back to owner + name), so export -> import preserves ids; it is atomic
-(a dry run on a copy of the project must succeed first). ``ModelBuilder`` builds
-the same tables incrementally from Python and then the model.
+(a dry run on a copy of the project must succeed first). Profiles, stereotypes,
+properties and stereotype values go through ``engine.profiles`` (checks, unit
+conversion, change propagation). ``ModelBuilder`` builds the same tables
+incrementally from Python and then the model.
 """
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
+from engine import profiles as P
 from kerml.elements import Element, Relationship
 from kerml.features import Feature, FeatureDirection
-from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, StereotypeTag, stereotypes_on
+from kerml.namespaces import Package
+from kerml.stereotypes import (
+    CATEGORIES, DEFAULT_SLOTS, NUMERIC_TYPES, STYLE_KEYS, Profile, Stereotype, StereotypeError,
+    StereotypeTag, build_property, normalize_style, stereotypes_on,
+)
 from sysmlv2.definitions import (
     ConnectionUsage, Definition, InterfaceDefinition, PartDefinition, PartUsage,
     PortDefinition, PortUsage, RequirementDefinition, RequirementUsage,
 )
 
 from .common import (
-    InteropError, cell_text, class_default, class_for_kind, coerce_like, documentation,
-    extra_attributes, format_multiplicity, in_library, infer_scalar, is_profile_content,
-    link_kind_name, model_links, move_element, new_element, parse_direction,
-    parse_multiplicity, project_elements, relative_qname, resolve_qname, set_documentation,
-    set_feature_types, set_specializations, stereotype_full_name, stereotype_tags,
+    InteropError, cell_text, class_default, class_for_kind, coerce_like, decode_untyped_cell,
+    documentation, extra_attributes, find_stereotype, format_multiplicity, in_library,
+    is_profile_content, link_kind_name, model_links, move_element, new_element,
+    parse_direction, parse_multiplicity, project_elements, relative_qname, resolve_qname,
+    set_documentation, set_feature_types, set_specializations,
 )
 
 FORMAT = "sysml-studio-tables/1"
@@ -93,8 +102,13 @@ BASE_COLUMNS: dict[str, list[str]] = {
                  "Documentation", "Stereotypes"],
 }
 LINK_COLUMNS = ["ID", "Kind", "Source ID", "Source", "Target ID", "Target"]
-PROFILE_COLUMNS = ["Profile ID", "Profile", "Stereotype ID", "Stereotype", "Base", "Applies To",
-                   "Abstract", "Property ID", "Property", "Type", "Unit", "Default", "Description"]
+# One row per stereotype property (a stereotype without properties, or a profile without
+# stereotypes, gets one row); profile and stereotype columns repeat on each of their rows.
+PROFILE_COLUMNS = ["Profile ID", "Profile", "Profile Version", "Profile Description",
+                   "Root Stereotype", "Stereotype ID", "Stereotype", "Base", "Applies To",
+                   "Abstract", "Stereotype Description", "Style", "Defaults",
+                   "Property ID", "Property", "Type", "Unit", "Default", "Min", "Max",
+                   "Literals", "Description"]
 OWNER_COLUMNS = {"Components": ("Parent ID", "Parent"), "Ports": ("Component ID", "Component")}
 TYPE_COLUMNS = {"Components": ("Reference ID", "Reference"), "Ports": ("Interface ID", "Interface")}
 DEFAULT_KIND = {"Ports": "PortUsage", "Connections": "ConnectionUsage",
@@ -200,12 +214,11 @@ def _element_row(repo, e: Element, table: str) -> dict[str, Any]:
         if others:
             row["Other End IDs"] = _ref_ids(repo, others)
     apps = stereotypes_on(e)
-    row["Stereotypes"] = ";".join(stereotype_full_name(a.stereotype) for a in apps)
+    row["Stereotypes"] = ";".join(a.stereotype.full_name for a in apps)
     for a in apps:
-        full = stereotype_full_name(a.stereotype)
-        for tag in stereotype_tags(a.stereotype):
-            v = (getattr(a, "values", {}) or {}).get(tag.name)
-            row[f"{full}.{tag.name}"] = v
+        # Stored (canonical) values: numbers are in the property's unit (Profiles sheet).
+        for name, v in a.values.items():
+            row[f"{a.stereotype.full_name}.{name}"] = v
     for attr in REFERENCE_ATTRIBUTES:
         if not hasattr(e, attr):
             continue
@@ -241,28 +254,67 @@ def _sheet(columns: list[str], rows: list[dict]) -> list[list[Any]]:
     return out
 
 
+def _pairs(d: dict) -> str:
+    """``{"fill": "#fff", "icon": "computer"}`` -> ``"fill=#fff; icon=computer"``."""
+    return "; ".join(f"{k}={v}" for k, v in d.items() if v not in (None, ""))
+
+
+def _parse_pairs(text: Any, keys: Iterable[str], what: str) -> dict[str, str]:
+    """The inverse of :func:`_pairs`; unknown keys are an error."""
+    out: dict[str, str] = {}
+    allowed = list(keys)
+    for part in _text(text).split(";"):
+        if not part.strip():
+            continue
+        key, sep, value = part.partition("=")
+        key = key.strip()
+        if not sep or key not in allowed:
+            raise InteropError(f"{what} {part.strip()!r}: use key=value pairs with keys {allowed}")
+        out[key] = value.strip()
+    return out
+
+
+def _container_cells(repo, container: Optional[Element]) -> dict:
+    if container is None or container is repo.root_package:
+        return {"Profile ID": "", "Profile": ""}
+    cells = {"Profile ID": container.element_id, "Profile": container.name or ""}
+    if isinstance(container, Profile):
+        root = container.root_stereotype
+        cells.update({"Profile Version": container.version,
+                      "Profile Description": container.description,
+                      "Root Stereotype": root.full_name if root is not None else ""})
+    return cells
+
+
+def _stereotype_cells(st: Stereotype) -> dict:
+    applies = st.category or ";".join(getattr(c, "kind", c.__name__) for c in st.applies_to)
+    defaults = {slot: getattr(st, f"default_{slot}_stereotype") for slot in DEFAULT_SLOTS}
+    return {"Stereotype ID": st.element_id, "Stereotype": st.name or "",
+            "Base": st.base.full_name if st.base is not None else "",
+            "Applies To": applies, "Abstract": True if st.is_abstract else "",
+            "Stereotype Description": st.description,
+            "Style": _pairs({k: st.style.get(k) for k in STYLE_KEYS}),
+            "Defaults": _pairs({s: d.full_name for s, d in defaults.items() if d is not None})}
+
+
+def _property_cells(t: StereotypeTag) -> dict:
+    return {"Property ID": t.element_id, "Property": t.name or "", "Type": t.prop_type,
+            "Unit": t.unit, "Default": t.default_value, "Min": t.minimum, "Max": t.maximum,
+            "Literals": ", ".join(t.literals), "Description": t.description}
+
+
 def _profile_rows(repo) -> list[dict]:
+    """Profiles sheet rows: every stereotype (with its own properties) and empty profiles."""
     rows: list[dict] = []
-    for st in [e for e in repo.root_package.walk() if isinstance(e, Stereotype)]:
-        owner = st.owner
-        profile_id = owner.element_id if owner is not None and owner is not repo.root_package else ""
-        profile = owner.name if profile_id else ""
-        applies = getattr(st, "category", "") or ";".join(
-            getattr(c, "kind", c.__name__) for c in getattr(st, "applies_to", []) or [])
-        base_row = {"Profile ID": profile_id, "Profile": profile or "",
-                    "Stereotype ID": st.element_id, "Stereotype": st.name or "",
-                    "Base": stereotype_full_name(st.base) if getattr(st, "base", None) else "",
-                    "Applies To": applies,
-                    "Abstract": True if getattr(st, "is_abstract", False) else ""}
-        own_tags = [t for t in getattr(st, "tags", []) if isinstance(t, StereotypeTag)]
-        if not own_tags:
-            rows.append({**base_row, "Property ID": "", "Property": ""})
-        for t in own_tags:
-            rows.append({**base_row, "Property ID": t.element_id, "Property": t.name or "",
-                         "Type": getattr(t, "prop_type", "") or "",
-                         "Unit": getattr(t, "unit", "") or "",
-                         "Default": t.default_value,
-                         "Description": getattr(t, "description", "") or ""})
+    for e in repo.root_package.walk():
+        if isinstance(e, Profile) and not e.stereotypes:
+            rows.append(_container_cells(repo, e))
+        if not isinstance(e, Stereotype):
+            continue
+        head = {**_container_cells(repo, e.owner), **_stereotype_cells(e)}
+        if not e.tags:
+            rows.append({**head, "Property ID": "", "Property": ""})
+        rows += [{**head, **_property_cells(t)} for t in e.tags]
     return rows
 
 
@@ -326,6 +378,8 @@ class ImportReport:
     stereotypes_created: int = 0
     stereotypes_applied: int = 0
     warnings: list[str] = field(default_factory=list)
+    # Profiles sheet: profiles, stereotypes and properties created or changed.
+    profile_changes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"created": len(self.created), "updated": len(self.updated),
@@ -333,6 +387,7 @@ class ImportReport:
                 "links_unchanged": self.links_unchanged,
                 "stereotypes_created": self.stereotypes_created,
                 "stereotypes_applied": self.stereotypes_applied,
+                "profile_changes": list(self.profile_changes),
                 "created_ids": list(self.created), "updated_ids": list(self.updated),
                 "warnings": list(self.warnings)}
 
@@ -368,6 +423,59 @@ def _text(v: Any) -> str:
 def _split(v: Any) -> list[str]:
     s = _text(v)
     return [p.strip() for p in s.split(";")] if s else []
+
+
+def _truthy(v: Any, what: str = "Abstract") -> bool:
+    if v in (None, ""):
+        return False
+    try:
+        return coerce_like(False, v, what)
+    except ValueError as ex:
+        raise InteropError(str(ex)) from None
+
+
+_MISSING = object()
+_PROFILE_LEVEL = ("Profile Version", "Profile Description", "Root Stereotype")
+_STEREOTYPE_LEVEL = ("Base", "Applies To", "Abstract", "Stereotype Description", "Style",
+                     "Defaults")
+
+
+def _profile_key(row: dict) -> str:
+    return _text(row.get("Profile ID")) or "name:" + _text(row.get("Profile"))
+
+
+def _stereotype_key(row: dict) -> str:
+    return _text(row.get("Stereotype ID")) or f"{_profile_key(row)}/{_text(row.get('Stereotype'))}"
+
+
+def _ident(e: Optional[Element]) -> Optional[str]:
+    return e.element_id if e is not None else None
+
+
+def _same(a: Any, b: Any) -> bool:
+    """Equal values of the same type (an int and a float of equal value count as equal)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a == b
+    return a == b and type(a) is type(b)
+
+
+def _number_cell(v: Any) -> Any:
+    """A Min / Max cell for ``engine.profiles`` (numbers, or text such as ``'0 kg'``)."""
+    return None if v is None or (isinstance(v, str) and not v.strip()) else v
+
+
+@contextmanager
+def _profile_errors(where: str) -> Iterator[None]:
+    """Report profile and stereotype errors with the table row they come from."""
+    try:
+        yield
+    except InteropError as ex:
+        msg = str(ex)
+        raise InteropError(msg if msg.startswith(where) else f"{where}: {msg}") from None
+    except (StereotypeError, ValueError) as ex:      # ProfileError, unit errors, ...
+        raise InteropError(f"{where}: {ex}") from None
 
 
 def normalize_sheets(sheets: Any) -> dict[str, list[tuple[int, dict]]]:
@@ -415,14 +523,20 @@ def _canonical_table(name: str) -> Optional[str]:
 
 
 def _canonical_columns(table: str, row: dict) -> dict:
-    known = BASE_COLUMNS.get(table, []) + LINK_COLUMNS + PROFILE_COLUMNS + ["Property", "Value"]
+    """Column names in their canonical case, against the columns of *this* table only
+    (so an extra attribute column such as ``style`` is not taken for the Profiles one)."""
+    known = {"Profiles": PROFILE_COLUMNS, "Links": LINK_COLUMNS,
+             "Model": ["Property", "Value"]}.get(table, BASE_COLUMNS.get(table, []))
     by_low = {c.lower(): c for c in known}
     return {by_low.get(k.lower(), k): v for k, v in row.items()}
 
 
 class _Importer:
-    def __init__(self, repo, sheets: Any):
+    def __init__(self, repo, sheets: Any, *, restore: bool = False):
         self.repo = repo
+        # restore: the tables describe a whole project being rebuilt (tables_to_project),
+        # so every cell is authoritative; otherwise rows are merged into a live project.
+        self.restore = restore
         raw = normalize_sheets(sheets)
         self.tables: dict[str, list[tuple[int, dict]]] = {}
         self.warnings: list[str] = []
@@ -440,9 +554,13 @@ class _Importer:
             self.root_ids.add(_text(info.get("Root ID")))
         self.specs: list[_Spec] = []
         self.by_id: dict[str, _Spec] = {}
-        self.stereo_by_ref: dict[str, Stereotype] = {}
         self.report = ImportReport(warnings=self.warnings)
         self._warned: set[str] = set()
+        self._orig: dict[tuple[int, str], Any] = {}     # see _wants
+        self._orig_values: dict[tuple[int, int], Any] = {}
+        self._names_before: dict[str, Stereotype] = {}
+        self._props_before: dict[tuple[int, str], StereotypeTag] = {}
+        self._filled: set[tuple[str, str]] = set()      # see import_profiles
 
     # --- helpers ------------------------------------------------------------
     def warn_once(self, key: str, message: str) -> None:
@@ -564,112 +682,312 @@ class _Importer:
         return ""
 
     # --- phase 2: profiles ----------------------------------------------------
+    # Profiles, stereotypes and typed properties are created and edited through the
+    # profiles feature (engine.profiles): its checks, unit handling and change
+    # propagation apply exactly as in the Profile Editor. Stereotypes kept in plain
+    # packages (the legacy API) have no profile operations and are handled directly.
+
     def import_profiles(self) -> None:
-        from kerml.stereotypes import Stereotype as BaseStereotype
+        deferred: list[tuple[int, str, Callable[[], None]]] = []   # (phase, where, fn)
         rows = self.tables.get("Profiles", [])
-        pending_bases: list[tuple[Stereotype, str, str]] = []
+        # Profile / stereotype columns repeat on every row of their profile / stereotype:
+        # a blank cell only counts (clears the value) when no row of it fills that column.
+        self._filled = {(key, col) for _, row in rows
+                        for key, cols in ((_profile_key(row), _PROFILE_LEVEL),
+                                          (_stereotype_key(row), _STEREOTYPE_LEVEL))
+                        for col in cols if _text(row.get(col))}
         for rownum, row in rows:
             where = f"Profiles row {rownum}"
-            sname = _text(row.get("Stereotype"))
-            sid = _text(row.get("Stereotype ID"))
-            if not sname and not sid:
-                continue
-            st = self.stereo_by_ref.get(sid) if sid else None
-            if st is None and sid:
-                hit = self.repo.by_id(sid)
-                st = hit if isinstance(hit, Stereotype) else None
-            profile = self._profile(row, where)
-            if st is None:
-                full = f"{profile.name}.{sname}" if profile is not self.repo.root_package else sname
-                st = next((s for s in self.repo.root_package.walk() if isinstance(s, Stereotype)
-                           and (stereotype_full_name(s) == full or
-                                (s.owner is profile and s.name == sname))), None)
-            if st is None:
-                if not sname:
-                    raise InteropError(f"{where}: Stereotype name is required")
-                cls = class_for_kind("Stereotype") or BaseStereotype
-                st = cls(name=sname)
-                if sid:
-                    st.element_id = sid
-                profile.own(st)
-                self._apply_applies_to(st, _text(row.get("Applies To")), where)
-                if _text(row.get("Abstract")).lower() in ("true", "1", "yes"):
-                    try:
-                        st.is_abstract = True
-                    except Exception as ex:  # noqa: BLE001
-                        raise InteropError(f"{where}: {ex}") from None
-                self.repo.registry.register_tree(st)
-                self.report.stereotypes_created += 1
-                if _text(row.get("Base")):
-                    pending_bases.append((st, _text(row.get("Base")), where))
-            if sid:
-                self.stereo_by_ref[sid] = st
-            self.stereo_by_ref[stereotype_full_name(st)] = st
-            pname = _text(row.get("Property"))
-            if pname and not any(t.name == pname for t in stereotype_tags(st)):
-                self._define_property(st, row, pname, where)
-        for st, base_ref, where in pending_bases:
-            base = self.stereotype(base_ref)
-            if base is None:
-                raise InteropError(f"{where}: base stereotype {base_ref!r} not found")
-            st.base = base
+            with _profile_errors(where):
+                self._profile_row(row, where, deferred)
+        # References between stereotypes once all exist: bases, then defaults, then roots.
+        for _phase, where, fn in sorted(deferred, key=lambda d: d[0]):
+            with _profile_errors(where):
+                fn()
 
-    def _profile(self, row: dict, where: str) -> Namespace:
+    def _profile_row(self, row: dict, where: str, deferred: list) -> None:
+        container = self._container(row, where, deferred)
+        sname, sid = _text(row.get("Stereotype")), _text(row.get("Stereotype ID"))
+        if not sname and not sid:
+            if _text(row.get("Property")) or _text(row.get("Property ID")):
+                raise InteropError(f"{where}: a property row needs its Stereotype")
+            return                                      # profile without stereotypes
+        st = self._stereotype_row(container, row, sname, sid, where)
+        if self._given(row, "Base"):
+            ref = _text(row["Base"])
+            deferred.append((0, where, lambda: self._set_base(st, ref)))
+        if self._given(row, "Defaults"):
+            refs = _parse_pairs(row["Defaults"], DEFAULT_SLOTS, "Defaults")
+            deferred.append((1, where, lambda: self._set_defaults(st, refs)))
+        pname, pid = _text(row.get("Property")), _text(row.get("Property ID"))
+        if pname or pid:
+            self._property_row(st, row, pname, pid, where)
+
+    _CHANGE_LABELS = {"prop_type": "type", "minimum": "min", "maximum": "max",
+                      "applies_to": "applies to", "root_stereotype": "root stereotype"}
+
+    def _note(self, what: str, keys: Iterable[str] = ()) -> None:
+        """Record a Profiles-sheet change for the import report."""
+        labels = [self._CHANGE_LABELS.get(k, k) for k in keys]
+        self.report.profile_changes.append(f"{what}: {', '.join(labels)}" if labels else what)
+
+    def _given(self, row: dict, col: str) -> bool:
+        """Does the row set the profile- or stereotype-level column ``col``? (see import_profiles)"""
+        if col not in row:
+            return False
+        if _text(row[col]):
+            return True
+        key = _profile_key(row) if col in _PROFILE_LEVEL else _stereotype_key(row)
+        return (key, col) not in self._filled
+
+    def _wants(self, obj: Element, key: str, current: Any, new: Any) -> bool:
+        """Does a profile / stereotype cell ask for a change?
+
+        Those cells repeat on every row of their profile or stereotype. A row that
+        still holds the value from before the import does not undo an edit made in
+        another row (edit one row of a full workbook and the edit is applied).
+        """
+        orig = self._orig.setdefault((id(obj), key), current)
+        return not _same(new, current) and not _same(new, orig)
+
+    def _pin_id(self, e: Element, ident: str, where: str) -> None:
+        """Give an element created by the profiles API the id from the table."""
+        if ident and e.element_id != ident:
+            other = self.repo.by_id(ident)
+            if other is not None and other is not e:
+                raise InteropError(f"{where}: ID {ident!r} is already used by {other.kind} "
+                                   f"{other.qualified_name!r}")
+            self.repo.registry.unregister(e)
+            e.element_id = ident
+        self.repo.registry.register_tree(e)
+
+    def _container(self, row: dict, where: str, deferred: list) -> Element:
+        """The profile (or, for legacy stereotypes, the package) a row belongs to."""
         pid, pname = _text(row.get("Profile ID")), _text(row.get("Profile"))
         if not pid and not pname:
             return self.repo.root_package
         hit = self.repo.by_id(pid) if pid else None
-        if isinstance(hit, Namespace):
-            return hit
-        if pname:
-            hit = next((e for e in self.repo.root_package.owned_elements
-                        if isinstance(e, Package) and e.name == pname), None)
-            if hit is not None:
-                return hit
-        cls = class_for_kind("Profile") or Package
-        prof = new_element(cls, pname or "Profile", pid or None)
-        self.repo.root_package.own(prof)
-        self.repo.registry.register_tree(prof)
-        return prof
+        if hit is not None and not isinstance(hit, Package):
+            raise InteropError(f"{where}: Profile ID {pid!r} belongs to a {hit.kind}, "
+                               "not to a profile")
+        if hit is None and pname:
+            hit = next((p for p in P.profiles_of(self.repo) if p.name == pname), None) or \
+                next((e for e in self.repo.root_package.owned_elements
+                      if isinstance(e, Package) and e.name == pname), None)
+        if hit is None:
+            if not pname:
+                raise InteropError(f"{where}: profile {pid!r} not found (give its name to create it)")
+            version = _text(row.get("Profile Version")) if self._given(row, "Profile Version") \
+                else "1.0"
+            hit = P.create_profile(self.repo, pname, version=version,
+                                   description=cell_text(row.get("Profile Description")))
+            self._pin_id(hit, pid, where)
+            self._note(f"created profile {hit.name}")
+        if isinstance(hit, Profile):
+            changes: dict[str, Any] = {}
+            if pname and self._wants(hit, "name", hit.name, pname):
+                changes["name"] = pname
+            if self._given(row, "Profile Version") and \
+                    self._wants(hit, "version", hit.version, _text(row["Profile Version"])):
+                changes["version"] = _text(row["Profile Version"])
+            if self._given(row, "Profile Description") and self._wants(
+                    hit, "description", hit.description, cell_text(row["Profile Description"])):
+                changes["description"] = cell_text(row["Profile Description"])
+            if changes:
+                P.update_profile(self.repo, hit, **changes)
+                self._note(f"updated profile {hit.name}", changes)
+            if self._given(row, "Root Stereotype"):
+                ref = _text(row["Root Stereotype"])
+                deferred.append((2, where, lambda: self._set_root(hit, ref)))
+        return hit
 
-    def _apply_applies_to(self, st: Stereotype, value: str, where: str) -> None:
-        if not value:
-            return
-        kinds = [k.strip() for k in value.split(";") if k.strip()]
-        classes = [class_for_kind(k) for k in kinds]
-        if all(c is not None for c in classes):
-            st.applies_to = classes  # type: ignore[assignment]
-        elif hasattr(st, "category"):
-            try:
-                st.category = value
-            except Exception as ex:  # noqa: BLE001
-                raise InteropError(f"{where}: {ex}") from None
-        else:
-            raise InteropError(f"{where}: unknown Applies To {value!r}")
+    def _applies_to(self, value: Any) -> tuple[str, list[type]]:
+        """``Applies To``: a profiles category (``Component``) or legacy kinds (``PartUsage;...``)."""
+        text = _text(value)
+        if text in CATEGORIES:
+            return text, []
+        classes = [class_for_kind(k.strip()) for k in text.split(";") if k.strip()]
+        if None in classes:
+            raise InteropError(f"unknown Applies To {text!r}: use one of "
+                               f"{[c for c in CATEGORIES if c]} or element kinds")
+        return "", classes      # type: ignore[return-value]
 
-    def _define_property(self, st: Stereotype, row: dict, pname: str, where: str) -> None:
+    def _stereotype_row(self, container: Element, row: dict, sname: str, sid: str,
+                        where: str) -> Stereotype:
+        st = self.repo.by_id(sid) if sid else None
+        if st is not None and not isinstance(st, Stereotype):
+            raise InteropError(f"{where}: Stereotype ID {sid!r} belongs to a {st.kind}")
+        if st is None and sname:
+            st = next((s for s in container.owned_elements
+                       if isinstance(s, Stereotype) and s.name == sname), None)
+        category, classes = self._applies_to(row.get("Applies To"))
+        style = _parse_pairs(row.get("Style"), STYLE_KEYS, "Style")
+        description = cell_text(row.get("Stereotype Description"))
+        abstract = _truthy(row.get("Abstract"))
+        if st is None:
+            if not sname:
+                raise InteropError(f"{where}: Stereotype name is required")
+            if isinstance(container, Profile):
+                st = P.add_stereotype(self.repo, container, sname, description=description,
+                                      applies_to=category, abstract=abstract, style=style)
+                st.applies_to = classes
+            else:                       # legacy stereotype in a plain package (or at the root)
+                from engine.hooks import notify_created
+                st = Stereotype(sname, applies_to=classes, category=category,
+                                description=description, style=style)
+                st.is_abstract = abstract
+                container.own(st)
+                notify_created(st, self.repo)
+            self._pin_id(st, sid, where)
+            self.report.stereotypes_created += 1
+            self._note(f"created stereotype «{st.full_name}»")
+            return st
+        # An existing stereotype: columns present in the row are applied (checked by
+        # engine.profiles; a change that would strip applications is refused).
+        changes: dict[str, Any] = {}
+        given = lambda col: self._given(row, col)          # noqa: E731
+        if sname and self._wants(st, "name", st.name, sname):
+            changes["name"] = sname
+        if given("Stereotype Description") and \
+                self._wants(st, "description", st.description, description):
+            changes["description"] = description
+        if given("Applies To") and self._wants(st, "applies_to", st.category, category):
+            changes["applies_to"] = category
+        if given("Abstract") and self._wants(st, "abstract", st.is_abstract, abstract):
+            changes["abstract"] = abstract
+        if given("Style") and self._wants(st, "style", st.style, normalize_style(style)):
+            changes["style"] = style
+        if changes:
+            P.update_stereotype(self.repo, st, **changes)
+        kinds = tuple(id(c) for c in classes)
+        if given("Applies To") and \
+                self._wants(st, "kinds", tuple(id(c) for c in st.applies_to), kinds):
+            st.applies_to = classes
+            changes["applies_to"] = classes
+        if changes:
+            self._note(f"updated «{st.full_name}»", changes)
+        return st
+
+    def _set_base(self, st: Stereotype, ref: str) -> None:
+        base = self._find_stereotype(ref, "base stereotype") if ref else None
+        if self._wants(st, "base", _ident(st.base), _ident(base)):
+            P.update_stereotype(self.repo, st, base=base)
+            self._note(f"updated «{st.full_name}»", ["base"])
+
+    def _set_defaults(self, st: Stereotype, refs: dict[str, str]) -> None:
+        wanted = {slot: self._find_stereotype(refs[slot], f"default {slot} stereotype")
+                  if refs.get(slot) else None for slot in DEFAULT_SLOTS}
+        current = tuple(_ident(getattr(st, f"default_{s}_stereotype")) for s in DEFAULT_SLOTS)
+        if self._wants(st, "defaults", current, tuple(_ident(wanted[s]) for s in DEFAULT_SLOTS)):
+            P.update_stereotype(self.repo, st, defaults=wanted)
+            self._note(f"updated «{st.full_name}»", ["defaults"])
+
+    def _set_root(self, profile: Profile, ref: str) -> None:
+        root = self._find_stereotype(ref, "model root stereotype") if ref else None
+        if self._wants(profile, "root", _ident(profile.root_stereotype), _ident(root)):
+            P.update_profile(self.repo, profile, root_stereotype=root)
+            self._note(f"updated profile {profile.name}", ["root_stereotype"])
+
+    def _find_stereotype(self, ref: str, what: str) -> Stereotype:
+        st = self.stereotype(ref)
+        if st is None:
+            raise InteropError(f"{what} {ref!r} not found")
+        return st
+
+    def _property_row(self, st: Stereotype, row: dict, pname: str, pid: str, where: str) -> None:
+        tag = self.repo.by_id(pid) if pid else None
+        if tag is not None and not (isinstance(tag, StereotypeTag) and tag.stereotype is st):
+            raise InteropError(f"{where}: Property ID {pid!r} is not a property of "
+                               f"«{st.full_name}»")
+        if tag is None and pname:
+            tag = next((t for t in st.tags if t.name == pname), None)
         default = row.get("Default")
-        default = None if default in ("", None) else default
-        ptype, unit = _text(row.get("Type")), _text(row.get("Unit"))
-        try:
-            if hasattr(st, "define_property") and ptype:
-                kwargs: dict[str, Any] = {"unit": unit, "default": default}
-                if _text(row.get("Description")):
-                    kwargs["description"] = _text(row.get("Description"))
-                tag = st.define_property(pname, ptype, **kwargs)
-            else:
-                tag = st.define_tag(pname, default=infer_scalar(default)
-                                    if isinstance(default, str) else default)
-        except Exception as ex:  # noqa: BLE001 - profile errors carry the reason
-            raise InteropError(f"{where}: {ex}") from None
-        if _text(row.get("Property ID")):
-            self.repo.registry.unregister(tag)
-            tag.element_id = _text(row.get("Property ID"))
-        self.repo.registry.register_tree(tag)
+        default = None if default in (None, "") else default
+        if tag is None:
+            if not pname:
+                raise InteropError(f"{where}: Property name is required")
+            ptype = _text(row.get("Type"))
+            if ptype:                       # a typed property: checked by engine.profiles
+                tag = P.add_property(self.repo, st, pname, ptype, unit=_text(row.get("Unit")),
+                                     default=default, minimum=_number_cell(row.get("Min")),
+                                     maximum=_number_cell(row.get("Max")),
+                                     literals=_text(row.get("Literals")) or None,
+                                     description=cell_text(row.get("Description")))
+            else:                           # legacy untyped property: any value goes
+                if st.find_tag(pname) is not None:
+                    raise InteropError(f"{where}: «{st.full_name}» already has a property "
+                                       f"named {pname!r}")
+                if any(_text(row.get(c)) for c in ("Unit", "Min", "Max", "Literals")):
+                    raise InteropError(f"{where}: {pname}: give a Type for a property with a "
+                                       "unit, a range or literals")
+                from engine.hooks import notify_created
+                tag = st.define_tag(pname, default=decode_untyped_cell(None, default))
+                tag.description = cell_text(row.get("Description"))
+                notify_created(tag, self.repo)
+            self._pin_id(tag, pid, where)
+            self._note(f"created property {tag.path}")
+            return
+        changes = self._update_property(tag, row, pname, default)
+        if changes:
+            self._note(f"updated property {tag.path}", changes)
+
+    def _update_property(self, tag: StereotypeTag, row: dict, pname: str, default: Any) -> list[str]:
+        """Apply the definition columns present in the row through ``update_property``.
+
+        The row is checked and put in canonical form by the profiles feature
+        (``build_property``); only fields that differ are passed, so an unchanged unit
+        cell never overrides the conversion of default / min / max / stored values
+        that a unit change makes. Returns the changed fields.
+        """
+        changes: dict[str, Any] = {}
+        name = pname or tag.name
+        if name != tag.name:
+            changes["name"] = name
+        ptype = _text(row["Type"]) if "Type" in row else tag.prop_type
+        if ptype != tag.prop_type:
+            changes["prop_type"] = ptype            # '' is refused by engine.profiles
+        if "Description" in row and cell_text(row["Description"]) != tag.description:
+            changes["description"] = cell_text(row["Description"])
+        if not ptype:                               # legacy untyped: only the default
+            if "Default" in row:
+                value = decode_untyped_cell(tag.default_value, default)
+                if not _same(value, tag.default_value):
+                    changes["default"] = value
+            if changes:
+                P.update_property(self.repo, tag, **changes)
+            return list(changes)
+        # Columns missing from the row keep the current definition (what still fits the
+        # type); a missing Default is left to update_property, which converts it.
+        numeric, same_type = ptype in NUMERIC_TYPES, ptype == tag.prop_type
+        cand = build_property(
+            name, ptype,
+            unit=_text(row["Unit"]) if "Unit" in row else (tag.unit if numeric else ""),
+            default=default if "Default" in row else (tag.default_value if same_type else None),
+            minimum=_number_cell(row["Min"]) if "Min" in row else (tag.minimum if numeric else None),
+            maximum=_number_cell(row["Max"]) if "Max" in row else (tag.maximum if numeric else None),
+            literals=(_text(row["Literals"]) or None) if "Literals" in row
+            else (tag.literals if ptype == "enumeration" else None),
+            label=f"{tag.stereotype.full_name}.{name}" if tag.stereotype else name)
+        compared = [("unit", "unit"), ("literals", "literals"), ("minimum", "minimum"),
+                    ("maximum", "maximum")] + ([("default", "default_value")] if "Default" in row else [])
+        for key, attr in compared:
+            new, old = getattr(cand, attr), getattr(tag, attr)
+            if not _same(new, old):
+                changes[key] = new
+        if changes:
+            P.update_property(self.repo, tag, **changes)
+        return list(changes)
 
     def stereotype(self, ref: str) -> Optional[Stereotype]:
-        from .common import find_stereotype
-        return self.stereo_by_ref.get(ref) or find_stereotype(self.repo, ref)
+        """A stereotype named in a table (profiles lookup; legacy ``Package.Stereotype`` too).
+
+        A name the Profiles sheet just changed still finds its stereotype, so element
+        rows exported together with the sheet keep working after a rename.
+        """
+        st = find_stereotype(self.repo, ref)
+        if st is None:
+            st = self._names_before.get((ref or "").strip())
+        return st
 
     # --- phase 3: create / match elements ------------------------------------
     def owner_of(self, spec: _Spec) -> Optional[Element]:
@@ -848,68 +1166,77 @@ class _Importer:
 
     # --- phase 5: stereotypes -------------------------------------------------
     def apply_stereotypes(self, spec: _Spec) -> None:
+        """Make the element's stereotypes those of the ``Stereotypes`` cell, then set values.
+
+        The cell is authoritative, in its order (the first stereotype's style wins).
+        One exception, so table rows follow the profiles feature's contract for new
+        elements: a row that *adds* an element to an existing project with an empty
+        cell keeps the default stereotypes the profiles feature applied on creation.
+        """
         e, row = spec.element, spec.row
         assert e is not None
-        if "Stereotypes" in row:
-            wanted: list[Stereotype] = []
-            for ref in _split(row["Stereotypes"]):
-                st = self.stereotype(ref)
-                if st is None:
-                    raise InteropError(f"{spec.where}: stereotype {ref!r} not found")
-                wanted.append(st)
-            current = stereotypes_on(e)
-            for app in current:
-                if not any(app.stereotype is st for st in wanted):
-                    e.annotations = [a for a in e.annotations if a is not app]
-            for st in wanted:
-                if not any(a.stereotype is st for a in stereotypes_on(e)):
-                    try:
-                        st.apply(e, {})
-                    except Exception as ex:  # noqa: BLE001 - TypeError / StereotypeError
-                        raise InteropError(f"{spec.where}: {ex}") from None
-                    self.report.stereotypes_applied += 1
+        with _profile_errors(spec.where):
+            refs = _split(row.get("Stereotypes"))
+            if "Stereotypes" in row and (refs or not spec.created or self.restore):
+                wanted: list[Stereotype] = []
+                for ref in refs:
+                    st = self.stereotype(ref)
+                    if st is None:
+                        raise InteropError(f"stereotype {ref!r} not found")
+                    wanted.append(st)
+                for app in stereotypes_on(e):
+                    if not any(app.stereotype is st for st in wanted):
+                        P.remove_stereotype(self.repo, e, app.stereotype)
+                for st in wanted:
+                    if not any(a.stereotype is st for a in stereotypes_on(e)):
+                        P.apply_stereotype(self.repo, e, st)
+                        self.report.stereotypes_applied += 1
+                _order_applications(e, wanted)
+            # Every value is checked (and converted) by the profiles metamodel when set.
+            for app, prop, value in self._stereotype_values(spec):
+                app.set(prop, value)
+
+    def _stereotype_values(self, spec: _Spec) -> list[tuple[Any, str, Any]]:
+        """``Profile.Stereotype.property`` columns of a row as ``(application, property, value)``.
+
+        The column may name the applied stereotype or one of its bases, by any name
+        ``engine.profiles`` resolves (and the legacy ``Package.Stereotype``). Typed
+        values are converted by profiles on assignment (``'3 lb'`` into a kg property);
+        text for a legacy untyped property is read like its current value.
+        """
+        e, row = spec.element, spec.row
+        out: list[tuple[Any, str, Any]] = []
         for col, value in row.items():
             if "." not in col or value in (None, ""):
                 continue
             st_ref, prop = col.rsplit(".", 1)
-            app = next((a for a in stereotypes_on(e)
-                        if stereotype_full_name(a.stereotype) == st_ref
-                        or a.stereotype.name == st_ref), None)
+            st = self.stereotype(st_ref)
+            app = next((a for a in stereotypes_on(e) if st is not None and a.stereotype.is_kind_of(st)),
+                       None)
             if app is None:
-                st = self.stereotype(st_ref)
                 if st is None:
                     self.warn_once(f"col:{col}", f"column {col!r}: stereotype {st_ref!r} "
                                    "not found; values ignored")
                 else:
                     self.warn_once(f"{spec.where}:{col}",
                                    f"{spec.where}: value for {col} ignored because "
-                                   f"«{st_ref}» is not applied")
+                                   f"«{st.full_name}» is not applied")
                 continue
-            self._set_value(spec, app, prop, value)
-
-    def _set_value(self, spec: _Spec, app, prop: str, value: Any) -> None:
-        tags = {t.name: t for t in stereotype_tags(app.stereotype)}
-        if prop not in tags:
-            raise InteropError(f"{spec.where}: «{stereotype_full_name(app.stereotype)}» "
-                               f"has no property {prop!r}")
-        setter = getattr(app, "set", None)
-        try:
-            if callable(setter):
-                if getattr(app, "values", {}).get(prop) == value:
-                    return
-                setter(prop, value)
-            else:
-                default = tags[prop].default_value
-                if default is not None and not isinstance(default, (list, dict)):
-                    new = coerce_like(default, value, prop)
-                else:
-                    new = infer_scalar(value) if isinstance(value, str) else value
-                app.values[prop] = new
-        except InteropError:
-            raise
-        except Exception as ex:  # noqa: BLE001 - coercion errors name the property
-            raise InteropError(f"{spec.where}: {stereotype_full_name(app.stereotype)}.{prop}: "
-                               f"{ex}") from None
+            tag = st.find_tag(prop) or self._props_before.get((id(st), prop))
+            if tag is None or tag not in st.all_tags():
+                raise InteropError(f"«{st.full_name}» has no property {prop!r}")
+            prop = tag.name                     # the current name (a rename in the Profiles sheet)
+            # A cell still showing the value from before the import is left alone, so a
+            # unit or type change made in the Profiles sheet (which converts the stored
+            # values) is not undone by the old numbers in an unedited value column.
+            before = self._orig_values.get((id(app), id(tag)), _MISSING)
+            if before is not _MISSING and (_same(value, before) or (
+                    isinstance(value, str) and value.strip() == cell_text(before))):
+                continue
+            if not tag.prop_type:
+                value = decode_untyped_cell(app.get(prop), value)
+            out.append((app, prop, value))
+        return out
 
     # --- phase 6: links -------------------------------------------------------
     def import_links(self) -> None:
@@ -1021,6 +1348,14 @@ class _Importer:
     def run(self) -> ImportReport:
         from engine.hooks import notify_created
         self.parse_rows()
+        # Stereotype values and names before the import (see _stereotype_values, stereotype).
+        self._orig_values = {(id(a), id(t)): v for e in P.model_elements(self.repo)
+                             for a in stereotypes_on(e) for t, v in a.raw_slots().items()}
+        names: dict[str, list[Stereotype]] = {}
+        for st in P.stereotypes_of(self.repo):
+            names.setdefault(st.full_name, []).append(st)
+            self._props_before.update({(id(st), t.name): t for t in st.all_tags()})
+        self._names_before = {n: sts[0] for n, sts in names.items() if len(sts) == 1}
         self.create_all()
         self.import_profiles()          # after elements: a profile may be a package row
         for spec in self.specs:
@@ -1046,6 +1381,17 @@ class _Importer:
         return self.report
 
 
+def _order_applications(e: Element, order: list[Stereotype]) -> None:
+    """Put the element's stereotype applications in ``order`` (other annotations stay put)."""
+    apps = stereotypes_on(e)
+    rank = {id(st): i for i, st in enumerate(order)}
+    ordered = sorted(apps, key=lambda a: rank.get(id(a.stereotype), len(rank)))
+    if [id(a) for a in ordered] == [id(a) for a in apps]:
+        return
+    slots = iter(ordered)
+    e.annotations = [next(slots) if any(a is x for x in apps) else a for a in e.annotations]
+
+
 def _snapshot(e: Element) -> str:
     """Serialized form of one element (a detached copy, to detect updates)."""
     import json
@@ -1058,20 +1404,31 @@ def _join_errors(errors: list[str], limit: int = 25) -> str:
     return "\n".join(errors[:limit]) + more
 
 
-def _clone(repo):
-    from engine.serializer import from_dict, to_dict
-    return from_dict(to_dict(repo))
+def _restore(repo, data: dict) -> None:
+    """Put `repo` back (in place, the same object) to a state saved with ``to_dict``."""
+    from engine.serializer import from_dict
+    fresh = from_dict(data)
+    repo.__dict__.clear()
+    repo.__dict__.update(fresh.__dict__)
 
 
 def import_tables(repo, sheets: Any, *, atomic: bool = True) -> ImportReport:
     """Create or update elements of `repo` from tables; raises InteropError on bad input.
 
     With ``atomic`` (default) the import is first rehearsed on a copy of the
-    project, so a failing import leaves `repo` untouched.
+    project, so a failing import leaves `repo` untouched; should the real run still
+    fail, the project is restored from a snapshot taken just before it.
     """
-    if atomic:
-        _Importer(_clone(repo), sheets).run()
-    return _Importer(repo, sheets).run()
+    if not atomic:
+        return _Importer(repo, sheets).run()
+    from engine.serializer import from_dict, to_dict
+    before = to_dict(repo)
+    _Importer(from_dict(before), sheets).run()      # rehearsal on a copy
+    try:
+        return _Importer(repo, sheets).run()
+    except BaseException:
+        _restore(repo, before)
+        raise
 
 
 def tables_to_project(sheets: Any, name: Optional[str] = None):
@@ -1087,7 +1444,7 @@ def tables_to_project(sheets: Any, name: Optional[str] = None):
         repo.registry.register(repo.root_package)
     if _text(info.get("Documentation")):
         set_documentation(repo.root_package, cell_text(info.get("Documentation")))
-    report = _Importer(repo, sheets).run()
+    report = _Importer(repo, sheets, restore=True).run()
     return repo, report
 
 
@@ -1233,12 +1590,17 @@ class ModelBuilder:
     def add_stereotype(self, name: str, *, profile: str = "", applies_to: str = "",
                        properties: Optional[Iterable[Any]] = None, base: str = "",
                        id: Optional[str] = None) -> str:
-        """A stereotype; `properties` are names or ``(name, default)`` / dict rows
-        (``{"Property": "mass", "Type": "double", "Unit": "kg", "Default": 0}``).
-        Returns the full name to use in ``stereotypes=`` / value columns."""
+        """A stereotype; `properties` are names or ``(name, default)`` (legacy untyped
+        properties) or dict rows with Profiles columns (``{"Property": "mass", "Type":
+        "double", "Unit": "kg", "Default": 0, "Min": 0}``). With `profile`, the stereotype
+        belongs to that profile (created by engine.profiles when missing). Returns the
+        name to use in ``stereotypes=`` / value columns (``Profile.Stereotype``)."""
         ident = self._id(id)
-        base_row = {"Profile": profile, "Stereotype ID": ident, "Stereotype": name,
-                    "Base": base, "Applies To": applies_to}
+        base_row = {"Profile": profile, "Stereotype ID": ident, "Stereotype": name}
+        if base:                # only cells that say something (an existing stereotype keeps
+            base_row["Base"] = base          # the definition the builder does not mention)
+        if applies_to:
+            base_row["Applies To"] = applies_to
         props = list(properties or [])
         if not props:
             self.rows["Profiles"].append(dict(base_row))
@@ -1257,8 +1619,13 @@ class ModelBuilder:
                                     ["Name", self.name], ["Root ID", self.root_id]]}
         for t in TABLE_ORDER[1:]:
             rows = self.rows[t]
-            base = (PROFILE_COLUMNS if t == "Profiles" else LINK_COLUMNS if t == "Links"
-                    else BASE_COLUMNS[t])
+            if t == "Profiles":
+                # Only the columns the builder filled: a blank profile / stereotype cell would
+                # clear that setting of a profile that already exists in the target project.
+                used = {k for r in rows for k in r}
+                base = [c for c in PROFILE_COLUMNS if c in used]
+            else:
+                base = LINK_COLUMNS if t == "Links" else BASE_COLUMNS[t]
             sheets[t] = _sheet(_columns(base, rows), rows)
         return sheets
 

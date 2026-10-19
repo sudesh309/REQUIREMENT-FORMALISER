@@ -69,9 +69,19 @@ with row counts. It works like a spreadsheet:
   qualified name such as `Structure::FlightDeck`. The `Kind` cell suggests the kinds of the
   table.
 - **Apply to model** imports only the edited and new rows (merge mode). The result banner
-  shows created / updated / unchanged counts; on an error the banner shows the importer's
-  message (for example `Ports row 3 (navIn): invalid direction 'sideways'`) and **the
-  model is left unchanged**. **Revert** discards the edits, **Reload** re-reads the model.
+  shows created / updated / unchanged counts and the profile definitions changed through
+  the Profiles sheet; on an error the banner shows the importer's message (for example
+  `Ports row 3 (navIn): invalid direction 'sideways'` or `Components row 7 (fmc):
+  Avionics.LRU.mass = -1 kg is below the minimum 0 kg`) and **the model is left
+  unchanged**. **Revert** discards the edits, **Reload** re-reads the model.
+- **Stereotype values** are edited in their `Profile.Stereotype.property` columns like in
+  the Profile Editor's inspector: `2 lb` into a kg property is converted, `2*1.5` is
+  evaluated, enumeration literals match case-insensitively, out-of-range values are
+  refused with the property's name.
+- **Profile definitions** are edited in the **Profiles** sheet (unit, type, default, range,
+  literals, description, base, applies-to, style, defaults, version, ...). Changes go
+  through the profiles feature, so stored values follow (a unit change `kg` → `g`
+  converts every value) and a change that would strip applications is refused.
 - **Go to an element**: click its row number.
 - **Filter rows** narrows the grid to rows containing the text.
 
@@ -93,9 +103,10 @@ are read-only (they are the element identity); the Model sheet is read-only.
 Rules: rows are matched by `ID`, else by owner + name; a row without `ID` creates an
 element. Nothing is deleted. The import is atomic: it is rehearsed on a copy of the project
 first, so any error (unknown kind, bad direction or multiplicity, missing owner or
-reference, duplicate ID, ownership cycle, ...) is reported with table, row number and name
-and nothing changes. `export → import → export` reproduces identical tables (ids, values
-and row order).
+reference, duplicate ID, ownership cycle, invalid stereotype value, profile conflict, ...)
+is reported with table, row number and name and nothing changes (should the real run still
+fail, the project is restored from a snapshot taken just before it). `export → import →
+export` reproduces identical tables (ids, values and row order), profiles included.
 
 ### Export and import SysML v2 text
 
@@ -112,7 +123,8 @@ multiplicities (`[0..*]`), specializations (`:>`), `enum def` literals, requirem
 are ordered so that every reference points backwards. Constructs the engine parser cannot
 read yet are written as `//` comments in SysML v2 form so the file stays re-parsable: port
 directions (`// in port navIn : A429Word;`), usages with bodies, connectors inside
-definitions, state transitions and stereotype values (`// #LRU { mass = 2.5; }`). The
+definitions, state transitions and stereotype values as metadata usages with unit literals
+(`// #Avionics.LRU { mass = 2.5 [kg]; dal = "B"; }`). The
 exporter probes the parser (`parser_capabilities()`), so these become real syntax as soon
 as the parser supports them. The SysML Text view says which constructs are commented.
 
@@ -135,7 +147,11 @@ as the parser supports them. The SysML Text view says which constructs are comme
 | Generalization, owned comments | specialization, documentation |
 | other profile stereotypes (e.g. `Avionics:LRU mass=2.5`) | stereotypes (created if missing) with values |
 
-XMI ids become element ids, so importing the same file again updates instead of
+Profile stereotypes are looked up through the profiles feature: `Avionics:LRU` (namespace
+URI ending in `/Avionics`) uses the project's `Avionics.LRU` when that exists, as defined
+(typed values are checked and converted; attributes it does not declare are reported, the
+profile is not changed); otherwise a stereotype of that name, else a new untyped one in the
+package `XMI_Profiles`. XMI ids become element ids, so importing the same file again updates instead of
 duplicating. Imports into the current project are wrapped in a package named after the XMI
 model. Documents with a DTD, entity declarations or external entities are rejected, and
 sizes are limited (`MAX_XMI_BYTES`, ZIP member limits for XLSX).
@@ -150,7 +166,8 @@ preview frame:
 3. architecture diagrams (Mermaid, one per root architecture, rendered with the vendored
    `/static/vendor/mermaid-*.min.js`) and the traceability diagram,
 4. component hierarchy,
-5. per component: documentation, reference definition, stereotype property values, ports
+5. per component: documentation, reference definition, stereotype property values (as the
+   profiles feature displays them, with units, inherited properties first), ports
    (direction, kind, interface) and connectors,
 6. interfaces with their elements,
 7. requirements and traceability (implemented by / verified by / other links, coverage %),
@@ -177,7 +194,8 @@ The summary shows `+added`, `−removed`, `~modified` counts, or **No difference
 tree nests changed elements under their (grey, unchanged) owners; each modified element
 expands to a property table (old value, current value): name, kind, owner (moved), type,
 direction, multiplicity, documentation, short name, abstract, req id and text, connection
-ends, specializations, stereotypes applied / removed and their property values, links
+ends, specializations, stereotypes applied / removed and their property values (labelled
+`Avionics.LRU.mass`, as the profiles feature names them), links
 added / removed, and feature data stored through codecs. Filters: Added / Removed /
 Modified, a search box (names, kinds, property names and values), **Expand all** /
 **Collapse all**. Click a name (or press Enter) to select the element in the tree and
@@ -248,7 +266,7 @@ Sheets, in order (first row = header):
 | Sheet | Rows | Base columns |
 |---|---|---|
 | Model | export information | `Property`, `Value` (Format, Name, Root ID, Documentation) |
-| Profiles | one row per stereotype property | `Profile ID`, `Profile`, `Stereotype ID`, `Stereotype`, `Base`, `Applies To`, `Abstract`, `Property ID`, `Property`, `Type`, `Unit`, `Default`, `Description` |
+| Profiles | one row per stereotype property (a stereotype without properties and a profile without stereotypes get one row) | `Profile ID`, `Profile`, `Profile Version`, `Profile Description`, `Root Stereotype`, `Stereotype ID`, `Stereotype`, `Base`, `Applies To`, `Abstract`, `Stereotype Description`, `Style`, `Defaults`, `Property ID`, `Property`, `Type`, `Unit`, `Default`, `Min`, `Max`, `Literals`, `Description` |
 | Components | architectures (`PartDefinition`) and components (`PartUsage`) | `ID`, `Name`, `Kind`, `Parent ID`, `Parent`, `Reference ID`, `Reference`, `Specializes ID`, `Specializes`, `Multiplicity`, `Abstract`, `Short Name`, `Documentation`, `Stereotypes` |
 | Ports | ports | `ID`, `Name`, `Kind`, `Component ID`, `Component`, `Direction`, `Interface ID`, `Interface`, `Multiplicity`, `Short Name`, `Documentation`, `Stereotypes` |
 | Interfaces | interfaces (port / interface definitions and kinds derived from them) and their elements | `ID`, `Name`, `Kind`, `Owner ID`, `Owner`, `Type ID`, `Type`, `Direction`, `Multiplicity`, `Specializes ID`, `Specializes`, `Abstract`, `Short Name`, `Documentation`, `Stereotypes` |
@@ -260,16 +278,46 @@ Sheets, in order (first row = header):
 - Qualified names are relative to the project root (`Structure::FlightDeck::gps`); several
   references are separated by `;`. Multiplicity is `1`, `0..1`, `1..*`, `*`; Direction is
   `in`, `out`, `inout`.
-- `Stereotypes` lists applied stereotypes as `Profile.Stereotype`; each property value
-  has a column `Profile.Stereotype.property` (e.g. `AvionicsProfile.LRU.mass`).
+- **Stereotypes** are named by the profiles feature (`Stereotype.full_name`), which is the
+  authority for stereotype names, lookup, typed values and units:
+  - `Stereotypes` lists the applied stereotypes, in order (the first one's style wins), as
+    `Profile.Stereotype` (`Avionics.LRU`); a stereotype kept in a plain package (the legacy
+    `Stereotype(...)` API) has no profile and is just `LRU`;
+  - each property value has a column `Profile.Stereotype.property` (`Avionics.LRU.mass`)
+    holding the stored value: numbers are in the property's unit (the Profiles sheet's
+    `Unit`). On import the column may also name a base stereotype
+    (`Avionics.Equipment.mass` on an LRU) and any name `engine.profiles.find_stereotype`
+    resolves (id, `Pkg::Stereotype`, unique bare name); `Package.Stereotype` columns written
+    for plain-package stereotypes by earlier versions still import. An ambiguous name is an
+    error that lists the candidates;
+  - values are set through the profiles metamodel (`StereotypeApplication.set`): typed
+    values are checked and converted (`3 lb`, `2*1.5`, `b` for literal `B`); text for a
+    legacy *untyped* property is read like its current value (`4.2` stays a number);
+  - a value cell that still shows the value from before the import is left alone, so a unit
+    or type change made in the Profiles sheet (which converts the stored values) is not
+    undone by the unedited value columns of the same workbook. Element rows exported with a
+    stereotype or property name that the Profiles sheet renames still resolve;
+  - the `Stereotypes` cell is authoritative (missing stereotypes are removed); only a row
+    that *adds* an element to an existing project with an empty cell keeps the default
+    stereotypes the profiles feature applied on creation (a port created inside an LRU gets
+    the LRU's default port stereotype).
+- **Profiles sheet**: profiles, stereotypes and properties are created and edited through
+  `engine.profiles` (`create_profile`, `add_stereotype`, `add_property`, `update_*`), so the
+  Profile Editor's checks, unit handling and change propagation apply; a profile named in
+  the sheet that does not exist yet is created as a real profile. `Applies To` is a category
+  (`Component`, `Port`, ...) or, for legacy stereotypes, element kinds (`PartUsage;...`);
+  `Style` and `Defaults` are `key=value` pairs (`fill=#dbeafe; icon=computer`,
+  `port=Avionics.A429Port`); `Literals` is comma separated; `Type` empty means a legacy
+  untyped property. Profile and stereotype columns repeat on every row of their profile /
+  stereotype: an edit in one row is applied, rows still holding the old value do not undo
+  it. Stereotypes kept in plain packages (an `Elements` row for the package) are handled
+  with the legacy API. The import report lists every definition change in `profile_changes`.
 - **Columns other features add** (no change to this module): any JSON-able attribute
   whose value differs from the class default becomes a column named after the attribute
   and is set back on import with its type preserved. In particular:
   - interfaces / buses: attributes such as `port_kind`, `bus_type`, `data_type`,
     `units`, `rate_hz` on ports, interfaces and interface elements;
-  - profiles: stereotype definitions with typed properties go through the Profiles sheet
-    (`Type`, `Unit`, `Default`, `Description` use `define_property` when the stereotype
-    class provides it); applied values use `Profile.Stereotype.property` columns;
+  - profiles: see *Stereotypes* and *Profiles sheet* above;
   - allocation: `allocate_from ID` / `allocate_to ID` (pre-registered element-valued
     attributes) and `allocate` links in the Links sheet;
   - requirements: `rationale`, `priority`, `status`, ... attributes and the link kinds the
@@ -277,7 +325,11 @@ Sheets, in order (first row = header):
   - element-valued attributes of new features: `register_reference_attribute("<attr>")`
     adds an `<attr> ID` column.
   New element kinds registered with `register_table_kind(name, cls)` (or present in the
-  web/MCP kind registries) are accepted in `Kind`.
+  web/MCP kind registries) are accepted in `Kind`. Importing `engine.interop` loads every
+  engine feature module (`load_feature_modules()`), so all kinds, link kinds and
+  persistence codecs are registered before an import runs: loading a module mid-import
+  would register its codecs and change how every project serializes, so a failed import
+  would no longer leave the project byte-identical.
 
 ## HTTP API (`webapp/routes/interop.py`)
 
@@ -288,7 +340,7 @@ never server-side paths. Errors are `400 {"error": "..."}` with the reason.
 |---|---|---|
 | GET | `/api/interop/info` | report sections, table names, parser capabilities, snapshot |
 | GET | `/api/interop/tables?format=xlsx\|csv\|json` | `{filename, mime, base64, size}` or `{tables}` |
-| POST | `/api/interop/tables/import` | `{base64, filename}` or `{tables}`, `mode: merge\|new`, `name?` → `{report, project}` |
+| POST | `/api/interop/tables/import` | `{base64, filename}` or `{tables}`, `mode: merge\|new`, `name?` → `{report, project}` (`report`: created / updated / unchanged counts and ids, links, stereotypes created / applied, `profile_changes`, warnings) |
 | GET | `/api/interop/report?title&author&sections=a,b&mermaid=link\|inline\|none` | `{html, filename}` |
 | GET | `/api/interop/sysml` | `{text, filename, parser_capabilities}` |
 | POST | `/api/interop/sysml/import` | `{text, mode, name?}` → `{created, created_ids, project}` (atomic) |
@@ -360,14 +412,20 @@ saves are identical across processes, and order follows containment, not creatio
 
 - Engine: `test_interop_tables` (export, import, round trips, errors, ModelBuilder, XLSX
   reader safety), `test_interop_sysml`, `test_interop_xmi`, `test_interop_diff`,
-  `test_interop_checks`, `test_interop_report`, `test_interop_vcs`.
+  `test_interop_checks`, `test_interop_report`, `test_interop_vcs`, `test_interop_profiles`
+  (stereotypes of real profiles next to a legacy plain-package one: naming, XLSX / CSV round
+  trip, typed values and units, Profiles sheet edits and errors, report, SysML text,
+  compare / merge, XMI, atomic imports in a fresh process and after a failing real run).
 - HTTP: `test_interop_http`; MCP: `test_interop_mcp` (in process and over stdio).
 - Browser: `60_interop.mjs` (XMI import → XLSX export download → import into a new project
   via the file chooser → Compare: No differences → property diff → Model Check filter and
   navigate), `60_interop_merge.mjs` (three-way merge with a conflict, Compare with Last
   Saved, report preview with rendered diagrams, report download), `60_interop_tables.mjs`
   (grid editing, add row, rejected edit leaves the model unchanged, SysML text view /
-  download / import, CSV export).
+  download / import, CSV export), `60_interop_profiles.mjs` (a real profile's stereotype:
+  `Avionics.LRU.*` grid columns, a value typed in another unit, a unit change in the
+  Profiles sheet, XLSX round trip into a new project, Compare "No differences" then a
+  `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value).
 
 ## System Composer parity
 
@@ -375,8 +433,9 @@ Closed:
 
 - [x] `table-export-model`: architecture → tables (components with parent and reference,
       ports with direction / kind / interface, connections with source / target component
-      and port, interfaces with elements, requirements, links, profiles, stereotype values
-      as `Profile.Stereotype.prop`), as XLSX (stdlib SpreadsheetML) and ZIP of CSV.
+      and port, interfaces with elements, requirements, links, profiles with their full
+      definition, stereotype values as `Profile.Stereotype.prop`), as XLSX (stdlib
+      SpreadsheetML) and ZIP of CSV.
 - [x] `table-import-model`: tables → new or existing project, matched by ID (else owner +
       name), atomic with row-level error messages; plus in-studio table editing.
 - [x] `excel-csv-roundtrip`: export → import → export gives identical tables (ids,
@@ -432,3 +491,9 @@ Deferred:
   compare with the file they saved (`other_path`).
 - The report's embedded-Mermaid download is about 3 MB; untick *embed diagrams library*
   for a small file that renders diagrams when opened next to a running studio.
+- The tables do not carry a profile's provenance (the `.profile.json` file it was imported
+  from and the project's profile import log) nor a profile's owning package when it is not
+  the project root: a profile recreated from tables sits at the root without that history
+  (Compare shows the difference in its `profiles` data). Use *Export* / *Import* of the
+  Profile Editor to move profiles with their history.
+- An empty stereotype value cell means "unchanged": values cannot be cleared from tables.

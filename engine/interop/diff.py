@@ -101,6 +101,16 @@ class _Names:
             node = self.by_id.get(node.get("owner") or "")
         return "::".join(reversed(parts)) or f"<{ident[:8]}>"
 
+    def stereotype(self, ident: str) -> str:
+        """A stereotype's name as ``Stereotype.full_name`` gives it on a loaded project:
+        ``Profile.Stereotype`` inside a profile, the bare name elsewhere (plain package)."""
+        e = self.by_id.get(ident)
+        if e is None:
+            return self.qname(ident).rsplit("::", 1)[-1]
+        owner = self.by_id.get(e.get("owner") or "") or {}
+        name = e.get("name") or f"<{ident[:8]}>"
+        return f"{owner.get('name')}.{name}" if owner.get("kind") == "Profile" else name
+
     def path(self, ident: str) -> list[str]:
         """Ancestor ids (outermost first) of an element, excluding the root."""
         out: list[str] = []
@@ -164,7 +174,7 @@ def _element_diffs(names: _Names, old_data: dict, new_data: dict, a: dict, b: di
                       "old": names.qname(oa), "new": names.qname(ob)})
     sa, sb = _stereo_map(a), _stereo_map(b)
     for sid in sorted(set(sa) | set(sb), key=names.qname):
-        sname = names.qname(sid).rsplit("::", 1)[-1]
+        sname = names.stereotype(sid)
         if sid not in sa:
             props.append({"property": f"«{sname}»", "key": f"stereotype:{sid}",
                           "old": None, "new": "applied"})
@@ -353,7 +363,7 @@ def _unflatten(flat: dict[tuple, Any], ident: str) -> dict:
 
 def _label(path: tuple, names: _Names) -> str:
     if path[0] == "stereotypes":
-        sname = names.qname(path[1]).rsplit("::", 1)[-1]
+        sname = names.stereotype(path[1])
         return f"«{sname}»" if path[2] == "@applied" else f"«{sname}».{path[2]}"
     if path[0] == "ext":
         return "/".join(str(p) for p in path if p not in ("data", "module", "@empty"))

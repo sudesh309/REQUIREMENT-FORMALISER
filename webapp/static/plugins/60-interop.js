@@ -428,6 +428,7 @@ export default async function install(studio) {
       addActivity(`Imported tables from ${o.file.name}`, {
         mode: r.mode, project: r.project.name, created: rep.created, updated: rep.updated,
         unchanged: rep.unchanged, "links created": rep.links_created, "stereotypes applied": rep.stereotypes_applied,
+        "profile changes": (rep.profile_changes || []).length,
       }, rep.warnings);
       markStale();
       showView("activity");
@@ -778,13 +779,16 @@ export default async function install(studio) {
       return;
     }
     const rep = r.report;
+    const profileChanges = rep.profile_changes || [];
     await studio.refreshTree();
     await loadTables(true);
     banner(rep.warnings.length ? "warn" : "ok",
       `Applied: ${rep.created} created, ${rep.updated} updated, ${rep.unchanged} unchanged.` +
+      (profileChanges.length ? `\nProfiles: ${profileChanges.join("; ")}` : "") +
       (rep.warnings.length ? `\n${rep.warnings.join("\n")}` : ""));
     studio.log(`Applied table edits: ${rep.created} created, ${rep.updated} updated`, "ok");
-    addActivity("Applied table edits", { created: rep.created, updated: rep.updated, unchanged: rep.unchanged }, rep.warnings);
+    addActivity("Applied table edits", { created: rep.created, updated: rep.updated, unchanged: rep.unchanged,
+      "profile changes": profileChanges.length }, [...profileChanges, ...rep.warnings]);
   }
 
   /* ---------- SysML text view ---------- */

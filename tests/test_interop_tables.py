@@ -47,7 +47,8 @@ class ExportTests(unittest.TestCase):
                                              "Connections", "Requirements", "Elements", "Links"])
         self.assertEqual(self.sheets["Components"][0][:7],
                          ["ID", "Name", "Kind", "Parent ID", "Parent", "Reference ID", "Reference"])
-        self.assertIn("AvionicsProfile.LRU.mass", self.sheets["Components"][0])
+        # Named as engine.profiles names the stereotype: «LRU» lives in a plain package.
+        self.assertIn("LRU.mass", self.sheets["Components"][0])
         self.assertEqual(dict(self.sheets["Model"][1:])["Name"], "FlightDeck")
 
     def test_components_ports_connections_requirements_links(self):
@@ -55,8 +56,8 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(comps["gps"]["Reference"], "Components::GPSReceiver")
         self.assertEqual(comps["gps"]["Parent"], "FlightDeck")
         self.assertEqual(comps["pfd"]["Multiplicity"], "2")
-        self.assertEqual(comps["FlightManagementComputer"]["Stereotypes"], "AvionicsProfile.LRU")
-        self.assertEqual(comps["FlightManagementComputer"]["AvionicsProfile.LRU.mass"], 4.2)
+        self.assertEqual(comps["FlightManagementComputer"]["Stereotypes"], "LRU")
+        self.assertEqual(comps["FlightManagementComputer"]["LRU.mass"], 4.2)
         self.assertEqual(comps["partition1"]["Parent"], "FlightDeck::ims")
         ports = {r["Name"]: r for r in _rows(self.sheets, "Ports")}
         self.assertEqual(ports["navOut"]["Direction"], "out")
@@ -178,7 +179,7 @@ class RoundTripTests(unittest.TestCase):
         _set(self.sheets, "Components", {"Name": "gps"}, Name="gnss", Multiplicity="1..2")
         _set(self.sheets, "Ports", {"Name": "health"}, Direction="inout")
         _set(self.sheets, "Components", {"Name": "FlightManagementComputer"},
-             **{"AvionicsProfile.LRU.mass": "5.5"})
+             **{"LRU.mass": "5.5"})
         _set(self.sheets, "Requirements", {"Req ID": "SRS-002"}, Text="Shall show attitude.")
         gps_id = self.repo.resolve("FlightDeck::gps").element_id
         report = import_tables(self.repo, self.sheets)

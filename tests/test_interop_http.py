@@ -5,7 +5,7 @@ import json
 from engine import to_json
 from engine.interop import write_csv_zip, write_xlsx
 from engine.interop.tables import export_tables
-from tests.test_interop_fixtures import XMI_FIXTURE, avionics_repo
+from tests.test_interop_fixtures import XMI_FIXTURE, add_avionics_profile, avionics_repo
 from tests.webapp_harness import WebAppTestCase
 from webapp import core
 
@@ -55,6 +55,46 @@ class InteropHttpTests(WebAppTestCase):
         self.assertEqual((r["mode"], r["report"]["updated"], r["report"]["created"]),
                          ("merge", 1, 0))
         self.assertIsNotNone(core.session().find("FlightDeck::gnss"))
+
+    def test_profile_stereotypes_through_tables_compare_and_check(self):
+        repo = avionics_repo()
+        add_avionics_profile(repo)
+        self.call("POST", "/api/load", {"text": to_json(repo)})
+        saved = self.call("GET", "/api/save")["text"]
+        x = self.call("GET", "/api/interop/tables?format=xlsx")
+        self.call("POST", "/api/new", {"name": "Blank"})
+        r = self.call("POST", "/api/interop/tables/import",
+                      {"base64": x["base64"], "filename": x["filename"], "mode": "new"})
+        self.assertIn("created profile Avionics", r["report"]["profile_changes"])
+        diff = self.call("POST", "/api/interop/compare", {"text": saved})
+        self.assertTrue(diff["identical"], diff["changes"][:3])
+        fmc = core.session().find("FlightDeck::fmc")
+        el = self.call("GET", f"/api/elements/{fmc.element_id}/stereotypes")
+        self.assertEqual(el["applied"][0]["qualified_name"], "Avionics.LRU")
+        # Edit a typed value as text with another unit (as the Model Tables grid sends it).
+        tables = self.call("GET", "/api/interop/tables?format=json")["tables"]
+        header, *rows = tables["Components"]
+        row = next(r for r in rows if r[header.index("Name")] == "fmc")
+        row[header.index("Avionics.LRU.mass")] = "2 lb"
+        r = self.call("POST", "/api/interop/tables/import",
+                      {"tables": {"Model": tables["Model"], "Components": [header, row]}})
+        self.assertEqual((r["report"]["updated"], r["report"]["created"]), (1, 0))
+        self.assertEqual(self.call("GET", f"/api/elements/{fmc.element_id}/stereotypes")
+                         ["applied"][0]["values"]["mass"], 0.90718474)
+        diff = self.call("POST", "/api/interop/compare", {"text": saved})
+        props = {p["property"]: p["new"] for c in diff["changes"] for p in c["properties"]}
+        self.assertEqual(props, {"Avionics.LRU.mass": 0.90718474})
+        # A rejected value is a 400 naming the row and the property; nothing changes.
+        before = self.call("GET", "/api/save")["text"]
+        row[header.index("Avionics.LRU.mass")] = "-3 kg"
+        e = self.call("POST", "/api/interop/tables/import",
+                      {"tables": {"Components": [header, row]}}, expect=400)
+        self.assertIn("Avionics.LRU.mass", e["error"])
+        self.assertIn("below the minimum", e["error"])
+        self.assertEqual(self.call("GET", "/api/save")["text"], before)
+        # Model Check runs the profiles rules too: a clean profile adds no issue.
+        check = self.call("GET", "/api/interop/check")
+        self.assertFalse([i for i in check["issues"] if i["rule"].startswith("profile.")])
 
     def test_import_errors_are_400_and_atomic(self):
         self.load_avionics()

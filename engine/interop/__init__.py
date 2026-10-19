@@ -12,15 +12,20 @@ See docs/features/interop.md.
 """
 from __future__ import annotations
 
-from .common import InteropError, register_table_kind
-from .tables import (
+from .common import InteropError, load_feature_modules, register_table_kind
+
+# Every feature's kinds, link kinds and codecs are registered before any interop
+# operation runs, so imports and exports never change the codec set midway.
+load_feature_modules()
+
+from .tables import (  # noqa: E402
     ImportReport, ModelBuilder, export_tables, export_tables_file, import_tables,
     read_tables_file, register_reference_attribute, tables_to_project,
 )
-from .xlsx import read_csv_zip, read_xlsx, safe_xml, write_csv_zip, write_xlsx
+from .xlsx import read_csv_zip, read_xlsx, safe_xml, write_csv_zip, write_xlsx  # noqa: E402
 
 __all__ = [
-    "InteropError", "register_table_kind", "register_reference_attribute",
+    "InteropError", "load_feature_modules", "register_table_kind", "register_reference_attribute",
     "ImportReport", "ModelBuilder", "export_tables", "export_tables_file", "import_tables",
     "read_tables_file", "tables_to_project",
     "read_csv_zip", "read_xlsx", "safe_xml", "write_csv_zip", "write_xlsx",

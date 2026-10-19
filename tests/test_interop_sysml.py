@@ -147,7 +147,7 @@ class SysmlExportTests(unittest.TestCase):
         new = Repository("RT")
         parse(text, into=new.root_package)          # must not raise
         new.registry.register_tree(new.root_package)
-        self.assertIn("// #AvionicsProfile.LRU { mass = 4.2; dal = \"A\"; }", text)
+        self.assertIn("// #LRU { mass = 4.2; dal = \"A\"; }", text)
         self.assertIn("// satisfy Requirements::NavAccuracy by Components::FlightManagementComputer;",
                       text)
         self.assertIn("// transition", text)

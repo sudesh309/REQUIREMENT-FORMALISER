@@ -102,3 +102,34 @@ def avionics_repo(name: str = "FlightDeck") -> Repository:
     sm.add_transition(off, on, trigger="powerOn")
     repo.registry.register_tree(repo.root_package)
     return repo
+
+
+def add_avionics_profile(repo: Repository):
+    """Add a real profile (engine.profiles) next to the legacy «LRU» of avionics_repo().
+
+    Profile Avionics 2.1: abstract Equipment (Component; mass double kg >= 0, default 1.5;
+    style fill + icon), LRU (base Equipment; dal A..E default C, ata uint8, spare boolean,
+    pn string; default port stereotype A429Port; dashed stroke), A429Port (Port; rate
+    kbit/s); an empty profile Spare 0.1. «Avionics.LRU» is applied to FlightDeck::fmc with
+    mass '3 lb' (stored as 1.36077711 kg), dal B, ata 34, «Avionics.A429Port» to
+    Components::FlightManagementComputer::navIn (rate 12.5). Returns the profile.
+    """
+    from engine import profiles as P
+    prof = P.create_profile(repo, "Avionics", description="Avionics equipment", version="2.1")
+    eq = P.add_stereotype(repo, prof, "Equipment", applies_to="Component", abstract=True,
+                          style={"fill": "#dbeafe", "icon": "computer"})
+    P.add_property(repo, eq, "mass", "double", unit="kg", default="1.5", minimum=0)
+    port = P.add_stereotype(repo, prof, "A429Port", applies_to="Port")
+    P.add_property(repo, port, "rate", "double", unit="kbit/s", default=100)
+    lru = P.add_stereotype(repo, prof, "LRU", base=eq, style={"stroke": "#1d4ed8", "line": "dashed"},
+                           defaults={"port": port})
+    P.add_property(repo, lru, "dal", "enumeration", literals="A,B,C,D,E", default="C")
+    P.add_property(repo, lru, "ata", "uint8", default=34)
+    P.add_property(repo, lru, "spare", "boolean")
+    P.add_property(repo, lru, "pn", "string", description="part number")
+    P.create_profile(repo, "Spare", version="0.1")
+    P.apply_stereotype(repo, repo.resolve("FlightDeck::fmc"), lru, {"mass": "3 lb", "dal": "b"})
+    P.apply_stereotype(repo, repo.resolve("Components::FlightManagementComputer::navIn"), port,
+                       {"rate": 12.5})
+    repo.registry.register_tree(repo.root_package)
+    return prof
