@@ -631,6 +631,9 @@ class CanvasEditor {
 
   onStudioSelect(el) {
     if (!el?.id) return;
+    // selectElement sets selectedId at once and fires "select" after its fetch: an event
+    // for anything else is stale (rapid clicks) and must not pull the selection back.
+    if (el.id !== this.studio.state.selectedId) return;
     if (this.selfSelect === el.id) { this.selfSelect = null; return; }
     if (this.primary && parseKey(this.primary).id === el.id) return;
     if (!this.view || el.id === this.compId) return;
