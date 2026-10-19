@@ -1525,9 +1525,10 @@ def apply_layout(repo, items: list) -> int:
         raise ArchitectureError("items must be a list")
     planned = []
     for item in items:
-        if not isinstance(item, dict) or not item.get("id"):
+        if not isinstance(item, dict) or not item.get("id") or not isinstance(item["id"], str):
             raise ArchitectureError("every layout item needs an id")
-        e = repo.by_id(item["id"])
+        ref = item["id"]
+        e = repo.by_id(ref) or (repo.resolve(ref) if "::" in ref else None)    # id or qualified name
         if e is None:
             raise _not_found(f"element {item['id']!r}")
         if isinstance(e, PortUsage):

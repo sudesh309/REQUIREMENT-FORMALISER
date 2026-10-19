@@ -1,9 +1,10 @@
 # Architecture modeling (System Composer style)
 
 Build the logical and physical architecture of a system — for example an
-avionics suite of LRUs, IMA modules, sensors and displays — as components with
-directional ports, connected by validated connectors, nested to any depth,
-reusable as reference components, and undoable at every step.
+avionics suite of LRUs, IMA modules, sensors and displays — on an interactive
+canvas: components with directional ports, connected by validated connectors,
+nested to any depth, reusable as reference components, and undoable at every
+step. The same operations are available over HTTP, as MCP tools and in Python.
 
 | Layer | File |
 |-------|------|
@@ -13,15 +14,17 @@ reusable as reference components, and undoable at every step.
 | Undo / redo history | `engine/undo.py` |
 | Parser / IBD fixes | `engine/parser.py`, `engine/diagram.py`, `engine/diagram_mermaid.py` |
 | HTTP API | `webapp/routes/architecture.py`, `webapp/routes/undo.py` |
-| Studio UI | `webapp/static/plugins/10-canvas.js` + `webapp/static/plugins/canvas/*.js` |
+| Canvas (Architecture tab) | `webapp/static/plugins/10-canvas.js` → `canvas/editor.js` (controller), `geometry.js` (routing, placement, zoom maths), `render.js` (SVG), `toolstrip.js`, `dock.js` (Property Inspector), `ui.js` (toasts, menu, inline editor), `styles.js` |
+| Other studio pieces | `canvas/undo.js` (Undo / Redo), `canvas/model.js` (New model, model type), `canvas/inspector.js` (Properties-tab tables), `canvas/common.js` (shared clipboard, helpers) |
 | MCP tools | `mcp_server/tools/architecture.py` |
-| Tests | `tests/test_architecture*.py`, `tests/ui/scenarios/10_canvas_architecture.mjs` |
+| Tests | `tests/test_architecture*.py`, `tests/ui/10_canvas_geometry.test.mjs` (node unit tests), `tests/ui/scenarios/10_canvas_*.mjs` (browser) |
 
 Core files touched (small, additive): `webapp/core.py` (`register_mutation_hook`
 / `begin_mutation` for undo snapshots), `webapp/server.py` (dispatch calls
 `begin_mutation` for non-GET requests; `api_new` accepts `type`; `api_parse`
 passes `repo=` so parsed elements reach `notify_created`), `mcp_server/server.py`
-(`sysml_parse` passes `repo=` for the same reason).
+(`sysml_parse` passes `repo=` for the same reason), `docs/EXTENDING.md`
+(the `drop-on-element` event and the drag data type).
 
 ## Concepts
 
@@ -86,50 +89,129 @@ auto-numbered (`Component`, `Component1`, …; ports `In`, `Out`, `Conn`,
 architecture API, 400 on the generic `PATCH /api/element`). Names may not
 contain `::`, `.`, tabs or line breaks.
 
-## Using the studio
+## Using the canvas (Architecture tab)
 
-The plugin adds three things to the studio; the graphical canvas editor builds
-on the same API.
+The **Architecture** tab is the first tab and the one shown at start-up. It
+opens the architecture you last viewed (else the first one with components).
 
-**Toolstrip**
+```
+┌ toolstrip: Component | Port | Connect | Edit | Layout | View ────────────────┐
+│ breadcrumbs  AircraftSystem › FMS        [banners]          Open [▾ arch]    │
+├──────────────────────────────────────────────────────────┬───────────────────┤
+│  canvas: frame with boundary ports, blocks, connectors   │ Property          │
+│  (grid, pan, zoom)                                       │ Inspector (dock)  │
+│  status: counts · zoom · hint                            │                   │
+└──────────────────────────────────────────────────────────┴───────────────────┘
+```
+
+| Task | How |
+|------|-----|
+| Start an architecture | With no architecture the canvas offers **New architecture**; type its name in place. *Model: New model…* in the studio toolstrip starts a new System or Software project |
+| Open another architecture or definition | **Open ▾** at the right of the breadcrumb bar; or click it in the containment tree (the canvas follows the tree) |
+| Add a component | **Component** (toolstrip; placed at a free spot in view), or right-click the background → *Add Component here*; type the name, Enter (Escape keeps `Component`, `Component1`, …) |
+| Add a reference component | Drag a part definition from the containment tree onto the canvas background |
+| Rename | Double-click a name (block, port label, connector label, frame title) or select and press **F2**; Enter commits, Escape cancels. A taken name is refused with a message |
+| Add a port | Select one or more blocks, then **In / Out / InOut / Physical** (**Client / Server** in a Software model); or right-click a block → *Add port*; or the **+ In / + Out …** buttons of the Property Inspector |
+| Add a boundary port | **Boundary ▾** (port on the frame of what you are viewing), or right-click the background → *Boundary port* (placed on the nearest frame edge) |
+| Connect | Drag from a port to another port. While dragging, valid targets turn green and invalid ones fade (hover one to read why in the status line); releasing on an invalid one shows the server's reason in a red toast and changes nothing. Data connectors are turned around automatically when drawn from input to output |
+| Connect to a new port | Release the drag on a block (a matching port is created on its nearest edge: an input for an output, same interface) or on the frame edge (a new boundary port) |
+| Connect by clicking | **Connect** mode: click a source port, then a target port / block / frame edge; Esc leaves the mode. Right-click a port → *Start connection here* does the same |
+| Select | Click; **Shift/Ctrl+click** adds or removes; drag on the background draws a selection box; **Ctrl+A** selects all components. The selection is the studio's (`studio.setSelection`) so the Properties-tab tables tick the same rows |
+| Move | Drag selected blocks (snapped to a 10 px grid, **Alt** to place freely) or nudge with the arrow keys (**Shift** = 1 px). Saved when you drop |
+| Resize | Drag the bottom-right corner of a block. *Auto size* (context menu or Inspector) returns to the automatic size that grows with the ports |
+| Move a port along the border | **Shift+drag** (or Alt+drag) the port to any edge; or right-click → *Side*; or the Inspector's *Side* |
+| Route a connector | Select it, drag the square handles on its middle segments; right-click → *Reset route* returns to automatic routing (which avoids other blocks) |
+| Drill down / up | Double-click a block (or select it and press **Enter**) to open it: an inline component's inside, or the shared definition of a reference component. Breadcrumbs, the ⬆ button or **Alt+↑** go back |
+| Create component from selection | Select blocks → **Group** (Ctrl+G); crossing connectors are routed through new ports; name it in place. **Expand** is the inverse |
+| Reference components | **Save as Ref** (asks for the definition name) / **Inline** on the selected component |
+| Copy / paste / duplicate | **Copy** (Ctrl+C), **Paste** (Ctrl+V, into the composition being viewed; context menu *Paste inside* targets a block), **Duplicate** (Ctrl+D). Copies are deep (ports, internals, stereotypes) with fresh names |
+| Delete | **Delete** / Backspace, the toolstrip or the context menu (no confirmation: undo with Ctrl+Z) |
+| Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
+| Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view |
+| Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool |
+| Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface, side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. *Properties tab ↗* opens the full studio inspector |
+| Context menu | Right-click anything, or **Shift+F10** / the Menu key for the selection; arrow keys move in the menu |
+
+### Keyboard (canvas focused)
+
+| Keys | Action |
+|------|--------|
+| Delete / Backspace | delete the selection |
+| Ctrl+C / Ctrl+V / Ctrl+D | copy / paste / duplicate components |
+| Ctrl+A / Ctrl+G | select all components / group the selection |
+| Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | undo / redo (studio shortcuts) |
+| F2 / Enter / Alt+↑ | rename / open the selected component / up one level |
+| Arrow keys (Shift) | nudge selected blocks by 10 px (1 px) |
+| + / − / 0 / Space | zoom in / out / 100% / fit (hold Space and drag to pan) |
+| Escape | cancel a drag or connection, leave Connect/Pan mode, clear the selection |
+| Shift+F10 / Menu | context menu |
+
+### What you see
+
+| Element | Drawing |
+|---------|---------|
+| Frame | the composition being viewed with its name, stereotypes and kind (architecture, inline component, or `: Definition — shared by n`); its own ports sit on its edges as boundary ports, labels outside |
+| Component | rounded block: «stereotypes» above the bold name, `: Definition` below it for a reference component plus a link marker bottom-left, a hierarchy marker top-right when it has sub-components, other badges (e.g. `SM`, profile badges) as pills; fill / stroke / text colour / dash / short icon from the element summary `style` |
+| Port | glyph on the block edge: input = hollow arrow pointing in, output = filled arrow pointing out, inout = double arrow, physical = diamond, client = circle, server = square; coloured by its interface (`style.stroke` from profiles/interfaces, else a stable colour per interface name); name inside the block |
+| Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); invalid stored connectors are red and dashed with the problem as tooltip |
+
+### Working with other features
+
+| Contract (docs/EXTENDING.md) | Canvas behaviour |
+|------------------------------|------------------|
+| `navigate {id}` | opens the composition that shows the element and selects it (`GET /api/arch/locate/<id>`) |
+| `select` (tree) | selects the element when it is on the canvas; otherwise a component, port, connector or part definition is revealed in its composition |
+| `highlight {ids, color, reason}` / `null` | glow in that colour on listed components, ports and connectors; banner with the reason and a clear button |
+| `canvas-filter {ids, label, hide?}` / `null` | other components (and connectors to them) are dimmed, or hidden with *hide others*; banner with the label, count and a clear button that emits `canvas-filter null` |
+| `selection-changed` | both ways: canvas selection → `studio.setSelection` (+ `selectElement` for the primary element); another feature's selection is shown on the canvas |
+| `model-changed` | the current view is reloaded (falls back to another architecture when it was deleted) |
+| HTML5 drop of `application/x-sysml-element` | on a block, port or connector: `studio.emit("drop-on-element", {dragged_id, target_id})` (requirements linking reacts); a part definition on the background: new reference component; anything else on the background: `drop-on-element` with the composition as target. Containment-tree rows are draggable |
+
+### Studio toolstrip and Properties tab
 
 - *Model: New model…* — project name, architecture type (System or Software)
   and the name of the root architecture. *Model: System / Software* shows the
   current type; click it to switch (refused while ports use kinds the new type
   does not allow, unless you tick the override).
 - *Edit: ↶ Undo / ↷ Redo* — undo any model change, including edits made by
-  other features; the tooltip names the step. Keyboard: **Ctrl+Z**, **Ctrl+Y**
-  or **Ctrl+Shift+Z** (outside text fields). Up to 50 steps; *New* and
-  *Load JSON* start a fresh history.
+  other features. Up to 50 steps; *New* and *Load JSON* start a fresh history.
+- The **Architecture** section of the Properties tab shows the same
+  composition as tables (components, boundary ports, connectors) with the same
+  operations — handy for keyboard-only editing and bulk renames.
 
-**Architecture inspector** (Properties tab, shown for an architecture or a
-component selected in the tree)
+## How the canvas works
 
-| Task | How |
-|------|-----|
-| Drill down / up | *Open* on a component row; breadcrumbs at the top go back up |
-| Add a component | *+ Component*; leave the name empty for auto-numbering, pick a part definition under *Reference* for a reference component |
-| Rename a component | edit its name in the Components table and press Tab/Enter |
-| Add a port (boundary port of what you are looking at) | *+ Port*: name, direction, kind, interface; on a reference component the port goes to the shared definition unless *Only on this component* is ticked |
-| Change a port | edit name / direction / kind / interface in the Ports table, or select the port in the tree; changes that would break connectors are refused |
-| Connect | *Connect…*, pick the two ends (boundary ports and the sub-components' ports are listed); direction is fixed automatically |
-| Delete | × on a port or connector row; *Delete* / *Delete selected* for components (a confirmation dialog; undo with Ctrl+Z) |
-| Duplicate | *Duplicate* (this component) or tick rows and *Duplicate selected*: deep copy with new names; connectors between the copied components come along |
-| Copy / paste | tick rows, *Copy*; open any architecture or component (also a reference component: the copy goes into its shared definition) and press *Paste (n)*. Paste can be repeated; each paste is one undo step |
-| Create component from selection | tick rows, *Group selected…* |
-| Expand (decompose) | *Expand* on an inline component with children |
-| Save as reference / inline | *Save as reference…* on an inline component; *Inline* on a reference component |
-| Arrange | *Arrange*: left-to-right layers following the data flow |
+```mermaid
+flowchart LR
+    U["mouse / keyboard"] --> E["canvas/editor.js<br/>state, selection, drags"]
+    E -->|"pure maths"| G["geometry.js<br/>ports, routes, zoom"]
+    E -->|"SVG strings"| R["render.js"]
+    E -->|"POST/PATCH /api/arch/*"| S["webapp/routes/architecture.py"]
+    S --> H["undo hook: snapshot + step"]
+    S --> A["engine/architecture.py<br/>validate + edit"]
+    E -->|"reload()"| T["GET /api/tree<br/>emits model-changed"]
+    T --> E
+    E -->|"GET /api/arch/view"| V["view model"]
+    V --> E
+    E <-->|"navigate, highlight, canvas-filter,<br/>selection-changed, drop-on-element"| F["other features"]
+```
 
-Ticked rows are the studio's shared multi-selection (`studio.setSelection`), so
-they survive re-renders (rename, undo) and a selection made on the canvas shows
-up ticked here; the copy buffer (`canvas/common.js` `clipboard`) is shared with
-the canvas too.
-
-Selecting a port or connector in the tree shows its own editor (direction,
-kind, interface; endpoints, kind, problems, delete). Broken connectors are
-listed with their problem in red. The IBD in the Diagram tab draws the
-selected composition with boundary ports on the frame.
+- Every edit is a request to the architecture API (so it is validated, undoable
+  and visible to MCP clients); the canvas then reloads the tree, which emits
+  `model-changed`, and redraws from the new view model. Requests that are
+  expected to fail are not sent: connections are checked first with
+  `GET /api/arch/connect-targets` (one call per drag, all ports of the view)
+  and names against the view.
+- While dragging, only the moved blocks' transforms and their connectors' paths
+  are updated (requestAnimationFrame); a model change arriving mid-drag is
+  applied after the drop.
+- The frame is fitted around the components (min 520 × 320); connectors use
+  orthogonal routes with stubs out of the ports, bending in the free channel
+  closest to the middle so they do not run under other blocks; manual routes
+  are kept as `points`.
+- Measured with 60 components and 200 connectors (`10_canvas_perf.mjs`,
+  headless Chromium): full redraw about 30–40 ms, dragging a block with 24
+  connectors under 1 ms of work per frame.
 
 ## HTTP API
 
@@ -146,11 +228,13 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | GET | `/api/arch/view/<composition>` | `?path=id,id,...` (drill path) | view model (below) |
 | GET | `/api/arch/tree/<composition>` | | model-browser tree with ports and drill paths |
 | GET | `/api/arch/can-connect` | `?composition&source_component&source_port&target_component&target_port` | `{ok, reason, kind, swapped}` (no change) |
+| GET | `/api/arch/connect-targets` | `?composition&source_component&source_port` | `{source, targets: [{component_id, port_id, ok, reason, kind, swapped}]}` for every other port of the view (no change) |
+| GET | `/api/arch/locate/<id>` | | `{composition, select}`: where the canvas shows an element (nulls when it is not in an architecture) |
 | POST | `/api/arch/component` | `{composition, name?, definition?, layout?}` | component view |
 | PATCH | `/api/arch/component/<id>` | `{name?, definition?: id\|null}` | component view |
 | POST | `/api/arch/port` | `{owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}` | port view |
 | PATCH | `/api/arch/port/<id>` | `{name?, direction?, kind?, interface?: id\|null, force?}` | port view |
-| POST | `/api/arch/connector` | `{composition, source: {component?, port}, target: {component?, port}, name?}` | connector view |
+| POST | `/api/arch/connector` | `{composition, source: {component?, port}, target: {component?, port}, name?}`; one end may instead be `{component?, new_port: true \| {name?, side?, offset?}}` | connector view (+ `created_port` for a new port) |
 | PATCH | `/api/arch/connector/<id>` | `{name?, points?: [[x, y], ...] \| null}` | connector view |
 | POST | `/api/arch/delete` | `{ids}` | `{deleted}` (one undo step) |
 | POST | `/api/arch/duplicate` | `{ids, target?, offset?: [dx, dy]}` | `{components}` |
@@ -158,8 +242,8 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | POST | `/api/arch/expand` | `{component}` | `{components}` (moved ids) |
 | POST | `/api/arch/save-as-reference` | `{component, name?, package?}` | `{definition, component}` |
 | POST | `/api/arch/inline` | `{component}` | component view |
-| POST | `/api/arch/auto-layout` | `{composition}` | `{positions: {id: {x, y, w, h}}}` |
-| POST | `/api/arch/layout` | `{items: [{id, x, y, w?, h?} \| {id, side, offset} \| {id, points}]}` | `{updated}` (validated before anything is written) |
+| POST | `/api/arch/auto-layout` | `{composition}` | `{positions: {id: {x, y, w, h}}}` (only positions are stored; user-set sizes are kept) |
+| POST | `/api/arch/layout` | `{items: [{id, x, y, w?, h?} \| {id, side, offset} \| {id, points}]}` | `{updated}` (validated before anything is written; a move keeps a size set earlier, `w`/`h` null return to the automatic size) |
 | POST | `/api/undo`, `/api/redo` | | `{ok, reason?, can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}` |
 | GET | `/api/undo/state` | | the same state |
 
@@ -167,7 +251,11 @@ A port endpoint's `port` is a port id, a qualified name, or the port's name
 on that component (`{"component": "<id>", "port": "airData"}`); omit
 `component` for a boundary port of the composition. A `component` deeper in
 the hierarchy is reached by adding boundary ports on each component in between
-(cross-hierarchy connection; refused through reference components).
+(cross-hierarchy connection; refused through reference components). A
+`new_port` end creates the port on that direct sub-component (on its
+definition for a reference component) or, without `component`, a boundary
+port; it mirrors the other end's kind and interface with the opposite role and
+nothing is created when the connection is refused.
 
 Element JSON (`GET /api/element/<id>`) gains `badges` (`ref`/`inline`,
 `leaf`/`composite`, `SM` for components; direction and kind for ports),
@@ -189,7 +277,7 @@ Element JSON (`GET /api/element/<id>`) gains `badges` (`ref`/`inline`,
                       "interface": {"id": "...", "name": "AirData"}, "side": "left", "offset": 0.5,
                       "on_definition": false, "badges": ["in"], "style": {}, "stereotypes": []}],
   "components": [{"id": "...", "name": "Guidance", "definition": null, "is_reference": false,
-                  "layout": {"x": 160, "y": 60, "w": 160, "h": 90}, "has_children": false,
+                  "layout": {"x": 160, "y": 60, "w": 160, "h": 90}, "sized": false, "has_children": false,
                   "has_state_machine": false, "from_definition": false,
                   "ports": [{"id": "...", "name": "air", "side": "left", "offset": 0.5, "...": "..."}],
                   "badges": ["inline", "leaf"], "style": {}, "stereotypes": []}],
@@ -204,6 +292,7 @@ A connector's `label` is what System Composer draws on the line: its interface
 name(s), prefixed SysML-style by a name you gave it (`airBus : AirData`);
 auto-generated names (`Connector1`, `connect_a_b`) are not drawn. The IBD in
 the Diagram tab uses the same label (`engine.architecture.connector_label`).
+`sized` tells whether the user resized the block.
 
 Components without a stored layout get a deterministic grid position; ports
 without one go inputs left, outputs right (clients right, servers and physical
@@ -246,6 +335,10 @@ is kept.
 | `sysml_add_port` | `owner`, `name?`, `direction`, `kind`, `interface?`, `usage_only?` |
 | `sysml_update_port` | `port`, `name?`, `direction?`, `kind?`, `interface?`, `clear_interface?`, `force?` |
 | `sysml_connect_ports` | `composition`, `source_component?`, `source_port`, `target_component?`, `target_port`, `name?` (same rules as the web API) |
+| `sysml_connect_to_new_port` | connect `source_*` to a new port on `target_component` (or a new boundary port without it); `port_name?`, `name?`, `side?`, `offset?` |
+| `sysml_connect_targets` | read-only: every port a connector from the source may end at, with `ok`, `reason`, `label` |
+| `sysml_set_layout` | move / resize components, move ports along the border, route connectors (`items` as `POST /api/arch/layout`) |
+| `sysml_arch_locate` | the composition that shows an element and what to select there |
 | `sysml_arrange` | auto-layout |
 | `sysml_group` / `sysml_expand` | create component from selection / its inverse |
 | `sysml_save_as_reference` / `sysml_inline_component` | reference components |
@@ -259,9 +352,11 @@ Example (an agent building an air-data chain):
 ```json
 {"name": "sysml_new_architecture", "arguments": {"name": "AircraftSystem"}}
 {"name": "sysml_add_component", "arguments": {"composition": "AircraftSystem", "name": "ADC"}}
+{"name": "sysml_add_component", "arguments": {"composition": "AircraftSystem", "name": "FMS"}}
 {"name": "sysml_add_port", "arguments": {"owner": "AircraftSystem::ADC", "name": "airData", "direction": "out"}}
-{"name": "sysml_connect_ports", "arguments": {"composition": "AircraftSystem", "source_component": "AircraftSystem::ADC",
-  "source_port": "airData", "target_component": "AircraftSystem::FMS", "target_port": "air"}}
+{"name": "sysml_connect_to_new_port", "arguments": {"composition": "AircraftSystem", "source_component": "AircraftSystem::ADC",
+  "source_port": "airData", "target_component": "AircraftSystem::FMS"}}
+{"name": "sysml_set_layout", "arguments": {"items": [{"id": "AircraftSystem::FMS", "x": 420, "y": 80}]}}
 ```
 
 ## Python API
@@ -280,18 +375,23 @@ A.add_port(repo, adc, "airData", "out")
 A.add_port(repo, fms, "air", "in")
 A.add_port(repo, root, "pwr28V", kind="physical")          # boundary port
 A.connect(repo, root, {"component": adc, "port": "airData"}, {"component": fms, "port": "air"})
+air_out = A.resolve_port(adc, "airData")
+port, conn = A.connect_new_port(repo, root, (adc, air_out), None)   # new boundary output, connected
+A.connect_targets(root, (adc, air_out))                     # [{port_id, ok, reason, ...}] for every port
 nav = A.group(repo, root, [fms], "NavUnit")                # create component from selection
 NavDef = A.save_as_reference(repo, nav)                     # reusable PartDefinition
 A.auto_layout(repo, root)
+A.apply_layout(repo, [{"id": adc.element_id, "x": 400, "y": 80}])
 view = A.view(repo, root)                                   # canvas view model
+A.locate(conn)                                              # {"composition": root, "select": conn}
 ```
 
 Other functions: `rename`, `set_definition`, `update_port`, `delete_elements`,
-`duplicate`, `expand`, `inline_component`, `apply_layout`, `can_connect`,
-`classify`, `connector_problems`, `component_badges`, `model_tree`,
-`architecture_roots`. All raise `ArchitectureError` (with `.status`) before
-changing anything. `engine.undo.UndoHistory` / `tracked(session, label)` give
-any front end the same undo history.
+`duplicate`, `expand`, `inline_component`, `can_connect`, `classify`,
+`connector_problems`, `component_badges`, `model_tree`, `architecture_roots`.
+All raise `ArchitectureError` (with `.status`) before changing anything.
+`engine.undo.UndoHistory` / `tracked(session, label)` give any front end the
+same undo history.
 
 ### Textual notation
 
@@ -316,24 +416,30 @@ package Avionics {
 
 | Feature id | Status | Notes |
 |------------|--------|-------|
-| architecture-model-types | closed | `system` / `software` per project, persisted; `POST /api/new {type}`; allowed port kinds per type; *Function* elements are out of scope |
-| component-blocks | closed | create / rename / delete with unique sibling names and auto-numbering; deep duplicate and copy-paste into any composition (inspector *Copy* / *Paste*, `duplicate` with `target`); badges `ref` / `inline` / `leaf` / `composite` / `SM` |
-| directional-ports | closed | in / out / inout plus port kind data / physical / client / server; unique names; parser `in port` / `out port` / `inout port` and `connect a.b to c.d` in part defs |
-| architecture-boundary-ports | closed | a composition's ports are its boundary ports when viewed from inside; added from the inspector or `POST /api/arch/port`; reference definition ports appear on every usage |
-| draw-connectors | closed (API + inspector) | dialog-based connecting with automatic orientation and `can-connect` feedback; drawing by dragging on the canvas comes with the canvas editor |
+| architecture-model-types | closed | `system` / `software` per project, persisted; `POST /api/new {type}`; allowed port kinds per type; the canvas offers the matching port buttons |
+| component-blocks | closed | create (toolstrip, context menu, drag a definition from the tree), rename in place, delete; unique auto-numbered names; style / stereotype / badge decoration |
+| directional-ports | closed | in / out / inout plus physical / client / server, drawn with direction glyphs; parser `in port` / `out port` / `inout port` |
+| architecture-boundary-ports | closed | ports on the frame edge, added from the toolstrip, the context menu or by dropping a connector on the frame edge |
+| graphical-canvas-editing | closed | drag to move (snap), resize, Shift+drag ports along the border, drag port-to-port to connect with live validity feedback, rubber band and Shift/Ctrl selection, zoom / pan / fit, context menus, keyboard shortcuts |
+| draw-connectors | closed | drag or Connect mode; invalid targets dimmed with the reason; drop on a block / frame edge creates the matching port |
 | connector-branching | closed | outputs fan out; an input accepts one driver |
-| cross-hierarchy-connections | closed | ends deeper in inline components get boundary ports created level by level (reused when already routed); refused through reference components |
-| physical-ports-connectors | closed | physical ↔ physical only, non-directional, drawn undirected in the IBD |
-| drill-down-breadcrumbs | closed (API + inspector) | view model with breadcrumbs, honouring the drill path through reference components |
-| model-browser | closed (API) | `GET /api/arch/tree/<id>`; in the studio the containment tree plus the inspector serve as browser until the canvas pane lands |
-| create-component-from-selection | closed | `group` with boundary ports per crossing connector (shared for fan-out / one source); inverse `expand` |
-| reference-components | closed | save as reference (new `PartDefinition` in the model's package) and inline (this usage only); retyping re-attaches connectors by port name |
-| auto-layout | closed | layered left to right by connector direction, cycle-safe; ports re-spread inputs left / outputs right |
-| layout persistence | closed | `tool_data.layout` (components), `tool_data.port_layout` (ports), `tool_data.points` (connectors); batch API |
-| undo-redo | closed | every web mutation (any feature), 50 steps, cleared on new/load; MCP tools too |
+| cross-hierarchy-connections | closed (API, MCP) | ends deeper in inline components get boundary ports created level by level; on the canvas, connect level by level (or drop on a block to create the port) |
+| physical-ports-connectors | closed | physical ↔ physical only, non-directional, drawn as thicker lines without arrowheads |
+| connector-routing-editor | closed (basic) | orthogonal auto-routing that avoids other blocks; drag middle segments to reroute (`points`), *Reset route* |
+| drill-down-breadcrumbs | closed | double-click / Enter to open, breadcrumbs, Alt+↑; reference components open their shared definition |
+| model-browser | closed | the containment tree acts as model browser: the canvas follows its selection and its rows can be dragged onto the canvas; *Open ▾* lists the architectures; `GET /api/arch/tree` / `sysml_arch_tree` for clients |
+| property-inspector | closed | docked Property Inspector on the canvas (component, port, connector, composition, multi-selection) plus the full Properties tab |
+| create-component-from-selection | closed | Group (Ctrl+G) with boundary ports per crossing connector; Expand as the inverse |
+| reference-components | closed | save as reference / inline; reference marker and `: Definition` on the block |
+| copy-paste | closed | Ctrl+C / Ctrl+V / Ctrl+D, paste inside a component; deep copies with fresh names |
+| auto-layout | closed | Arrange: layered left to right by connector direction, cycle-safe, then fit |
+| layout-persistence | closed | `tool_data.layout` (components; sizes only when resized), `tool_data.port_layout`, `tool_data.points`; survives save / load and page reloads |
+| undo-redo | closed | every web mutation (any feature), 50 steps, cleared on new/load; MCP tools too; canvas toolstrip and Ctrl+Z / Ctrl+Y |
+| highlight / view filter hooks | closed | `highlight` glow and `canvas-filter` dim/hide with banners (the requirements, interfaces and allocation features emit `highlight`; `canvas-filter` is ready for architecture views) |
 | IBD diagram fixes | closed | edges attach to the drawn port nodes of typed parts; boundary ports on the frame |
-| graphical canvas editing (drag/resize, drag-to-connect, rubber band, zoom) | deferred | built next on this branch by the canvas engineer on top of the view model and layout API |
-| connector routing editor | deferred | points are stored and returned; interactive routing belongs to the canvas |
 | adapters / bus element mapping | deferred | belongs to the interfaces feature |
 | variant components | deferred | belongs to the variants feature |
-| software *Function* elements | deferred | out of scope by assignment |
+| software *Function* elements | deferred | out of scope by assignment; only the software model type and its port kinds exist |
+| annotations / areas on the canvas | deferred | System Composer's free-text annotations and grouping areas are not modelled yet |
+| connector label editing on the line | deferred | connectors are renamed in place (double-click the label), but labels cannot be dragged along the line |
+| minimap, alignment guides, multi-level undo of view state | deferred | zoom/pan/selection are view state and are not part of the undo history |

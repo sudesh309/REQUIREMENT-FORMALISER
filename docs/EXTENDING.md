@@ -163,7 +163,18 @@ features react with `engine.register_created_hook(fn(element, repo))`
 | `highlight` | `{ids, color?, reason?}` or `null` | emphasize elements on the canvas |
 | `canvas-filter` | `{ids, label?}` or `null` | canvas shows only these components (views) |
 | `selection-changed` | `[ids]` | multi-selection changed; read with `studio.getSelection()` |
+| `drop-on-element` | `{dragged_id, target_id}` | an element was dragged (HTML5, see below) onto a canvas block, port or connector (`target_id` = its element id; dropped on the canvas background: the composition's id) |
 | `select` / `model-changed` / `tab-shown` | see above | core events |
 
 `studio.setSelection(ids)` sets the multi-selection (canvas rubber band,
 table rows); `studio.getSelection()` falls back to the selected element.
+
+**Dragging elements** (HTML5 drag and drop): a drag source puts the element id
+in `dataTransfer` under the type `application/x-sysml-element` (and may set
+`effectAllowed = "copyLink"`). The architecture canvas accepts such drops and
+emits `drop-on-element`; features react to it (for example requirements
+linking) and ignore payloads that are not theirs. Containment-tree rows are
+drag sources too, and a part definition dropped on the canvas background
+becomes a reference component. The canvas highlights any listed id it draws
+(components, ports, connectors); `canvas-filter` may carry `hide: true` to hide
+instead of dim the other components.

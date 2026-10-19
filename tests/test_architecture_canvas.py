@@ -323,6 +323,7 @@ class CanvasMcpTests(unittest.TestCase):
         self.assertIn("own component", self.fail("sysml_connect_to_new_port", composition=root["id"],
                                                  source_component=adc["id"], source_port="airData",
                                                  target_component=adc["id"]))
+        self.assertEqual(self.ok("sysml_set_layout", items=[{"id": "Aircraft::FMS", "x": 700, "y": 80}])["updated"], 1)
         self.assertEqual(self.ok("sysml_set_layout", items=[{"id": adc["id"], "x": 400, "y": 80}])["updated"], 1)
         self.assertIn("finite number", self.fail("sysml_set_layout", items=[{"id": adc["id"], "x": "a", "y": 0}]))
         view = self.ok("sysml_arch_view", composition=root["id"])

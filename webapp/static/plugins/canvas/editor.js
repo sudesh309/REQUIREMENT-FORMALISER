@@ -139,7 +139,13 @@ class CanvasEditor {
     const s = this.studio;
     this.pane.addEventListener("click", (e) => {
       const b = e.target.closest("[data-canvas-act]");
-      if (b && !b.disabled) { this.command(b.dataset.canvasAct); return; }
+      if (b && !b.disabled) {
+        // Keyboard shortcuts keep working after a toolstrip click; a modal or the inline
+        // editor opened by the command takes the focus afterwards.
+        this.host.focus({ preventScroll: true });
+        this.command(b.dataset.canvasAct);
+        return;
+      }
       const c = e.target.closest("[data-crumb]");
       if (c) { const i = Number(c.dataset.crumb); this.open(this.path[i], this.path.slice(0, i + 1)); return; }
       if (e.target.closest("[data-crumb-up]")) { this.up(); return; }
@@ -242,6 +248,7 @@ class CanvasEditor {
   }
 
   async loadView() {
+    if (this.drag) { this.reloadAfterDrag = true; return; }    // never redraw under the pointer
     const seq = ++this.seq;
     const q = this.path.length > 1 ? `?path=${encodeURIComponent(this.path.join(","))}` : "";
     let v;
@@ -715,7 +722,13 @@ class CanvasEditor {
 
   onPointerUp(e) {
     try { this.svg.releasePointerCapture(e.pointerId); } catch { /* none */ }
-    if (this.drag) { const d = this.drag; this.drag = null; d.end(e); return; }
+    if (this.drag) {
+      const d = this.drag;
+      this.drag = null;
+      d.end(e);
+      if (this.reloadAfterDrag) { this.reloadAfterDrag = false; this.refreshing = this.loadView(); }
+      return;
+    }
     if (this.pending) { const p = this.pending; this.pending = null; this.click(p, e); }
   }
 
@@ -1181,7 +1194,8 @@ class CanvasEditor {
   onDragOver(e) {
     if (!e.dataTransfer?.types?.includes(ELEMENT_MIME) || !this.view) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "link";
+    const allowed = e.dataTransfer.effectAllowed || "all";
+    e.dataTransfer.dropEffect = /link|all|uninitialized/i.test(allowed) ? "link" : /copy/i.test(allowed) ? "copy" : "move";
     const h = this.hit(e.target);
     const el = h && h.kind !== "frame" ? h.el : null;
     if (el !== this.dropEl) {
