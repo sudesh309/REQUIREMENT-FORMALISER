@@ -1612,7 +1612,16 @@ def auto_layout(repo, composition: Element) -> dict:
     for c in comps:
         _spread_ports(c)
     _spread_ports(comp)
-    sizes = [default_size(c) for c in comps]
+
+    def size(c: Element) -> tuple:
+        """A size the user set by resizing, else the automatic one (which follows the ports)."""
+        w, h = default_size(c)
+        lay = c.tool_data.get("layout")
+        if isinstance(lay, dict):
+            w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
+            h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
+        return w, h
+    sizes = [size(c) for c in comps]
     col_w = max([w for w, _ in sizes] or [DEFAULT_W])
     pos_rank: dict[int, float] = {}
     positions: dict[str, dict] = {}
@@ -1626,7 +1635,10 @@ def auto_layout(repo, composition: Element) -> dict:
         for rank, i in enumerate(members):
             w, h = sizes[i]
             box = {"x": _GRID_X0 + k * (col_w + _GAP_X), "y": round(y), "w": w, "h": h}
-            comps[i].tool_data["layout"] = box
+            old = comps[i].tool_data.get("layout")
+            # Only positions are stored: a size stays automatic unless the user resized it.
+            comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
+                k2: old[k2] for k2 in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k2), (int, float))}}
             positions[comps[i].element_id] = box
             pos_rank[i] = rank
             y += h + _GAP_Y

@@ -47,6 +47,19 @@ test("backward route detours below the boxes", () => {
   assert.ok(Math.max(...pts.map(p => p.y)) > 160, JSON.stringify(pts));
 });
 
+test("Z routes bend around other blocks", () => {
+  const a = { x: 230, y: 100, nx: 1, ny: 0 }, b = { x: 700, y: 200, nx: -1, ny: 0 };
+  const block = { x: 430, y: 60, w: 160, h: 100 };              // straddles the middle
+  const pts = G.route(a, b, { obstacles: [block] });
+  assert.ok(orthogonal(pts));
+  for (let i = 0; i < pts.length - 1; i++) {
+    assert.ok(!G.segmentHits(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, [block], 0), JSON.stringify(pts));
+  }
+  assert.equal(G.route(a, b).length, 4);
+  assert.equal(G.segmentHits(0, 0, 100, 0, [{ x: 40, y: -5, w: 10, h: 10 }]), true);
+  assert.equal(G.segmentHits(0, 0, 100, 0, [{ x: 40, y: 20, w: 10, h: 10 }]), false);
+});
+
 test("mixed and vertical sides stay orthogonal", () => {
   for (const [an, bn] of [[[1, 0], [0, -1]], [[0, 1], [-1, 0]], [[0, 1], [0, -1]], [[0, -1], [0, -1]], [[1, 0], [1, 0]]]) {
     const pts = G.route({ x: 0, y: 0, nx: an[0], ny: an[1] }, { x: 200, y: 150, nx: bn[0], ny: bn[1] });
