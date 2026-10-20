@@ -381,4 +381,4 @@ nesting cycles) on a copy of the project before anything changes.
 | Physical element through/across variables and Simscape domain parameters | deferred | a physical element carries its domain only |
 | Bus-typed function arguments | deferred | arguments use built-in types or value types |
 | AUTOSAR interface flavours (sender-receiver, mode-switch, nv-data) | deferred | not needed for the avionics target |
-| Undo / redo of interface edits | deferred | the studio has no undo stack yet |
+| Undo / redo of interface edits | closed | every interface edit is one step of the studio's global undo history (Ctrl+Z / Ctrl+Y, Edit: Undo / Redo); steps are named, e.g. "Assign A429Word to ADIRU.airData"; creating an interface or element and naming it in place is one step |

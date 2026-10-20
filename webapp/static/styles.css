@@ -60,3 +60,33 @@
 .tree-badge { font-size:.65rem; margin-left:.35rem; padding:0 .3rem; border-radius:.25rem; background:#f1f5f9; color:#475569; }
 .inspector-section { border-top:1px solid #e2e8f0; padding-top:.75rem; }
 .inspector-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:#64748b; margin-bottom:.5rem; font-weight:600; }
+
+/* Toolstrip (ribbon): sections by task, each with a caption; plugin groups are clusters. */
+.rb { display:flex; align-items:stretch; flex-wrap:wrap; gap:0; background:#fff; border-bottom:1px solid #e2e8f0;
+      padding:.25rem .5rem 0; font-size:.75rem; }
+.rb-section { display:flex; flex-direction:column; padding:0 .4rem; border-right:1px solid #e2e8f0; }
+.rb .btn-action { padding:.15rem .4rem; white-space:nowrap; }
+.rb-section:last-of-type { border-right:0; }
+.rb-section:not(:has(button)) { display:none; }
+.rb-tools { display:flex; align-items:center; gap:.25rem; min-height:1.75rem; flex-wrap:wrap; }
+.rb-group { display:inline-flex; align-items:center; gap:.25rem; }
+.rb-group + .rb-group { border-left:1px dotted #cbd5e1; padding-left:.25rem; }
+.rb-caption { font-size:.6rem; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; text-align:center; padding:.1rem 0 .2rem; }
+.rb .btn-action.rb-on { background:#dbeafe; border-color:#bfdbfe; color:#1d4ed8; }
+.rb .btn-action[disabled] { opacity:.45; cursor:not-allowed; }
+.rb-menu { position:absolute; left:0; top:calc(100% + 4px); z-index:40; background:#fff; color:#0f172a; min-width:240px;
+           border:1px solid #e2e8f0; border-radius:.375rem; box-shadow:0 10px 25px -5px rgba(15,23,42,.25); padding:.25rem 0;
+           font-size:.8rem; max-height:75vh; overflow:auto; }
+.rb-menu.hidden { display:none; }
+#advanced-menu { left:auto; right:.5rem; }
+.rb-menu > button, .rb-menu-grid > button { display:flex; width:100%; justify-content:space-between; align-items:center; gap:1rem;
+           padding:.3rem .75rem; text-align:left; background:none; border:0; border-radius:0; color:#0f172a; font-size:.8rem; }
+.rb-menu > button:hover, .rb-menu > button:focus, .rb-menu-grid > button:hover, .rb-menu-grid > button:focus { background:#eff6ff; outline:none; }
+.rb-menu-grid { display:grid; grid-template-columns:1fr 1fr; }
+.rb-menu-h { font-size:.62rem; letter-spacing:.06em; text-transform:uppercase; color:#94a3b8; padding:.45rem .75rem .15rem; }
+.rb-menu kbd { font-family:inherit; font-size:.65rem; color:#94a3b8; pointer-events:none; }
+
+/* Output pane: collapsible to its header. */
+#output-pane.collapsed { height:auto; }
+#output-pane.collapsed #log { display:none; }
+#output-pane.collapsed > div:first-child { border-bottom:0; }

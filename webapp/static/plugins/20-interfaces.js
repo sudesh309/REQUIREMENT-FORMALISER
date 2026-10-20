@@ -611,8 +611,12 @@ export default function install(studio) {
 
   async function patchElement(el, fields, field) {
     const d = S.detail;
+    // Naming a just-added element joins its creation's undo step.
+    const created = S.created === el.id && "name" in fields ? el.id : null;
+    S.created = null;
     try {
-      const r = await api("PATCH", `/api/interfaces/item/${encodeURIComponent(d.id)}/elements/${encodeURIComponent(el.id)}`, fields);
+      const r = await api("PATCH", `/api/interfaces/item/${encodeURIComponent(d.id)}/elements/${encodeURIComponent(el.id)}`, fields,
+                          { undoMerge: created });
       S.detail = r.interface;
       for (const w of r.warnings || []) studio.log(`${d.name}.${r.element.name}: ${w}`, "warning");
       S.nested.clear();
@@ -636,8 +640,10 @@ export default function install(studio) {
   async function patchItem(fields) {
     const d = S.detail;
     if (!d) return;
+    const created = S.created === d.id && "name" in fields ? d.id : null;
+    S.created = null;
     try {
-      const r = await api("PATCH", `/api/interfaces/item/${encodeURIComponent(d.id)}`, fields);
+      const r = await api("PATCH", `/api/interfaces/item/${encodeURIComponent(d.id)}`, fields, { undoMerge: created });
       for (const w of r.warnings || []) studio.log(`${r.name}: ${w}`, "warning");
       S.detail = r;
       if ("name" in fields) studio.log(`Renamed ${d.name} → ${r.name}`, "ok");
@@ -676,7 +682,7 @@ export default function install(studio) {
         const idx = d.elements.findIndex((x) => x.id === S.sel);
         const r = await api("POST", `/api/interfaces/item/${encodeURIComponent(d.id)}/elements`,
                             idx >= 0 ? { index: idx + 1 } : {});
-        S.detail = r.interface; S.sel = r.element.id;
+        S.detail = r.interface; S.sel = r.element.id; S.created = r.element.id;
         await refreshTreeQuietly();
         await reload({ keepTable: true });
         await renderTable();
@@ -728,7 +734,7 @@ export default function install(studio) {
   async function createItem(kind, extra = {}) {
     const item = await api("POST", "/api/interfaces", kind ? { kind, ...extra } : extra);
     studio.log(`Created ${KIND_LABEL[item.kind] || item.kind} ${item.name}`, "ok");
-    S.currentId = item.id; S.sel = null; S.expanded.clear();
+    S.currentId = item.id; S.sel = null; S.expanded.clear(); S.created = item.id;
     await refreshTreeQuietly();
     await reload();
     focusName();

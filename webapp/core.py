@@ -10,6 +10,8 @@ Extension points
 - ``register_kind(name, cls)``        make a metaclass creatable via POST /api/element
 - ``register_summary_hook(fn)``       ``fn(element, summary_dict)`` adds fields to element JSON
 - ``register_prop_hook(fn)``          ``fn(element, key, value) -> bool`` handles a PATCH prop
+- ``register_undo_label(m, pat, l)``  human-readable undo step name of a route (str or fn(ctx))
+- ``register_mutation_hook(fn)``      runs around every non-GET request (undo snapshots)
 - ``session()`` / ``reset_session()`` the single shared Session
 
 Handlers receive ``request = {"body": dict|None, "query": dict}`` plus any
@@ -17,7 +19,10 @@ named regex groups, and return ``(status, payload)`` — use ``ok()`` / ``err()`
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+import re
+import threading
+import urllib.parse
+from typing import Any, Callable, Optional, Union
 
 from engine import Repository
 from engine.properties import set_property
@@ -88,17 +93,25 @@ class Session:
         self.runners: dict[str, StateMachineRunner] = {}
         # Free-form per-session state for plugins (e.g. undo stacks), keyed by plugin name.
         self.plugin_state: dict[str, Any] = {}
+        # Model revision: changes whenever a request changed the model (sent to the
+        # browser as the X-Model-Revision header so every view can tell it is stale).
+        self.revision = 0
 
     def find(self, ref: str) -> Optional[Element]:
         if not ref:
             return None
         return self.repo.by_id(ref) or self.repo.resolve(ref)
 
+    def touch(self) -> None:
+        """Record that the model changed (see ``revision``)."""
+        self.revision += 1
+
     def set_repo(self, repo: Repository) -> None:
         """Switch projects, dropping runtime state tied to the old one."""
         self.repo = repo
         self.runners.clear()
         self.plugin_state.clear()
+        self.touch()
 
 
 SESSION = Session()
@@ -199,19 +212,170 @@ def apply_props(e: Element, props: dict) -> None:
 _MUTATION_HOOKS: list[Callable[[str, str, Any], Optional[Callable[[int], None]]]] = []
 
 
+class Mutation:
+    """A non-GET API request, as mutation hooks and undo labels see it. ``status`` and
+    ``payload`` (the handler's answer) are set once the handler has run."""
+
+    def __init__(self, method: str, path: str, body: Any, headers: Optional[dict] = None) -> None:
+        self.method = method
+        self.path = path
+        self.body = body
+        self.headers = {str(k).lower(): v for k, v in (headers or {}).items()}
+        self.status: Optional[int] = None
+        self.payload: Any = None
+
+
+_CURRENT = threading.local()
+
+
+def current_mutation() -> Optional[Mutation]:
+    """The mutating request this thread is serving (None outside one)."""
+    return getattr(_CURRENT, "mutation", None)
+
+
 def register_mutation_hook(fn: Callable[[str, str, Any], Optional[Callable[[int], None]]]) -> None:
     """``fn(method, path, body)`` runs before every non-GET API request; it may return a
-    ``finish(status)`` callback that runs after the handler (e.g. to record an undo step)."""
+    ``finish(status)`` callback that runs after the handler (e.g. to record an undo step).
+    ``current_mutation()`` gives both the request headers and, in ``finish``, the payload."""
     _MUTATION_HOOKS.append(fn)
 
 
-def begin_mutation(method: str, path: str, body: Any) -> Callable[[int], None]:
-    finishers = [f for f in (hook(method, path, body) for hook in _MUTATION_HOOKS) if f]
+def begin_mutation(method: str, path: str, body: Any,
+                   headers: Optional[dict] = None) -> Callable[..., None]:
+    m = _CURRENT.mutation = Mutation(method, path, body, headers)
+    try:
+        finishers = [f for f in (hook(method, path, body) for hook in _MUTATION_HOOKS) if f]
+    except Exception:
+        _CURRENT.mutation = None
+        raise
 
-    def finish(status: int) -> None:
-        for f in finishers:
-            f(status)
+    def finish(status: int, payload: Any = None) -> None:
+        m.status, m.payload = status, payload
+        _CURRENT.mutation = m
+        try:
+            for f in finishers:
+                f(status)
+        finally:
+            _CURRENT.mutation = None
     return finish
+
+
+# --- undo step labels ---------------------------------------------------
+#
+# Each feature names the undo steps of its routes ("Set Avionics.LRU.mass of FMS",
+# "Allocate ComputeNavigation → CPM1"); the Undo / Redo buttons and the Output log show
+# them. A label is a string or ``fn(ctx: LabelContext) -> str``, called after the handler
+# ran; requests without a label get a generic one ("Edit allocation"), never a raw route.
+
+LabelSpec = Union[str, Callable[["LabelContext"], Optional[str]]]
+_UNDO_LABELS: list[tuple[str, re.Pattern, LabelSpec]] = []
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+_VERBS = {"POST": "Change", "PUT": "Edit", "PATCH": "Edit", "DELETE": "Delete"}
+
+
+def register_undo_label(method: str, pattern: str, label: LabelSpec) -> None:
+    """Name the undo step of ``method`` requests whose path matches ``pattern`` (the route's
+    regex; its named groups are ``ctx.args``, URL-decoded). Later registrations win."""
+    _UNDO_LABELS.insert(0, (method.upper(), re.compile(pattern), label))
+
+
+class LabelContext:
+    """What a label function sees: the request, its answer and the model before / after."""
+
+    def __init__(self, m: Mutation, args: dict, before: Optional[dict] = None) -> None:
+        self.method, self.path = m.method, m.path
+        self.body = m.body if isinstance(m.body, dict) else {}
+        self.payload = m.payload
+        self.args = {k: urllib.parse.unquote(v) for k, v in args.items() if v is not None}
+        self._before = before
+        self._old: Optional[dict] = None
+
+    # model lookups -------------------------------------------------------
+    def find(self, ref: Any) -> Optional[Element]:
+        """An element of the current model by id or qualified name."""
+        return SESSION.find(ref) if isinstance(ref, str) and ref else None
+
+    def old(self, ref: Any) -> Optional[dict]:
+        """The saved form of an element before the request (for deleted / renamed ones)."""
+        if self._before is None or not isinstance(ref, str):
+            return None
+        if self._old is None:
+            self._old = {}
+            for d in self._before.get("elements", ()):
+                self._old[d.get("id")] = d
+            for d in self._before.get("links", ()):
+                self._old[d.get("id")] = d
+        return self._old.get(ref)
+
+    def name(self, ref: Any, default: str = "element") -> str:
+        """Display name now (requirements by their id, e.g. SYS-3), else before the request."""
+        e = self.find(ref)
+        if e is not None:
+            return display_name(e)
+        d = self.old(ref)
+        if d:
+            return d.get("req_id") or d.get("name") or d.get("kind") or default
+        # A reference by name ("Avionics.LRU", "Pkg::FMS") reads well; an unknown id does not.
+        if isinstance(ref, str) and ref and not _UUID.search(ref):
+            return ref.rsplit("::", 1)[-1]
+        return default
+
+    def old_name(self, ref: Any) -> Optional[str]:
+        d = self.old(ref)
+        return (d.get("req_id") or d.get("name")) if d else None
+
+    def names(self, refs: Any, limit: int = 3) -> str:
+        """'ADC, FMS and 2 more'."""
+        items = [self.name(r) for r in (refs or [])]
+        if len(items) > limit:
+            return f"{', '.join(items[:limit])} and {len(items) - limit} more"
+        return ", ".join(items)
+
+    def port(self, ref: Any) -> str:
+        """'ADIRU.airData' for a port (owner name + port name)."""
+        e = self.find(ref)
+        if e is not None and e.owner is not None and e.owner is not SESSION.repo.root_package:
+            return f"{e.owner.name}.{e.name}"
+        return self.name(ref, "port")
+
+    def pid(self, key: str = "id") -> Any:
+        """A field of the answer, e.g. the id of what the request created."""
+        return self.payload.get(key) if isinstance(self.payload, dict) else None
+
+
+def display_name(e: Element) -> str:
+    return getattr(e, "req_id", None) or e.name or e.kind
+
+
+def generic_label(method: str, path: str) -> str:
+    """'Edit allocation' for routes without a label: no HTTP verbs, paths or ids."""
+    parts = [p for p in path.split("/") if p and p != "api"]
+    feature = (parts[0] if parts else "model").replace("-", " ").replace("_", " ")
+    feature = {"arch": "architecture", "req": "requirements", "sm": "state machine",
+               "element": "model", "elements": "model"}.get(feature, feature)
+    return f"{_VERBS.get(method, 'Change')} {feature}"
+
+
+def undo_label(m: Mutation, before: Optional[dict] = None) -> tuple[str, Callable[[], str]]:
+    """The undo step label of a request, and a function that recomputes it later (after an
+    in-place rename merged into the step, the label names the element's final name)."""
+    for verb, pattern, spec in _UNDO_LABELS:
+        if verb != m.method:
+            continue
+        hit = pattern.match(m.path)
+        if not hit:
+            continue
+        ctx = LabelContext(m, hit.groupdict(), before)
+
+        def compute(spec=spec, ctx=ctx) -> str:
+            try:
+                text = spec(ctx) if callable(spec) else spec
+            except Exception:          # noqa: BLE001 - a label must never break an edit
+                text = None
+            return " ".join(str(text).split()) if text else generic_label(m.method, m.path)
+        return compute(), compute
+    text = generic_label(m.method, m.path)
+    return text, lambda: text
 
 
 # --- plugin routes ------------------------------------------------------

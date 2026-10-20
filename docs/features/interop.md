@@ -120,13 +120,16 @@ The text uses standard SysML v2 notation: `package`, `part/port/attribute/item/a
 state/constraint/requirement/connection/interface def` and usages with types (`: T`),
 multiplicities (`[0..*]`), specializations (`:>`), `enum def` literals, requirement
 `id="..."` and text, `doc /* ... */` comments and `connect a to b` connections. Definitions
-are ordered so that every reference points backwards. Constructs the engine parser cannot
-read yet are written as `//` comments in SysML v2 form so the file stays re-parsable: port
-directions (`// in port navIn : A429Word;`), usages with bodies, connectors inside
-definitions, state transitions and stereotype values as metadata usages with unit literals
-(`// #Avionics.LRU { mass = 2.5 [kg]; dal = "B"; }`). The
-exporter probes the parser (`parser_capabilities()`), so these become real syntax as soon
-as the parser supports them. The SysML Text view says which constructs are commented.
+keep the model's order (the parser resolves forward references). Port directions (`in port navIn : A429Word;`,
+`out port airData;`), usages with bodies (components with their ports), connectors inside
+definitions (`connect ADC.airData to FMS.air;`), forward references and scoped package
+usages are written as real SysML v2 syntax. Constructs the engine parser cannot read yet
+are written as `//` comments in SysML v2 form so the file stays re-parsable: state
+transitions (`// transition first Off then On;`), metadata definitions (stereotypes) and
+stereotype values as metadata usages with unit literals
+(`// #Avionics.LRU { mass = 2.5 [kg]; dal = "B"; }`). The exporter probes the parser
+(`parser_capabilities()`), so these become real syntax as soon as the parser supports
+them. The SysML Text view says which constructs are commented.
 
 ### Import a SysML 1.x model from Cameo / MagicDraw (XMI)
 
@@ -462,10 +465,11 @@ Closed:
 
 Deferred:
 
-- [ ] SysML text for port directions, usage bodies, connectors inside definitions, forward
-      references, transitions and stereotype values is written as comments: the engine
-      parser (`engine/parser.py`, outside this feature) does not read them yet. The
-      exporter switches to real syntax automatically when the parser gains them.
+- [ ] SysML text for state transitions, metadata definitions and stereotype values is
+      written as comments: the engine parser (`engine/parser.py`, outside this feature)
+      does not read them yet. The exporter switches to real syntax automatically when the
+      parser gains them (port directions, usage bodies, connectors inside definitions and
+      forward references already did).
 - [ ] XMI export, and XMI import of diagrams / layout, activity and state machine
       internals, item flows, binding connectors, constraint parameters and instance
       specifications: out of the subset Cameo models need for architecture exchange.

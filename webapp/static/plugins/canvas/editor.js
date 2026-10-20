@@ -192,6 +192,12 @@ class CanvasEditor {
       this.fillOpenList();
       this.refreshing = this.refresh();
     });
+    // An edit saved elsewhere without a tree refresh (Properties tab, tables): redraw the
+    // blocks, badges and the Property Inspector from the current model.
+    s.on("element-changed", p => {
+      if (p?.selected && this.external?.id === p.selected.id) this.external = p.selected;
+      this.refreshing = this.refresh();
+    });
     s.on("tab-shown", id => { this.visible = id === "architecture"; if (this.visible) this.shown(); });
     s.on("select", el => this.onStudioSelect(el));
     s.on("selection-changed", ids => this.onStudioSelection(ids));
@@ -1559,7 +1565,7 @@ class CanvasEditor {
       : G.freeSpot(this.scene.blocks.map(b => b.box), 160, 90, this.addArea());
     const r = await this.run(() => this.studio.api("POST", "/api/arch/component", { composition: this.compId, layout: pos }),
                              { selectKeys: c => [ck(c.id)], ok: c => `Added component ${c.name}` });
-    if (r) { this.scrollIntoView(ck(r.id)); this.rename(ck(r.id)); }
+    if (r) { this.scrollIntoView(ck(r.id)); this.rename(ck(r.id), r.id); }
   }
 
   async addPort(kind, dir, compIds = null) {
@@ -1570,7 +1576,7 @@ class CanvasEditor {
       for (const id of ids) made.push({ ctx: id, p: await this.studio.api("POST", "/api/arch/port", { owner: id, kind, direction: dir }) });
       return made;
     }, { selectKeys: () => made.map(x => pk(x.ctx, x.p.id)), ok: () => `Added port ${made.map(x => x.p.name).join(", ")}` });
-    if (r && made.length === 1) this.rename(pk(made[0].ctx, made[0].p.id));
+    if (r && made.length === 1) this.rename(pk(made[0].ctx, made[0].p.id), made[0].p.id);
   }
 
   async addBoundaryPort(kind, dir, at = null) {
@@ -1579,7 +1585,7 @@ class CanvasEditor {
     if (at && this.scene) Object.assign(body, G.nearestSide(this.scene.frame, at));
     const r = await this.run(() => this.studio.api("POST", "/api/arch/port", body),
                              { selectKeys: p => [pk(null, p.id)], ok: p => `Added boundary port ${p.name}` });
-    if (r) this.rename(pk(null, r.id));
+    if (r) this.rename(pk(null, r.id), r.id);
   }
 
   nameProblem(key, name) {
@@ -1597,50 +1603,51 @@ class CanvasEditor {
     return taken.some(x => x.id !== id && x.name === name) ? `${owner} already has a member named '${name}'` : null;
   }
 
-  rename(key) {
+  // `created` = the id of an element just added: naming it joins its creation's undo step.
+  rename(key, created = null) {
     if (!key || !this.scene) return;
     const el = this.dom.get(key);
     if (!el) return;
     const { type } = parseKey(key);
     if (type === "component") {
       const b = this.scene.blockByKey.get(key);
-      this.inline.edit(el.querySelector('[data-role="name"]'), b.c.name, n => this.commitRename(key, n),
+      this.inline.edit(el.querySelector('[data-role="name"]'), b.c.name, n => this.commitRename(key, n, created),
                        { minWidth: Math.max(110, b.box.w * this.vp.zoom - 10) });
     } else if (type === "port") {
       const pt = this.scene.ports.get(key);
-      this.inline.edit(el.querySelector('[data-role="port-label"]') || el, pt.p.name, n => this.commitRename(key, n));
+      this.inline.edit(el.querySelector('[data-role="port-label"]') || el, pt.p.name, n => this.commitRename(key, n, created));
     } else {
       const k = this.scene.connByKey.get(key);
       if (!k) return;
       this.inline.edit(this.labels.get(key)?.querySelector("text") || el.querySelector(".arch-conn-line"), k.c.name,
-                       n => this.commitRename(key, n));
+                       n => this.commitRename(key, n, created));
     }
   }
 
-  commitRename(key, name) {
+  commitRename(key, name, created = null) {
     name = String(name || "").trim();
     if (!name || !this.view) return null;
     const bad = this.nameProblem(key, name);
     if (bad) { this.toast(bad, "error"); this.updateChrome(); return null; }
     const { type, id } = parseKey(key);
     const url = type === "component" ? `/api/arch/component/${id}` : type === "port" ? `/api/arch/port/${id}` : `/api/arch/connector/${id}`;
-    return this.run(() => this.studio.api("PATCH", url, { name }), { ok: `Renamed to ${name}` });
+    return this.run(() => this.studio.api("PATCH", url, { name }, { undoMerge: created }), { ok: `Renamed to ${name}` });
   }
 
-  renameComposition() {
+  renameComposition(created = null) {
     if (!this.view) return;
     const t = this.L.frame.querySelector('[data-role="frame-name"]');
-    if (t) this.inline.edit(t, this.view.composition.name, n => this.commitCompositionName(n), { minWidth: 160 });
+    if (t) this.inline.edit(t, this.view.composition.name, n => this.commitCompositionName(n, created), { minWidth: 160 });
   }
 
-  commitCompositionName(name) {
+  commitCompositionName(name, created = null) {
     name = String(name || "").trim();
     const c = this.view?.composition;
     if (!c || !name || name === c.name) return null;
     if (/::|[.\t\r\n]/.test(name)) { this.toast(`A name may not contain '::', '.', tabs or line breaks: ${name}`, "error"); return null; }
     return this.run(() => (c.kind === "PartUsage"
-      ? this.studio.api("PATCH", `/api/arch/component/${c.id}`, { name })
-      : this.studio.api("PATCH", `/api/element/${c.id}`, { props: { name } })), { ok: `Renamed to ${name}` });
+      ? this.studio.api("PATCH", `/api/arch/component/${c.id}`, { name }, { undoMerge: created })
+      : this.studio.api("PATCH", `/api/element/${c.id}`, { props: { name } }, { undoMerge: created })), { ok: `Renamed to ${name}` });
   }
 
   updatePort(id, body) {
@@ -1708,7 +1715,7 @@ class CanvasEditor {
     if (!comps.length) { this.toast("Select the components to group", "warning"); return; }
     const g = await this.run(() => this.studio.api("POST", "/api/arch/group", { composition: this.compId, component_ids: comps.map(c => c.id) }),
                              { selectKeys: r => [ck(r.id)], ok: r => `Created ${r.name} from ${comps.length} component(s)` });
-    if (g) this.rename(ck(g.id));
+    if (g) this.rename(ck(g.id), g.id);
   }
 
   async expand() {

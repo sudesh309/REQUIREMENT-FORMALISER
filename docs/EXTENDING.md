@@ -65,6 +65,34 @@ register_summary_hook(lambda e, d: d.update(variant=...))   # extra fields in el
 register_prop_hook(lambda e, key, value: ...)          # return True if it handled a PATCH prop
 ```
 
+**Undo step labels.** Every non-GET request that changes the model becomes
+one undo step automatically. Name it for users (the Undo / Redo tooltips and
+the Output log show it) next to the route; no label ever shows an HTTP
+method, a route or an id:
+
+```python
+from webapp.core import register_undo_label
+
+register_undo_label("POST", r"^/api/variants/(?P<vid>[^/]+)/activate$",
+                    lambda c: f"Activate {c.name(c.body.get('choice'))} in {c.name(c.args['vid'])}")
+```
+
+The function runs after the handler and gets a `LabelContext`: `c.body`,
+`c.payload` (the answer; `c.pid()` is its `id`), `c.args` (URL-decoded named
+groups), `c.name(ref)` (display name now, or before the request for deleted
+elements; requirements by their id such as SYS-3), `c.old_name(ref)`,
+`c.names(refs)` and `c.port(ref)` ("ADIRU.airData"). Unlabelled routes get a
+generic label ("Edit variants"). The labels of the wave-1 features are in
+`webapp/routes/labels.py`.
+
+**Create, then name in place = one step.** When the UI names an element in
+place right after creating it (canvas Add Component / Group / ports, a new
+interface or element, a new requirement's summary), it sends the rename with
+`studio.api(method, path, body, { undoMerge: <new element id> })`. The server
+folds that edit into the creation step (only if the creation is the latest
+step), so one Ctrl+Z removes the element and the step is labelled with its
+final name ("Group ADIRU, FMS into CPM_Pair").
+
 Never import `webapp.server` from a plugin: under `python -m webapp.server`
 it is `__main__`, and a second import would create a second session. Use
 `session().plugin_state["<feature>"]` for runtime state; it is cleared when
@@ -81,8 +109,11 @@ function (it may be async; it is awaited before the next plugin loads):
 export default async function install(studio) {
   const pane = studio.registerTab({ id: "variants", title: "Variants", order: 30,
                                     mount(pane) { ... }, onShow(selected) { ... } });
-  studio.registerToolbarButton({ id: "add-variant", label: "Variant", group: "Arch",
-                                 title: "Add variant component", onClick() { ... } });
+  // The toolstrip is organised by task: section "modeling" | "views" | "requirements" |
+  // "analysis" | "interop" (default: from the group, see RIBBON_SECTION_OF_GROUP in app.js,
+  // else "modeling"); each group is a cluster inside its section.
+  studio.registerToolbarButton({ id: "add-variant", label: "Variant", group: "Variants",
+                                 section: "modeling", title: "Add variant component", onClick() { ... } });
   studio.registerInspectorSection({ id: "variant", title: "Variant", order: 20,
                                     render(el, container) { /* return false to hide */ } });
   studio.registerTreeBadge(node => node.variant ? "V" : null);
@@ -93,7 +124,9 @@ export default async function install(studio) {
   studio.on("tab-shown", id => ...);
   studio.emit("my-event", payload);        // plugins can talk to each other
 
-  await studio.api("GET", "/api/...");      // throws on non-2xx and logs the error
+  await studio.api("GET", "/api/...");      // throws on non-2xx and logs the error (in words:
+                                            // no HTTP method, route or ids)
+  await studio.api("PATCH", url, body, { undoMerge: newId });   // see "Create, then name"
   studio.log("done", "ok");                 // severities: info, ok, warning, error
   studio.modal(title, formHtml, async values => { ... });
   const v = await studio.dialog(title, formHtml, { ok: "Add" });  // values or null (no window.prompt/confirm)
@@ -105,6 +138,13 @@ export default async function install(studio) {
 Tailwind utility classes (v4, vendored) and the component classes in
 `styles.css` (`btn-primary`, `btn-action`, `input`, ...) are available.
 No build step: write plain browser JavaScript.
+
+Studio chrome rules: dialogs are `studio.modal` (never `window.prompt`,
+`confirm` or `alert`; `tests/test_studio_chrome.py` checks it). A feature's
+editor is a tab; add a button that opens it to the toolstrip section of its
+task (`RIBBON_EDITORS` in `app.js`). Generic SysML element commands, legacy
+dialogs and rarely used tabs (Links, Parser) belong in the **Advanced ▾**
+menu at the end of the tab bar.
 
 ## MCP (`mcp_server/core.py`)
 
@@ -131,6 +171,28 @@ TOOLS = [{"name": "sysml_set_active_choice", "description": "...",
   default-exports `async ({page, api, fresh, waitReady, expect}) => {...}`;
   any browser console error fails the scenario. Run one with
   `UI_FILTER=<name> python -m unittest tests.test_ui_browser`.
+
+### Wave gate (mandatory before a wave closes)
+
+`tests/ui/scenarios/99_avionics_e2e.mjs` builds a small avionics model the way
+an engineer does, with **GUI gestures only**: New model, functional and
+physical architectures drawn on the canvas, an ARINC 429 interface dragged
+from the Interface Editor onto a port, a profile with mass / power / DAL
+values, a requirement set whose rows are dragged onto blocks, an allocation
+matrix, a Model Check finding fixed in the editors, a report, and Save JSON /
+New / Load JSON. Along the way it checks the canvas Property Inspector, the
+block badges, the undo labels and the Model Check count, and at the end that
+no request failed, no native dialog opened and the Output log holds no error.
+
+- A wave is closed only when `UI_GATE=1 python -m unittest tests.test_ui_browser`
+  passes (with `UI_GATE` set, a missing Node.js / Playwright fails instead of
+  skipping) together with the rest of `python -m unittest discover -s tests`.
+- Each wave **extends** the scenario with its features, through their real
+  gestures (a drag is a drag, not `studio.emit`). `tests/test_wave_gate.py`
+  rejects API writes (`api("POST" | "PATCH" | "DELETE")`), `fresh()` and
+  `window.studio` calls in it, and lists the features it must cover.
+- `UI_E2E_SHOTS=1` keeps a screenshot of every stage in `UI_ARTIFACT_DIR`
+  for the acceptance review.
 
 ## Cross-feature contracts
 
@@ -177,10 +239,35 @@ features react with `engine.register_created_hook(fn(element, repo))`
 | `project-changed` | `{reason: "new" \| "load"}` | the project is about to be replaced (emitted before the tree reloads); drop per-project UI state such as zoom |
 | `project-saved` | `null` | *Save JSON* finished (after every `registerUnsavedCheck` `saved()` ran) |
 | `drop-on-element` | `{dragged_id, target_id}` | an element was dragged (HTML5, see below) onto a canvas block, port or connector (`target_id` = its element id; dropped on the canvas background: the composition's id); handled by the dragged element's feature |
+| `element-changed` | `{revision, selected}` | the model changed but nobody refreshed the tree (see below); `selected` is the fresh summary of the selected element, if any |
 | `select` / `model-changed` / `tab-shown` | see above | core events |
 
 `studio.setSelection(ids)` sets the multi-selection (canvas rubber band,
 table rows); `studio.getSelection()` falls back to the selected element.
+
+**Model changes reach every view** (the rule): every successful request that
+changes the model results in `model-changed` or `element-changed`, whichever
+feature sent it. The server stamps each API response with an
+`X-Model-Revision` header (`Session.revision`, moved by `Session.touch()`: the
+undo hook calls it whenever a request changed the model, and `set_repo` on
+new / load / undo / redo). `studio.api` watches the header. A feature that
+calls `studio.refreshTree()` after its edit gets `model-changed` (as before);
+an editor that saves in place and keeps its focus (the Stereotypes section of
+the Properties tab, table cells) need not do anything: once its request has
+returned and the tree was not refreshed, the studio emits `element-changed`
+and updates `studio.selected` without re-rendering the Properties tab.
+"Returned" means no `studio.api` request is in flight any more: a command that
+sends several requests before it refreshes the tree (New model: a new project,
+then its architecture) gets one `model-changed` at the end and no
+`element-changed` in between, so no view reloads from the old tree. So:
+
+- Displays that mirror the model (canvas blocks, badges and Property Inspector,
+  undo / redo buttons, Model Check results) listen to **both** events.
+- Editors with keyboard focus (Profile Editor, requirement and interface
+  tables) reload on `model-changed` only, or just mark themselves stale on
+  `element-changed`, so typing is never interrupted.
+- A route that changes the model outside a tracked request (rare) calls
+  `session().touch()` itself.
 
 **Dragging elements** (HTML5 drag and drop): a drag source puts the element id
 in `dataTransfer` under the type `application/x-sysml-element` (and may set

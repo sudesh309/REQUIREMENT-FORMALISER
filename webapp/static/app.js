@@ -34,20 +34,99 @@ const shortcuts = [];                // {key, ctrl, shift, alt, handler}
 
 /* ---------- API ---------- */
 
-async function api(method, path, body) {
-  const resp = await fetch(path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await resp.text();
+// opts.undoMerge = <element id>: this edit completes the creation of that element (naming
+// it in place right after adding it), so it joins the creation's undo step.
+async function api(method, path, body, opts = {}) {
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  if (opts.undoMerge) headers["X-Undo-Merge"] = opts.undoMerge;
+  let resp, text;
+  rev.inflight++;
+  try {
+    resp = await fetch(path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    text = await resp.text();
+  } finally {
+    rev.inflight--;
+    if (!rev.inflight && settlePending()) scheduleSettle();   // also after a network error
+  }
+  noteRevision(resp.headers.get("X-Model-Revision"));
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
   if (!resp.ok) {
-    log(`${resp.status} ${method} ${path}: ${data?.error || text}`, "error");
-    throw new Error(data?.error || text);
+    // Users read messages, not routes: no HTTP method, path or element ids.
+    const message = readableError(data?.error || text || resp.statusText, resp.status);
+    log(message, "error");
+    throw new Error(message);
   }
   return data;
+}
+
+const UUID_RE = /'?\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b'?/gi;
+
+// An error message with element ids replaced by names (or "an element" when unknown).
+function readableError(message, status = 0) {
+  let text = String(message || "").trim();
+  if (status >= 500) text = text.split("\n")[0] || "Internal error";
+  text = text.replace(UUID_RE, (m) => {
+    const id = m.replace(/'/g, "");
+    const node = state.treeIndex.get(id);
+    return node ? `'${node.name || node.kind}'` : "an element";
+  });
+  return text || (status === 404 ? "Not found" : "The request failed");
+}
+
+/* ---------- model revision: every view hears about every model change ---------- */
+//
+// The server stamps each API response with X-Model-Revision, which moves whenever a
+// request changed the model, whichever feature sent it. A tree refresh emits
+// "model-changed"; when the model moved and nobody refreshed the tree (an editor that
+// saved in place, keeping its focus), the studio emits "element-changed" instead once
+// the request's caller is done, so the canvas, its Property Inspector and the undo
+// buttons are never stale. studio.selected follows silently (no re-render).
+// "Done" means no studio.api request is in flight: a command that sends several requests
+// before refreshing the tree (New model: new project, then its architecture) must not
+// have views reload from the old tree in between.
+
+const rev = { seen: null, tree: null, notified: null, refreshing: 0, inflight: 0, timer: 0 };
+
+function noteRevision(header) {
+  if (header === null || header === undefined) return;
+  if (rev.seen === null) { rev.seen = rev.tree = rev.notified = header; return; }
+  rev.seen = header;
+  if (settlePending()) scheduleSettle();
+}
+
+// The model moved and no view has heard of it yet.
+function settlePending() {
+  return rev.seen !== null && rev.seen !== rev.tree && rev.seen !== rev.notified;
+}
+
+function scheduleSettle() {
+  clearTimeout(rev.timer);
+  // After the caller's continuation: a caller that refreshes the tree right after its
+  // edit gets model-changed only.
+  rev.timer = setTimeout(settle, 0);
+}
+
+async function settle() {
+  // A request still running reschedules the settle when its answer arrives.
+  if (rev.refreshing || rev.inflight || !settlePending()) return;
+  const revision = rev.notified = rev.seen;
+  let selected = null;
+  if (state.selectedId) {
+    try {
+      // Plain fetch: an element deleted meanwhile is not an error worth logging.
+      const r = await fetch(`/api/element/${encodeURIComponent(state.selectedId)}`);
+      if (r.ok) {
+        const el = await r.json();
+        if (el?.id === state.selectedId) state.selected = selected = el;
+      }
+    } catch { /* offline: the next refresh catches up */ }
+  }
+  emit("element-changed", { revision, selected });
 }
 
 /* ---------- log + status ---------- */
@@ -59,20 +138,57 @@ function log(msg, severity = "info") {
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n`;
   pre.appendChild(line);
   pre.scrollTop = pre.scrollHeight;
+  noteUnread(severity);
 }
 
 function setStatus(text) { $("#status").textContent = text; }
 
+/* ---------- output pane: collapsible, remembers its state ---------- */
+
+const LOG_KEY = "studio.output.collapsed";
+let unread = 0;
+
+function logCollapsed() { return $("#output-pane").classList.contains("collapsed"); }
+
+function setLogCollapsed(on) {
+  const pane = $("#output-pane"), btn = pane.querySelector('[data-cmd="toggle-log"]');
+  pane.classList.toggle("collapsed", on);
+  btn.textContent = on ? "▸" : "▾";
+  btn.setAttribute("aria-expanded", on ? "false" : "true");
+  btn.title = on ? "Show the output pane" : "Collapse the output pane";
+  if (!on) { unread = 0; noteUnread(); }
+  try { localStorage.setItem(LOG_KEY, on ? "1" : ""); } catch { /* private mode */ }
+}
+
+// While collapsed, warnings and errors are counted on the pane's header.
+function noteUnread(severity) {
+  const badge = $("#log-unread");
+  if (!badge) return;
+  if (severity && logCollapsed() && (severity === "error" || severity === "warning")) unread++;
+  badge.textContent = unread ? `${unread} new` : "";
+  badge.classList.toggle("hidden", !unread);
+}
+
+try { if (localStorage.getItem(LOG_KEY)) setLogCollapsed(true); } catch { /* private mode */ }
+
 /* ---------- tree ---------- */
 
 async function refreshTree() {
-  const tree = await api("GET", "/api/tree");
-  const state_info = await api("GET", "/api/state");
-  $("#project-name").textContent = `${state_info.name}  ·  ${state_info.element_count} elements`;
-  state.treeIndex.clear();
-  $("#tree").innerHTML = "";
-  $("#tree").appendChild(renderTreeNode(tree, 0));
-  emit("model-changed", tree);
+  rev.refreshing++;
+  try {
+    const tree = await api("GET", "/api/tree");
+    const treeRevision = rev.seen;      // the revision this tree shows
+    const state_info = await api("GET", "/api/state");
+    $("#project-name").textContent = `${state_info.name}  ·  ${state_info.element_count} elements`;
+    state.treeIndex.clear();
+    $("#tree").innerHTML = "";
+    $("#tree").appendChild(renderTreeNode(tree, 0));
+    rev.tree = treeRevision;
+    emit("model-changed", tree);
+  } finally {
+    rev.refreshing--;
+    if (rev.seen !== rev.tree) scheduleSettle();   // changed while the tree was loading
+  }
 }
 
 function renderTreeNode(node, depth) {
@@ -318,6 +434,9 @@ $("#tab-bar").addEventListener("click", (e) => {
 function switchTab(name) {
   state.tab = name;
   $$(".tab").forEach(t => t.classList.toggle("tab-active", t.dataset.tab === name));
+  // Advanced tabs (Links, Parser) only show in the tab bar while they are open.
+  $$(".tab[data-advanced-tab]").forEach(t => t.classList.toggle("hidden", t.dataset.tab !== name));
+  $$("#ribbon [data-open-tab]").forEach(b => b.classList.toggle("rb-on", b.dataset.openTab === name));
   $$(".tab-pane").forEach(p => p.classList.toggle("hidden", p.id !== `tab-${name}`));
   if (name === "diagram") refreshDiagram();
   const spec = tabs.get(name);
@@ -638,16 +757,49 @@ function registerTab({ id, title, order = 100, mount, onShow }) {
   return pane;
 }
 
-function registerToolbarButton({ id, label, title = "", group = "", onClick }) {
-  const host = $("#toolbar-plugins");
-  let grp = group ? host.querySelector(`[data-group="${group}"]`) : host;
+/* ---------- toolstrip (ribbon) ---------- */
+//
+// The toolstrip is organised by task, like System Composer's: Modeling, Views,
+// Requirements, Analysis, Interop, Advanced. A plugin button goes into the section of its
+// `group` (or the `section` it names); each group is a cluster inside its section.
+
+const RIBBON_SECTION_OF_GROUP = {
+  Edit: "modeling", Model: "modeling", Interfaces: "modeling", Profiles: "modeling",
+  Allocation: "modeling", Views: "views", View: "views", Requirements: "requirements",
+  Analysis: "analysis", Interop: "interop", Advanced: "advanced",
+};
+
+// Buttons that open the editors (tabs) of the features, added once the plugins loaded.
+const RIBBON_EDITORS = [
+  { section: "modeling", group: "Allocation", tab: "allocation", label: "Allocation",
+    title: "Allocate functions to components and hardware (Allocation tab)" },
+  { section: "views", group: "Views", tab: "architecture", label: "Canvas", title: "Architecture canvas" },
+  { section: "views", group: "Views", tab: "diagram", label: "Diagrams", title: "BDD, IBD, requirements and state machine diagrams" },
+  { section: "requirements", group: "Requirements", tab: "requirements", label: "Requirements", first: true,
+    title: "Requirement sets, requirements, links and test cases" },
+  { section: "requirements", group: "Requirements", tab: "traceability", label: "Traceability",
+    title: "Traceability matrix and diagram" },
+  { section: "analysis", group: "Analysis", tab: "checks", label: "Model Check", title: "Model Check: validator and advisor checks" },
+  { section: "interop", group: "Interop", tab: "interop", label: "Import / Export",
+    title: "Model tables, SysML text, XMI, reports" },
+  { section: "interop", group: "Interop", tab: "compare", label: "Compare", title: "Compare and merge models" },
+];
+
+function ribbonGroup(section, group) {
+  const sec = $(`#ribbon [data-section="${section}"]`) || $('#ribbon [data-section="modeling"]');
+  const tools = sec.querySelector(".rb-tools");
+  let grp = [...tools.querySelectorAll(":scope > .rb-group")].find(g => g.dataset.group === group);
   if (!grp) {
     grp = document.createElement("span");
+    grp.className = "rb-group";
     grp.dataset.group = group;
-    grp.className = "flex items-center gap-1";
-    grp.innerHTML = `<span class="mx-2 border-l h-5 border-slate-300"></span><span class="text-slate-500">${escapeHtml(group)}:</span>`;
-    host.appendChild(grp);
+    tools.appendChild(grp);
   }
+  return grp;
+}
+
+function registerToolbarButton({ id, label, title = "", group = "", section = "", onClick }) {
+  const grp = ribbonGroup(section || RIBBON_SECTION_OF_GROUP[group] || "modeling", group || "Other");
   const btn = document.createElement("button");
   btn.className = "btn-action"; btn.textContent = label; btn.title = title;
   if (id) btn.dataset.pluginButton = id;
@@ -655,6 +807,53 @@ function registerToolbarButton({ id, label, title = "", group = "", onClick }) {
   grp.appendChild(btn);
   return btn;
 }
+
+function addEditorButtons() {
+  for (const ed of RIBBON_EDITORS) {
+    if (!tabs.has(ed.tab) && !$(`.tab[data-tab="${ed.tab}"]`)) continue;
+    const grp = ribbonGroup(ed.section, ed.group);
+    const btn = document.createElement("button");
+    btn.className = "btn-action"; btn.textContent = ed.label; btn.title = ed.title;
+    btn.dataset.openTab = ed.tab;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); closeMenus(); switchTab(ed.tab); });
+    if (ed.first) grp.prepend(btn); else grp.appendChild(btn);
+  }
+  $$("#ribbon [data-open-tab]").forEach(b => b.classList.toggle("rb-on", b.dataset.openTab === state.tab));
+}
+
+function closeMenus(except = null) {
+  for (const m of $$("#advanced-menu, #export-menu")) {
+    if (m !== except) m.classList.add("hidden");
+  }
+  $('[data-cmd="advanced-menu"]')?.setAttribute("aria-expanded", except?.id === "advanced-menu" ? "true" : "false");
+}
+
+// Ribbon commands (the header's File commands are handled above).
+document.addEventListener("click", (e) => {
+  const el = e.target.closest?.("[data-cmd]");
+  const cmd = el?.dataset.cmd;
+  if (cmd === "advanced-menu") {
+    const menu = $("#advanced-menu");
+    const open = menu.classList.contains("hidden");
+    closeMenus(open ? menu : null);
+    menu.classList.toggle("hidden", !open);
+    if (open) menu.querySelector("button:not([hidden])")?.focus();
+    return;
+  }
+  if (cmd === "toggle-log") { setLogCollapsed(!logCollapsed()); return; }
+  if (cmd === "show-tab") { closeMenus(); switchTab(el.dataset.showTab); return; }
+  // Any other click closes the menus (a menu item runs its command first).
+  if (cmd !== "export-menu" && !e.target.closest?.("#advanced-menu .rb-menu-h")) closeMenus();
+});
+$("#advanced-menu").addEventListener("keydown", (e) => {
+  const items = [...$("#advanced-menu").querySelectorAll("button")].filter(b => b.offsetParent);
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") { e.preventDefault(); closeMenus(); $('[data-cmd="advanced-menu"]').focus(); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+  }
+});
 
 function registerInspectorSection({ id, title, order = 100, render }) {
   inspectorSections.push({ id, title, order, render });
@@ -687,7 +886,8 @@ const studio = {
   get selected() { return state.selected; },
   getSelection, setSelection,
   refreshTree, selectElement, switchTab, refreshDiagram,
-  // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id)
+  // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id),
+  //         "element-changed" ({revision, selected}: the model changed without a tree refresh)
   on, emit,
   // UI helpers
   log, setStatus, escapeHtml, modal, dialog, download, openFile,
@@ -716,6 +916,7 @@ async function loadPlugins() {
 
 (async () => {
   await loadPlugins();
+  addEditorButtons();
   try { await refreshTree(); } catch (e) { log(String(e), "error"); }
   log("SysML v2 Studio ready.", "ok");
 })();

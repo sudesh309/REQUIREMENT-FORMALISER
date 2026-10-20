@@ -649,8 +649,11 @@ export default async function install(studio) {
     if (!r) return;
     const current = field === "id" ? r.req_id : r[field];
     if ((current ?? "") === value) return;
+    // Typing the summary of a just-added requirement joins its creation's undo step.
+    const created = S.createdReq === id && field === "summary" ? id : null;
+    S.createdReq = null;
     try {
-      await api("PATCH", `/api/req/requirements/${encodeURIComponent(id)}`, { [field]: value });
+      await api("PATCH", `/api/req/requirements/${encodeURIComponent(id)}`, { [field]: value }, { undoMerge: created });
       studio.log(`Updated ${field} of ${r.req_id || r.summary}`, "ok");
     } finally {
       await afterChange({ tree: field === "summary" || field === "id" });
@@ -752,6 +755,7 @@ export default async function install(studio) {
     }
     const created = await api("POST", "/api/req/requirements", body);
     S.selId = created.id;
+    S.createdReq = created.id;
     S.view = "requirements";
     studio.log(`Added requirement ${created.req_id}`, "ok");
     await afterChange({ tree: true });
@@ -1610,6 +1614,11 @@ export default async function install(studio) {
       if (S.visible.req || dockVisible()) run(loadTable)();
       if (S.visible.tm) run(loadTraceability)();
     }, 40);
+  });
+  // An edit saved in place elsewhere (no tree refresh): hidden views reload when shown.
+  studio.on("element-changed", () => {
+    if (!S.visible.req && !dockVisible()) S.dirty.req = true;
+    if (!S.visible.tm) S.dirty.tm = true;
   });
   studio.on("select", (el) => {
     updateSelectionNote();

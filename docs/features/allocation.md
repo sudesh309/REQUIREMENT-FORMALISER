@@ -306,7 +306,7 @@ components. Targets with nothing allocated are absent.
 | canvas-allocation-gestures | deferred | allocating by dragging between components on the architecture canvas belongs to the canvas feature; it can call `POST /api/allocation/allocate` |
 | default-allocation-stereotype | deferred | System Composer can stamp a default stereotype on new allocations; profiles' created hook can do this once it supports allocations |
 | variant-aware-allocation | deferred | allocations to variant choices are not filtered by the active variant (variants feature not built yet) |
-| undo-redo | deferred | allocation edits are not on an undo stack in this branch; the architecture feature owns undo |
+| undo-redo | closed | every allocation edit is one named step of the studio's global undo history ("Allocate ComputeNavigation → CPM1"), Ctrl+Z / Ctrl+Y |
 
 ## Known limitations
 

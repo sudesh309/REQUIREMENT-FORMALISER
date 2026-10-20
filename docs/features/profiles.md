@@ -410,8 +410,10 @@ Deferred (with reasons):
   no shared file store).
 - **Custom icon images**: only the fixed icon set (no image upload / asset
   store in the prototype).
-- **Copy / paste stereotypes between profiles** and **undo** in the editor:
-  the studio has no clipboard or undo stack yet (core feature).
+- **Copy / paste stereotypes between profiles**: the studio has no clipboard
+  for profile elements yet (core feature). Undo / redo is available: every
+  Profile Editor and Stereotypes-section edit is one named step of the
+  studio's global undo history ("Set Avionics.LRU.mass of FMS"), Ctrl+Z / Ctrl+Y.
 - **View filters by stereotype / property value** and **analysis roll-ups**
   belong to the views and analysis features; they read values through
   `engine.profiles` (see *Cross-feature notes*).
