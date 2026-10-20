@@ -99,8 +99,9 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await page.waitForFunction(() => document.querySelector("#project-name")?.textContent.startsWith("Fresh"));
   await page.waitForSelector(".arch-empty:not([hidden])");
 
-  // Core "Add" buttons and element delete use styled dialogs too.
-  await page.click('.btn-add[data-kind="Package"]');
+  // Core "Add" buttons (now in the Advanced menu) and element delete use styled dialogs too.
+  await page.click('[data-cmd="advanced-menu"]');
+  await page.click('#advanced-menu .btn-add[data-kind="Package"]');
   await page.waitForSelector("#modal-root input[name=name]");
   await page.fill("#modal-root input[name=name]", "Pkg");
   await page.press("#modal-root input[name=name]", "Enter");
