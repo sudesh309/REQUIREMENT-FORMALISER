@@ -219,8 +219,16 @@ flowchart LR
   applied after the drop.
 - The frame is fitted around the components (min 520 × 320); connectors use
   orthogonal routes with stubs out of the ports, bending in the free channel
-  closest to the middle so they do not run under other blocks; manual routes
-  are kept as `points`.
+  closest to the middle. A route that would still run under a block (one that is
+  not its end, or its own blocks after the port stubs) is replaced by the shortest
+  route around every block (`geometry.avoidPath`: a search over the lines along the
+  block edges, 10 px off them, with a cost per bend), so a line never suggests a
+  data flow through a block it does not touch. While a block or port is dragged the
+  quick route is drawn; the full one follows the drop. Manual routes are kept as
+  `points`.
+- Connector labels are placed beside a segment where they cover no block and no
+  label placed before; the branches of a fan-out (one source port, same label)
+  share one label, written on the trunk near the source.
 - Measured with 60 components and 200 connectors (`10_canvas_perf.mjs`,
   headless Chromium): full redraw about 30–40 ms, dragging a block with 24
   connectors under 1 ms of work per frame.
@@ -438,7 +446,7 @@ package Avionics {
 | connector-branching | closed | outputs fan out; an input accepts one driver |
 | cross-hierarchy-connections | closed (API, MCP) | ends deeper in inline components get boundary ports created level by level; on the canvas, connect level by level (or drop on a block to create the port) |
 | physical-ports-connectors | closed | physical ↔ physical only, non-directional, drawn as thicker lines without arrowheads |
-| connector-routing-editor | closed (basic) | orthogonal auto-routing that avoids other blocks; drag middle segments to reroute (`points`), *Reset route* |
+| connector-routing-editor | closed (basic) | orthogonal auto-routing that never runs under a block (shortest route around blocks when the simple elbow route would); labels off blocks and each other, one label per fan-out trunk; drag middle segments to reroute (`points`), *Reset route* |
 | drill-down-breadcrumbs | closed | double-click / Enter to open, breadcrumbs, Alt+↑; reference components open their shared definition |
 | model-browser | closed | the containment tree acts as model browser: the canvas follows its selection and its rows can be dragged onto the canvas; *Open ▾* lists the architectures; `GET /api/arch/tree` / `sysml_arch_tree` for clients |
 | drag-and-drop onto the canvas | closed | HTML5 drops of any element (`drop-on-element`): interfaces onto ports (assigned by the interfaces feature), requirements onto elements (linked by the requirements feature), part definitions onto the background; the Architecture tab is spring-loaded so drags can start in other tabs |

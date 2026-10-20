@@ -130,11 +130,154 @@ function freeChannel(p, q, horizontal, obstacles) {
   return mid;
 }
 
+// True when an automatic route crosses a block: the inside of one of the `obstacles` (other
+// blocks), or of an `ends` block (its own two blocks) after leaving the port stubs.
+export function routeHits(points, obstacles = [], ends = []) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const p = points[i], q = points[i + 1];
+    if (segmentHits(p.x, p.y, q.x, q.y, obstacles, 0)) return true;
+    if (i > 0 && i < points.length - 2 && segmentHits(p.x, p.y, q.x, q.y, ends, -1)) return true;
+  }
+  return false;
+}
+
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];       // +x, -x, +y, -y
+const dirOf = (dx, dy) => (dx > 0 ? 0 : dx < 0 ? 1 : dy > 0 ? 2 : 3);
+
+// Shortest orthogonal path (length + `bend` per corner) from a1 to b1 that keeps `margin`
+// away from the `boxes`, over the grid of lines along their (inflated) edges. a1 is left
+// in direction aDir and b1 entered in direction bDir (indexes into DIRS). Returns the
+// points from a1 to b1, or null when the boxes wall b1 off.
+export function avoidPath(a1, b1, aDir, bDir, boxes, { margin = 10, bend = 40 } = {}) {
+  const inside = (p, R) => p.x > R.x1 + 0.01 && p.x < R.x2 - 0.01 && p.y > R.y1 + 0.01 && p.y < R.y2 - 0.01;
+  const rects = [];
+  for (const r of boxes) {
+    for (const m of [margin, 0]) {                       // an end too close to a block: no margin
+      const R = { x1: r.x - m, y1: r.y - m, x2: r.x + r.w + m, y2: r.y + r.h + m };
+      if (!inside(a1, R) && !inside(b1, R)) { rects.push(R); break; }
+    }
+  }
+  const r1 = v => Math.round(v * 10) / 10;
+  const axis = vals => [...new Set(vals.map(r1))].sort((p, q) => p - q);
+  const xs = axis([a1.x, b1.x, ...rects.flatMap(R => [R.x1, R.x2])]);
+  const ys = axis([a1.y, b1.y, ...rects.flatMap(R => [R.y1, R.y2])]);
+  const nx = xs.length, ny = ys.length;
+  // hBad[i * ny + j]: the edge (i, j)-(i+1, j) runs through a rect; vBad: (i, j)-(i, j+1).
+  const hBad = new Uint8Array(nx * ny), vBad = new Uint8Array(nx * ny);
+  const first = (vals, v) => {                           // first index with vals[k] >= v
+    let lo = 0, hi = vals.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (vals[mid] < v) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  for (const R of rects) {
+    const i0 = first(xs, R.x1 - 0.01), i1 = first(xs, R.x2 + 0.01);    // lines within [x1, x2]
+    const j0 = first(ys, R.y1 - 0.01), j1 = first(ys, R.y2 + 0.01);
+    const iIn0 = first(xs, R.x1 + 0.01), iIn1 = first(xs, R.x2 - 0.01);  // strictly inside
+    const jIn0 = first(ys, R.y1 + 0.01), jIn1 = first(ys, R.y2 - 0.01);
+    for (let i = i0; i < i1 - 1; i++) for (let j = jIn0; j < jIn1; j++) hBad[i * ny + j] = 1;
+    for (let j = j0; j < j1 - 1; j++) for (let i = iIn0; i < iIn1; i++) vBad[i * ny + j] = 1;
+  }
+  const start = xs.indexOf(r1(a1.x)) * ny + ys.indexOf(r1(a1.y));
+  const goal = xs.indexOf(r1(b1.x)) * ny + ys.indexOf(r1(b1.y));
+  const n = nx * ny * 4;
+  const cost = new Float64Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const heap = [];                                       // binary heap of [cost, state]
+  const push = (c, s) => {
+    heap.push([c, s]);
+    for (let k = heap.length - 1; k > 0;) {
+      const p = (k - 1) >> 1;
+      if (heap[p][0] <= heap[k][0]) break;
+      [heap[p], heap[k]] = [heap[k], heap[p]];
+      k = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let k = 0; ;) {
+        const l = 2 * k + 1, r = l + 1;
+        let m = k;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === k) break;
+        [heap[m], heap[k]] = [heap[k], heap[m]];
+        k = m;
+      }
+    }
+    return top;
+  };
+  cost[start * 4 + aDir] = 0;
+  push(0, start * 4 + aDir);
+  let best = -1;
+  while (heap.length) {
+    const [c, s] = pop();
+    if (c > cost[s]) continue;
+    const node = s >> 2, d = s & 3;
+    if (node === goal) {
+      if (d === bDir) { best = s; break; }
+      if (d !== (bDir ^ 1)) {                            // turn into the target stub: one more bend
+        const t = goal * 4 + bDir;
+        if (c + bend < cost[t]) { cost[t] = c + bend; prev[t] = s; push(c + bend, t); }
+      }
+      continue;
+    }
+    const i = Math.floor(node / ny), j = node % ny;
+    for (let nd = 0; nd < 4; nd++) {
+      if (nd === (d ^ 1)) continue;                      // never double back
+      const [dx, dy] = DIRS[nd];
+      const ni = i + dx, nj = j + dy;
+      if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+      if (dx ? hBad[Math.min(i, ni) * ny + j] : vBad[i * ny + Math.min(j, nj)]) continue;
+      const nc = c + Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nd === d ? 0 : bend);
+      const t = (ni * ny + nj) * 4 + nd;
+      if (nc < cost[t]) { cost[t] = nc; prev[t] = s; push(nc, t); }
+    }
+  }
+  if (best < 0) return null;
+  const out = [];
+  for (let s = best; s >= 0; s = prev[s]) {
+    const node = s >> 2;
+    const p = { x: xs[Math.floor(node / ny)], y: ys[node % ny] };
+    const last = out[out.length - 1];
+    if (!last || last.x !== p.x || last.y !== p.y) out.push(p);
+  }
+  return out.reverse();
+}
+
+// A route from a1 to b1 around every block in `boxes`: searched among the blocks near the
+// two ends first (fast), widening until the path misses all of them.
+function routeAround(a1, b1, aDir, bDir, boxes) {
+  for (const pad of [80, 240, 720, Infinity]) {
+    const win = { x: Math.min(a1.x, b1.x) - pad, y: Math.min(a1.y, b1.y) - pad,
+                  w: Math.abs(a1.x - b1.x) + 2 * pad, h: Math.abs(a1.y - b1.y) + 2 * pad };
+    const near = pad === Infinity ? boxes : boxes.filter(r => intersects(win, r));
+    const path = avoidPath(a1, b1, aDir, bDir, near);
+    if (path && !routeHits(path, boxes)) return path;
+    if (near.length === boxes.length) return path;
+  }
+  return null;
+}
+
 // Orthogonal (elbow) route from attach point a to attach point b. Both carry the unit
 // direction (nx, ny) the line leaves them in. `points` (stored interior points of a
 // manual route) are kept and joined orthogonally; `avoid` boxes (the two end blocks) help
-// backward routes; Z routes bend where they miss the `obstacles` (other blocks).
-export function route(a, b, { points = null, stub = STUB, avoid = [], obstacles = [] } = {}) {
+// backward routes; Z routes bend where they miss the `obstacles` (other blocks). An
+// automatic route that would still cross a block (another one, or its own blocks) is
+// replaced by the shortest route around every block (avoidPath).
+// `quick` skips that search (live feedback while dragging; the drop re-renders).
+export function route(a, b, opts = {}) {
+  const pts = simpleRoute(a, b, opts);
+  const { points = null, stub = STUB, avoid = [], obstacles = [], quick = false } = opts;
+  if (quick || points?.length || (!obstacles.length && !avoid.length) || !routeHits(pts, obstacles, avoid)) return pts;
+  const a1 = { x: a.x + a.nx * stub, y: a.y + a.ny * stub };
+  const b1 = { x: b.x + b.nx * stub, y: b.y + b.ny * stub };
+  const path = routeAround(a1, b1, dirOf(a.nx, a.ny), dirOf(-b.nx, -b.ny), [...obstacles, ...avoid]);
+  return path ? simplify([{ x: a.x, y: a.y }, ...path, { x: b.x, y: b.y }]) : pts;
+}
+
+function simpleRoute(a, b, { points = null, stub = STUB, avoid = [], obstacles = [] } = {}) {
   const a1 = { x: a.x + a.nx * stub, y: a.y + a.ny * stub };
   const b1 = { x: b.x + b.nx * stub, y: b.y + b.ny * stub };
   const out = [{ x: a.x, y: a.y }, a1];
@@ -211,32 +354,34 @@ export function pathD(points) {
 const round1 = v => Math.round(v * 10) / 10;
 
 // Where to write a connector label of `text` (about charW px per character): beside one
-// of its segments, longest first, at the first spot whose box misses the obstacles.
-// Returns {x, y, anchor} for an SVG <text> (y is the baseline).
-export function labelPlacement(points, text, obstacles = [], charW = 5.8) {
+// of its segments (longest first, or from the source on when `fromStart`: the trunk of a
+// fan-out), at the first spot whose box misses the obstacles (blocks and labels placed
+// before). Returns {x, y, anchor, box} for an SVG <text> (y is the baseline).
+export function labelPlacement(points, text, obstacles = [], { charW = 5.8, fromStart = false } = {}) {
   const w = String(text).length * charW, h = 11;
   const segs = [];
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
-    segs.push({ a, b, len: Math.abs(a.x - b.x) + Math.abs(a.y - b.y), horizontal: Math.abs(a.y - b.y) < 0.01 });
+    segs.push({ i, a, b, len: Math.abs(a.x - b.x) + Math.abs(a.y - b.y), horizontal: Math.abs(a.y - b.y) < 0.01 });
   }
-  segs.sort((p, q) => q.len - p.len);
+  if (!fromStart) segs.sort((p, q) => q.len - p.len || p.i - q.i);
   const candidates = [];
+  const at = (x, y, anchor) => ({ x, y, anchor, box: {
+    x: anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w : x, y: y - h + 2, w, h } });
   for (const s of segs) {
-    const mx = (s.a.x + s.b.x) / 2, my = (s.a.y + s.b.y) / 2;
-    if (s.horizontal) {
-      const x0 = Math.min(s.a.x, s.b.x);
-      candidates.push({ x: mx, y: my - 5, anchor: "middle", box: { x: mx - w / 2, y: my - 5 - h, w, h } });
-      candidates.push({ x: x0 + 6, y: my - 5, anchor: "start", box: { x: x0 + 6, y: my - 5 - h, w, h } });
-      candidates.push({ x: mx, y: my + 13, anchor: "middle", box: { x: mx - w / 2, y: my + 2, w, h } });
-    } else {
-      candidates.push({ x: mx + 6, y: my + 4, anchor: "start", box: { x: mx + 6, y: my - 7, w, h } });
-      candidates.push({ x: mx - 6, y: my + 4, anchor: "end", box: { x: mx - 6 - w, y: my - 7, w, h } });
+    if (s.len < 1) continue;
+    for (const f of [0.5, 0.25, 0.75]) {
+      const mx = s.a.x + (s.b.x - s.a.x) * f, my = s.a.y + (s.b.y - s.a.y) * f;
+      if (s.horizontal) {
+        candidates.push(at(mx, my - 5, "middle"), at(mx, my + 13, "middle"));
+      } else {
+        candidates.push(at(mx + 6, my + 4, "start"), at(mx - 6, my + 4, "end"));
+      }
     }
   }
   const free = candidates.find(c => !obstacles.some(r => intersects(c.box, r)));
-  const pick = free || candidates[0] || { x: 0, y: 0, anchor: "middle" };
-  return { x: pick.x, y: pick.y, anchor: pick.anchor };
+  const pick = free || candidates[0] || at(0, 0, "middle");
+  return { x: pick.x, y: pick.y, anchor: pick.anchor, box: pick.box };
 }
 
 // Draggable segments of a route: every segment but the two port stubs.

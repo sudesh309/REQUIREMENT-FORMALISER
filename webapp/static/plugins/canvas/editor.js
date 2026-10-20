@@ -363,9 +363,28 @@ class CanvasEditor {
       sc.connByKey.set(k.key, k);
       for (const e of [a, b]) { push(sc.byPort, e.key, k); push(sc.byComp, e.ctx ? ck(e.ctx) : "frame", k); }
     }
-    const boxes = blocks.map(b => b.box);
-    for (const k of sc.conns) k.labelPos = k.c.label ? G.labelPlacement(k.pts, labelText(k.c), boxes) : null;
+    this.placeLabels(sc);
     return sc;
+  }
+
+  // Connector labels: off the blocks and off each other. Branches of a fan-out (one source
+  // port, same label) share one label, written on their common trunk near the source.
+  placeLabels(sc) {
+    const placed = sc.blocks.map(b => b.box);
+    const trunks = new Map();
+    for (const k of sc.conns) {
+      k.labelPos = null;
+      if (!k.c.label) continue;
+      const text = labelText(k.c);
+      const group = `${k.a.key}|${text}`;
+      if (trunks.has(group)) { trunks.get(group).fan = true; continue; }
+      trunks.set(group, k);
+      k.fan = false;
+    }
+    for (const k of trunks.values()) {
+      k.labelPos = G.labelPlacement(k.pts, labelText(k.c), placed, { fromStart: k.fan });
+      placed.push(k.labelPos.box);
+    }
   }
 
   attachOf(pt, frame) {
@@ -373,12 +392,14 @@ class CanvasEditor {
       : G.attachPoint(frame, pt.p.side, pt.p.offset, true);
   }
 
-  routeOf(k, frame, blocks = this.scene?.blocks || []) {
+  // `quick`: live feedback while something is dragged (no search around blocks; the drop
+  // saves and re-renders with full routing).
+  routeOf(k, frame, blocks = this.scene?.blocks || [], quick = false) {
     const points = this.over.points.has(k.key) ? this.over.points.get(k.key) : k.c.points;
     const ends = [k.a.owner, k.b.owner];
     const obstacles = points ? [] : blocks.filter(b => !ends.includes(b)).map(b => b.box);
     return G.route(this.attachOf(k.a, frame), this.attachOf(k.b, frame),
-                   { points, avoid: ends.filter(Boolean).map(b => b.box), obstacles });
+                   { points, avoid: ends.filter(Boolean).map(b => b.box), obstacles, quick });
   }
 
   renderOpts() {
@@ -431,8 +452,8 @@ class CanvasEditor {
     return fresh;
   }
 
-  updateConnector(k) {
-    k.pts = this.routeOf(k, this.scene.frame);
+  updateConnector(k) {                    // during drags, nudges and port moves
+    k.pts = this.routeOf(k, this.scene.frame, this.scene.blocks, true);
     const el = this.dom.get(k.key);
     if (!el) return;
     const d = G.pathD(k.pts);
@@ -440,7 +461,7 @@ class CanvasEditor {
     el.querySelector(".arch-conn-line")?.setAttribute("d", d);
     const t = this.labels?.get(k.key)?.querySelector("text");
     if (t) {
-      k.labelPos = G.labelPlacement(k.pts, labelText(k.c), this.scene.blocks.map(b => b.box));
+      k.labelPos = G.labelPlacement(k.pts, labelText(k.c), this.scene.blocks.map(b => b.box), { fromStart: k.fan });
       t.setAttribute("x", Math.round(k.labelPos.x * 10) / 10);
       t.setAttribute("y", Math.round(k.labelPos.y * 10) / 10);
       t.setAttribute("text-anchor", k.labelPos.anchor);
