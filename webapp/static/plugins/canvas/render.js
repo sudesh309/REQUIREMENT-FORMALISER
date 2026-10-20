@@ -2,7 +2,10 @@
 // Pure string builders (no DOM access) so the editor can redraw a single block or
 // connector cheaply while dragging.
 import { esc } from "./common.js";
-import { fit, glyphPath, hashColor, pathD, PORT } from "./geometry.js";
+import { fit, glyphPath, hashColor, nameLines, pathD, PORT } from "./geometry.js";
+
+export const PORT_CHAR_W = 6.3;      // port labels are 11.5 px (engine.architecture.PORT_CHAR_W)
+const NAME_CHAR_W = 7.4, DEF_CHAR_W = 6, NAME_LINE_H = 14;
 
 const KIND_COLOR = { data: "#334155", physical: "#a16207", client: "#6d28d9", server: "#6d28d9" };
 const CONN_COLOR = { data: "#1e293b", physical: "#a16207", "client-server": "#6d28d9", unknown: "#64748b" };
@@ -77,8 +80,36 @@ export function portSvg(pt, { sel, hl, connect } = {}) {
     <circle class="arch-port-ring" r="${PORT + 4}"/>
     <circle class="arch-port-hit" r="${PORT + 5}"/>
     <path class="arch-port-glyph" d="${glyphPath(p.kind, p.direction, side)}" fill="${esc(fill)}" stroke="${esc(color)}"/>
-    <text class="arch-port-label" data-role="port-label" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(fit(p.name, maxLabel, 5.8))}</text>
+    <text class="arch-port-label" data-role="port-label" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(fit(p.name, maxLabel, PORT_CHAR_W))}</text>
   </g>`;
+}
+
+// Where a block's title (stereotype line, name on 1 or 2 lines, `: Definition` line) goes so
+// that it keeps clear of the port labels inside the left and right edges that are level with
+// it. Tried in this order, the first one that shows the whole name wins: centred on one line,
+// centred on two lines, at the top on one line, at the top on two lines (the top is skipped
+// when ports sit on the top edge). When none does, the widest place shows what fits.
+// Returns {lines, top (y of the title block), max (width available to the text)}.
+export function nameLayout(c, hasStereo, w, h, ports) {
+  const height = n => (hasStereo ? 15 : 0) + n * NAME_LINE_H + (c.definition ? 13 : 0);
+  const freeWidth = (y0, y1) => {
+    const side = s => Math.max(0, ...ports.filter(pt => pt.p.side === s && pt.local.y + 7 > y0 && pt.local.y - 7 < y1)
+      .map(pt => fit(pt.p.name, pt.labelWidth || 90, PORT_CHAR_W).length * PORT_CHAR_W + 14));
+    return Math.max(40, w - 2 * Math.max(side("left"), side("right")) - 12);
+  };
+  const name = String(c.name ?? "");
+  const hasTop = ports.some(pt => pt.p.side === "top");
+  const tried = [];
+  for (const [where, n] of [["centre", 1], ["centre", 2], ["top", 1], ["top", 2]]) {
+    if (where === "top" && hasTop) continue;
+    const top = where === "centre" ? (h - height(n)) / 2 : 6;
+    const max = freeWidth(top, top + height(n));
+    const lines = n === 1 ? [fit(name, max, NAME_CHAR_W)] : nameLines(name, max, NAME_CHAR_W);
+    const option = { lines, top: where === "centre" ? (h - height(lines.length)) / 2 : top, max };
+    if (!lines.some(l => l.endsWith("…") && !name.endsWith("…"))) return option;
+    tried.push(option);
+  }
+  return tried.reduce((a, b) => (b.lines.join("").length > a.lines.join("").length ? b : a));
 }
 
 // A component block (group translated to its box) with its ports.
@@ -92,11 +123,9 @@ export function blockSvg(b, ports, opts = {}) {
   if (sel?.has(key)) cls.push("sel");
   if (filter && !filter.ids.has(c.id)) cls.push(filter.hide ? "f-hidden" : "f-dim");
   const stereo = stereoText(c.stereotypes);
-  const nameY = h / 2 + (stereo ? 8 : 4) - (c.definition ? 6 : 0);
-  // The centred name keeps clear of the port labels inside the left and right edges.
-  const labelW = side => Math.max(0, ...ports.filter(pt => pt.p.side === side)
-    .map(pt => fit(pt.p.name, pt.labelWidth || 90, 5.8).length * 5.8 + 14));
-  const nameMax = Math.max(40, w - 2 * Math.max(labelW("left"), labelW("right")) - 12);
+  const { lines, top, max: nameMax } = nameLayout(c, !!stereo, w, h, ports);
+  const nameY = top + (stereo ? 15 : 0) + 11;
+  const defY = nameY + (lines.length - 1) * NAME_LINE_H + 14;
   const fill = st.fill || (c.is_reference ? "#f4f8ff" : "#ffffff");
   const stroke = st.stroke || "#475569";
   const dash = st.dash ? ` stroke-dasharray="${esc(st.dash)}"` : "";
@@ -121,8 +150,9 @@ export function blockSvg(b, ports, opts = {}) {
     <rect class="arch-hl-ring" x="-5" y="-5" width="${w + 10}" height="${h + 10}" rx="10"/>
     <rect class="arch-body" width="${w}" height="${h}" rx="6" fill="${esc(fill)}" stroke="${esc(stroke)}"${dash}/>
     ${stereo ? `<text class="arch-stereo" x="${w / 2}" y="${r1(nameY - 15)}" text-anchor="middle">${esc(fit(stereo, w - 16, 5.6))}</text>` : ""}
-    <text class="arch-name" data-role="name" x="${w / 2}" y="${r1(nameY)}" text-anchor="middle" fill="${esc(textColor)}">${esc(fit(c.name, nameMax, 7.4))}</text>
-    ${c.definition ? `<text class="arch-def" x="${w / 2}" y="${r1(nameY + 14)}" text-anchor="middle">${esc(fit(c.definition.name, nameMax, 6))}</text>` : ""}
+    <text class="arch-name" data-role="name" x="${w / 2}" y="${r1(nameY)}" text-anchor="middle" fill="${esc(textColor)}">${lines.length === 1 ? esc(lines[0])
+      : lines.map((l, i) => `<tspan x="${w / 2}" dy="${i ? NAME_LINE_H : 0}">${esc(l)}</tspan>`).join("")}</text>
+    ${c.definition ? `<text class="arch-def" x="${w / 2}" y="${r1(defY)}" text-anchor="middle">${esc(fit(c.definition.name, nameMax, DEF_CHAR_W))}</text>` : ""}
     ${c.is_reference ? `<g class="arch-refmark" transform="translate(7,${h - 15})"><title>Reference component: ports and internals are shared by every usage of ${esc(c.definition?.name || "")}</title>
       <rect x="0" y="2" width="9" height="7" rx="3.5"/><rect x="5" y="2" width="9" height="7" rx="3.5"/></g>` : ""}
     ${c.has_children ? `<g class="arch-compmark" transform="translate(${w - 18},6)"><title>Composite: double-click to open</title>
@@ -143,7 +173,7 @@ function connClasses(k, base, opts) {
 }
 
 export const LABEL_MAX = 180;
-export const labelText = c => fit(c.label || "", LABEL_MAX, 5.8);
+export const labelText = c => fit(c.label || "", LABEL_MAX, 5.8);      // 10.5 px connector labels
 
 // The connector line (drawn under the blocks).
 export function connectorSvg(k, opts = {}) {

@@ -129,7 +129,7 @@ opens the architecture you last viewed (else the first one with components).
 | Drill down / up | Double-click a block (or select it and press **Enter**) to open it: an inline component's inside, or the shared definition of a reference component. Breadcrumbs, the ⬆ button or **Alt+↑** go back |
 | Create component from selection | Select blocks → **Group** (Ctrl+G); crossing connectors are routed through new ports; name it in place. **Expand** is the inverse |
 | Reference components | **Save as Ref** (asks for the definition name) / **Inline** on the selected component. To reuse a type for a second channel (FCC-L / FCC-R), pick it as the component's **Reference** in the Property Inspector: the component's own ports that the definition also has (same name) are merged into the definition's ports and their connectors, inside and outside, stay connected (the log names the merged ports; one undo step). Own ports with other names stay as usage-only ports (dashed name field in the Inspector) |
-| Copy / paste / duplicate | **Copy** (Ctrl+C), **Paste** (Ctrl+V, into the composition being viewed; context menu *Paste inside* targets a block), **Duplicate** (Ctrl+D). Copies are deep (ports, internals, stereotypes) with fresh names |
+| Copy / paste / duplicate | **Copy** (Ctrl+C), **Paste** (Ctrl+V, into the composition being viewed; context menu *Paste inside* targets a block), **Duplicate** (Ctrl+D). Copies are deep (ports, internals, stereotypes) with fresh names. They keep their arrangement and are placed where they cover no block: beside the originals (right, below or diagonally, further out when that is taken), or in place when pasted into another composition and that spot is free |
 | Delete | **Delete** / Backspace, the toolstrip or the context menu (no confirmation: undo with Ctrl+Z) |
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
 | Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view. Cycles (bidirectional A429 / AFDX links) are broken with as few backward connectors as possible, so they never create one layer per block; big networks wrap their layers into bands (like lines of text, at most ⌈√n⌉ + 2 layers side by side) shaped for the canvas, so 30 LRUs with 90 connectors fit a 1400 × 900 window at about 40 % zoom. Small diagrams keep one row |
@@ -156,7 +156,7 @@ opens the architecture you last viewed (else the first one with components).
 | Element | Drawing |
 |---------|---------|
 | Frame | the composition being viewed with its name, stereotypes and kind (architecture, inline component, or `: Definition — shared by n`); its own ports sit on its edges as boundary ports, labels outside |
-| Component | rounded block: «stereotypes» above the bold name, `: Definition` below it for a reference component plus a link marker bottom-left, a hierarchy marker top-right when it has sub-components, other badges (e.g. `SM`, profile badges) as pills; fill / stroke / text colour / dash / short icon from the element summary `style` |
+| Component | rounded block: «stereotypes» above the bold name, `: Definition` below it for a reference component plus a link marker bottom-left, a hierarchy marker top-right when it has sub-components, other badges (e.g. `SM`, profile badges) as pills; fill / stroke / text colour / dash / short icon from the element summary `style`. The name is never cut while it can be shown whole: it is centred on one line, else wrapped to two lines at a word, `_`, `-` or camelCase boundary, else moved above the port labels to the top of the block (unless ports sit on the top edge); automatic block sizes leave room for the name, the definition name and the port labels (11.5 px) up to 320 px |
 | Port | glyph on the block edge: input = hollow arrow pointing in, output = filled arrow pointing out, inout = double arrow, physical = diamond, client = circle, server = square; coloured by its interface (`style.stroke` from profiles/interfaces, else a stable colour per interface name); name inside the block |
 | Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); invalid stored connectors are red and dashed with the problem as tooltip |
 
@@ -257,7 +257,7 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | POST | `/api/arch/connector` | `{composition, source: {component?, port}, target: {component?, port}, name?}`; one end may instead be `{component?, new_port: true \| {name?, side?, offset?}}` | connector view (+ `created_port` for a new port) |
 | PATCH | `/api/arch/connector/<id>` | `{name?, points?: [[x, y], ...] \| null}` | connector view |
 | POST | `/api/arch/delete` | `{ids}` | `{deleted}` (one undo step) |
-| POST | `/api/arch/duplicate` | `{ids, target?, offset?: [dx, dy]}` | `{components}` |
+| POST | `/api/arch/duplicate` | `{ids, target?, offset?: [dx, dy]}` (default: the first place beside the originals that covers no block) | `{components}` |
 | POST | `/api/arch/group` | `{composition, component_ids, name?}` | the new component |
 | POST | `/api/arch/expand` | `{component}` | `{components}` (moved ids) |
 | POST | `/api/arch/save-as-reference` | `{component, name?, package?}` | `{definition, component}` |

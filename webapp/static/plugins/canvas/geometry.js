@@ -447,6 +447,26 @@ export function fit(text, maxWidth, charW = 6.4) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+// A block name as one line when it fits `maxWidth` px, else two lines broken at the space,
+// '_', '-', '/' or camelCase boundary that makes the longer line shortest (the one nearest
+// the middle on a tie); each line is fitted if still too long.
+export function nameLines(text, maxWidth, charW = 7.4) {
+  const s = String(text ?? "");
+  if (s.length * charW <= maxWidth || s.length < 4) return [fit(s, maxWidth, charW)];
+  const split = i => [s.slice(0, i).trimEnd(), s.slice(i).trimStart()];
+  const longer = i => Math.max(...split(i).map(x => x.length));
+  let at = -1;
+  for (let i = 1; i < s.length; i++) {
+    const a = s[i - 1], b = s[i];
+    const boundary = " _-/".includes(a) || (/[a-z0-9]/.test(a) && /[A-Z]/.test(b)) || (/[A-Z]/.test(a) && /[A-Z]/.test(b) && /[a-z]/.test(s[i + 1] || ""));
+    if (!boundary) continue;
+    if (at < 0 || longer(i) < longer(at)
+        || (longer(i) === longer(at) && Math.abs(i - s.length / 2) < Math.abs(at - s.length / 2))) at = i;
+  }
+  if (at < 0) at = Math.ceil(s.length / 2);
+  return split(at).map(x => fit(x, maxWidth, charW));
+}
+
 // SVG path of a port glyph centred on (0, 0) on the `side` edge of its owner (a block, or
 // the frame for a boundary port). An input's arrow points into the owner, an output's
 // out of it, so a boundary input on the frame points into the composition it feeds;

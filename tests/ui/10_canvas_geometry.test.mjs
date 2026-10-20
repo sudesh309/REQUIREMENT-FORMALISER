@@ -221,9 +221,35 @@ test("text fitting, snapping and colours", () => {
   assert.notEqual(G.hashColor("AirData"), G.hashColor("Power28V"));
 });
 
+test("block names wrap at word boundaries instead of being cut (SU-12c)", () => {
+  assert.deepEqual(G.nameLines("SensorSuite", 200), ["SensorSuite"]);
+  assert.deepEqual(G.nameLines("FlightControlComputer", 120), ["FlightControl", "Computer"]);
+  assert.deepEqual(G.nameLines("Air Data Unit", 60), ["Air Data", "Unit"]);
+  assert.deepEqual(G.nameLines("FCC_LEFT_CHANNEL", 80), ["FCC_LEFT_", "CHANNEL"]);
+  assert.deepEqual(G.nameLines("ADIRUFMSXX", 40), ["ADIRU", "FMSXX"]);        // no boundary: the middle
+});
+
+test("block title layout keeps clear of port labels (SU-12c)", async () => {
+  const R = await import("../../webapp/static/plugins/canvas/render.js");
+  const port = (name, side, y, w = 160) => ({ p: { name, side }, local: { x: 0, y }, labelWidth: Math.max(28, w / 2 - 16) });
+  const c = { name: "DisplayFlightDataAndWarnings", definition: null };
+  // A short name with short labels: centred on one line.
+  const small = R.nameLayout({ name: "ADC", definition: null }, false, 160, 90, [port("airData", "right", 45)]);
+  assert.deepEqual(small.lines, ["ADC"]);
+  assert.ok(Math.abs(small.top + 7 - 45) < 1);
+  // A long name level with long labels: moved above them, whole.
+  const ports = [port("primaryFlightDisplayData", "left", 45, 320), port("warnings", "right", 45, 320)];
+  const lay = R.nameLayout(c, false, 320, 90, ports);
+  assert.equal(lay.lines.join(""), c.name);
+  assert.ok(lay.top + 14 < 45 - 7, "above the port labels");
+  // Ports on the top edge: the title stays centred (wrapped) rather than covering them.
+  const top = R.nameLayout(c, false, 320, 90, [...ports, port("pwr", "top", 0, 320)]);
+  assert.ok(top.top > 6);
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
-  try { fn(); console.log(`ok   ${name}`); }
+  try { await fn(); console.log(`ok   ${name}`); }
   catch (e) { failed++; console.log(`FAIL ${name}\n${e.stack}`); }
 }
 process.exit(failed ? 1 : 0);

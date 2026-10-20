@@ -165,7 +165,7 @@ class LocateAndLayoutTests(unittest.TestCase):
         self.assertEqual(adc.tool_data["layout"], {"x": 50, "y": 60})
         v = A.component_view(adc, root)
         self.assertFalse(v["sized"])
-        self.assertEqual((v["layout"]["w"], v["layout"]["h"]), (A.DEFAULT_W, A.DEFAULT_H))
+        self.assertEqual((v["layout"]["w"], v["layout"]["h"]), A.default_size(adc))   # automatic again
         self.assertEqual(from_json(to_json(repo)).by_id(adc.element_id).tool_data["layout"],
                          {"x": 50, "y": 60})
 

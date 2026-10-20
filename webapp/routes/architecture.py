@@ -284,11 +284,11 @@ def api_duplicate(req):
     if not isinstance(ids, list) or not ids:
         raise A.ArchitectureError("ids must be a non-empty list")
     target = _find(b.get("target"), "target", required=False)
-    off = b.get("offset") or [30, 30]
-    if not (isinstance(off, list) and len(off) == 2):
+    off = b.get("offset")              # default: beside the originals, on no other block
+    if off is not None and not (isinstance(off, list) and len(off) == 2):
         raise A.ArchitectureError("offset must be [dx, dy]")
     copies = A.duplicate(_repo(), [_find(i, "component") for i in ids], target,
-                         (A.number(off[0], "dx"), A.number(off[1], "dy")))
+                         None if off is None else (A.number(off[0], "dx"), A.number(off[1], "dy")))
     return ok({"components": [_component_json(c) for c in copies]})
 
 

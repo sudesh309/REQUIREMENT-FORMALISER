@@ -260,6 +260,22 @@ class EditingHttpTests(_ArchHttp):
         self.assertEqual(self.view(adc)["components"], [])
         self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"]], "target": "missing"}, expect=404)
 
+    def test_pasted_copies_cover_no_block(self):
+        """SU-12f: a paste lands beside the originals, not 30 px off on top of them."""
+        adc, fms, disp = self.three()
+        for _ in range(3):
+            self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"], disp["id"]]})
+        boxes = [(c["name"], c["layout"]) for c in self.view()["components"]]
+        self.assertEqual(len(boxes), 9)
+        for i, (na, a) in enumerate(boxes):
+            for nb, b in boxes[i + 1:]:
+                self.assertFalse(a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+                                 and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"], f"{na} / {nb}")
+        moved = self.call("POST", "/api/arch/duplicate", {"ids": [adc["id"]], "offset": [30, 30]})
+        self.assertEqual(moved["components"][0]["layout"]["x"],
+                         next(b for n, b in boxes if n == "ADC")["x"] + 30)        # an explicit offset wins
+        self.call("POST", "/api/arch/duplicate", {"ids": [adc["id"]], "offset": [1]}, expect=400)
+
     def test_layout_auto_layout_and_tree(self):
         adc, fms, disp = self.three()
         self.connect(fms, "route", disp, "route")

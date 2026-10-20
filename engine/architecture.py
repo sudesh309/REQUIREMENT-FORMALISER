@@ -1106,11 +1106,42 @@ def _finish_copies(repo, copies: list[Element], apps: list) -> None:
         repo.registry.register_tree(c)
 
 
+def _has_position(c: Element) -> bool:
+    lay = c.tool_data.get("layout")
+    return isinstance(lay, dict) and isinstance(lay.get("x"), (int, float)) and isinstance(lay.get("y"), (int, float))
+
+
+def _paste_offset(boxes: list[dict], taken: list[dict], same_place_ok: bool) -> tuple[float, float]:
+    """Where pasted blocks (`boxes`, as copied) go: where they are when that is free (paste
+    into another composition), else beside the copied group (right, below, diagonal, then
+    further away) at the first place that covers no block in `taken`."""
+    x0, y0 = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
+    bw = max(b["x"] + b["w"] for b in boxes) - x0
+    bh = max(b["y"] + b["h"] for b in boxes) - y0
+
+    def free(dx: float, dy: float) -> bool:
+        return not any(_overlap({**b, "x": b["x"] + dx, "y": b["y"] + dy}, t, GROWTH_GAP)
+                       for b in boxes for t in taken)
+    sx, sy = bw + 2 * GROWTH_GAP + 20, bh + 2 * GROWTH_GAP + 20
+    candidates = [(0, 0)] if same_place_ok else []
+    for k in range(1, 25):
+        candidates += [(k * sx, 0), (0, k * sy), (k * sx, k * sy)]
+    for dx, dy in candidates:
+        if free(dx, dy):
+            return dx, dy
+    right = max([t["x"] + t["w"] for t in taken] or [x0 + bw])
+    return right + 60 - x0, 0
+
+
 def duplicate(repo, components: list[Element], target: Optional[Element] = None,
-              offset: tuple[float, float] = (30, 30)) -> list[PartUsage]:
+              offset: Optional[tuple[float, float]] = None) -> list[PartUsage]:
     """Deep-copy components (ports, sub-components, internal connectors, stereotypes,
     tool_data) into `target` (default: their own composition) with fresh names.
-    Connectors between the copied components are copied too (copy-paste)."""
+    Connectors between the copied components are copied too (copy-paste).
+
+    The copies keep their arrangement and are placed by ``offset`` (dx, dy) from the
+    originals; by default where they cover no block: beside the originals in the same
+    composition, in place in another one when that is free."""
     comps = [require_component(c) for c in components]
     if not comps:
         raise ArchitectureError("select at least one component to duplicate")
@@ -1120,16 +1151,28 @@ def duplicate(repo, components: list[Element], target: Optional[Element] = None,
     dest = require_composition(target) if target is not None else src_owner
     for c in comps:
         _check_no_cycle(dest, c)      # a copy may not contain (a reference to) its new container
+    # Blocks still on the automatic grid would move when the copies join it: keep them where
+    # they are shown (the copies are placed relative to them).
+    for comp in {id(src_owner): src_owner, id(dest): dest}.values():
+        defaults = _default_boxes(comp)
+        for c in components_of(comp):
+            if not _has_position(c):
+                b = effective_box(c, comp, defaults)
+                c.tool_data["layout"] = {**(c.tool_data.get("layout") or {}), "x": b["x"], "y": b["y"]}
+    boxes = [effective_box(c, src_owner) for c in comps]
+    if offset is None:
+        taken_boxes = [effective_box(c, dest) for c in components_of(dest)]
+        offset = _paste_offset(boxes, taken_boxes, dest is not src_owner)
     copies, mapping, apps = clone_forest(comps)
     owner = edit_owner(dest)
     taken = member_names(dest)
-    dx, dy = (offset or (30, 30))
-    for orig, cp in zip(comps, copies):
+    dx, dy = offset
+    for orig, cp, box in zip(comps, copies, boxes):
         cp.name = unique_name(orig.name or "Component", taken)
         taken.add(cp.name)
         lay = cp.tool_data.get("layout")
-        if isinstance(lay, dict) and "x" in lay and "y" in lay:
-            cp.tool_data["layout"] = {**lay, "x": lay["x"] + dx, "y": lay["y"] + dy}
+        cp.tool_data["layout"] = {**(lay if isinstance(lay, dict) else {}),
+                                  "x": box["x"] + dx, "y": box["y"] + dy}
         owner.own(cp)
     # Connectors between selected components, copied into the destination.
     selected = {id(c) for c in comps}
@@ -1494,13 +1537,16 @@ def port_layouts(owner: Element) -> dict[int, dict]:
     return out
 
 
-NAME_CHAR_W, PORT_CHAR_W, MAX_AUTO_W = 7.4, 5.8, 320
+# Approximate text widths per character on the canvas (render.js): block names, port labels
+# (11.5 px) and the `: Definition` line of a reference component.
+NAME_CHAR_W, PORT_CHAR_W, DEF_CHAR_W, MAX_AUTO_W = 7.4, 6.3, 6.0, 320
 
 
 def default_size(c: Element) -> tuple[int, int]:
     """Automatic block size: tall enough for the ports on the left/right, wide enough for
-    the ports on the top/bottom and for the name between the left and right port labels
-    (up to MAX_AUTO_W; the canvas truncates beyond)."""
+    the ports on the top/bottom and for the name (or the definition name of a reference
+    component) between the left and right port labels (up to MAX_AUTO_W; beyond, the
+    canvas wraps the name to two lines)."""
     counts = {s: 0 for s in SIDES}
     label = {s: 0 for s in SIDES}
     layouts = port_layouts(c)
@@ -1509,7 +1555,9 @@ def default_size(c: Element) -> tuple[int, int]:
         counts[side] += 1
         label[side] = max(label[side], len(p.name or ""))
     h = max(DEFAULT_H, 30 + PORT_PITCH * max(counts["left"], counts["right"]))
-    name_w = len(c.name or "") * NAME_CHAR_W + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
+    d = definition_of(c)
+    text_w = max(len(c.name or "") * NAME_CHAR_W, len(d.name or "") * DEF_CHAR_W if d is not None else 0)
+    name_w = text_w + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
     w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]), min(MAX_AUTO_W, name_w))
     return int(-(-w // 10) * 10), h
 

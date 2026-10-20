@@ -469,7 +469,16 @@ class EditingOperationTests(unittest.TestCase):
         copies = A.duplicate(repo, [fms, disp])
         f2, d2 = copies
         self.assertEqual((f2.name, d2.name), ("FMS1", "Display1"))
-        self.assertEqual(f2.tool_data["layout"]["x"], 130)
+        # SU-12f: the copies keep their arrangement and cover no block (not 30 px off).
+        defaults = A._default_boxes(root)
+        boxes = {c.name: A.effective_box(c, root, defaults) for c in components_of(root)}
+        for copy in ("FMS1", "Display1"):
+            others = {k: v for k, v in boxes.items() if k != copy}
+            self.assertEqual([b for b in others.values() if _overlaps({"c": boxes[copy], "o": b})], [], copy)
+        self.assertEqual(boxes["Display1"]["x"] - boxes["FMS1"]["x"], boxes["Display"]["x"] - boxes["FMS"]["x"])
+        self.assertEqual(f2.tool_data["layout"]["w"], 160)                  # a user-set size is copied
+        (f4,) = A.duplicate(repo, [fms], offset=(30, 30))                    # an explicit offset wins
+        self.assertEqual((f4.tool_data["layout"]["x"], f4.tool_data["layout"]["y"]), (130, 80))
         self.assertEqual([a.values["dal"] for a in stereotypes_on(f2)], ["A"])
         core2 = components_of(f2)[0]
         self.assertIsNot(core2, core)

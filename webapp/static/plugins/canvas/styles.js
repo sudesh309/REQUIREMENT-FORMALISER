@@ -93,7 +93,7 @@ export function injectCanvasStyles() {
   .arch-port-hit { fill:transparent; }
   .arch-port-ring { fill:none; stroke:none; }
   .arch-port-glyph { stroke-width:1.2; }
-  .arch-port-label { font-size:10.5px; fill:#334155; cursor:text; }
+  .arch-port-label { font-size:11.5px; fill:#334155; cursor:text; }
   .arch-port:hover .arch-port-ring { stroke:#2563eb; stroke-width:1.5; fill:rgb(219 234 254 / .6); }
   .arch-port.sel .arch-port-ring { stroke:#2563eb; stroke-width:2; fill:rgb(191 219 254 / .7); }
   .arch-port.sel .arch-port-label { fill:#1d4ed8; font-weight:600; }
