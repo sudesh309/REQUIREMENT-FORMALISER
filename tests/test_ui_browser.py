@@ -2,6 +2,10 @@
 
 Skipped when Node.js or the Playwright package is not available. Set
 PLAYWRIGHT_MODULE to the package's index.mjs to point at a specific install.
+
+The wave gate (docs/EXTENDING.md): ``UI_GATE=1`` turns the skip into a
+failure, and a full run must include the GUI-only scenario
+``99_avionics_e2e.mjs``.
 """
 import json
 import os
@@ -14,6 +18,7 @@ from pathlib import Path
 from tests.webapp_harness import WebAppTestCase
 
 RUNNER = Path(__file__).resolve().parent / "ui" / "run_scenarios.mjs"
+GATE_SCENARIO = "99_avionics_e2e.mjs"
 
 
 def _playwright_module():
@@ -31,12 +36,15 @@ def _playwright_module():
 
 
 PLAYWRIGHT = _playwright_module()
+GATE = bool(os.environ.get("UI_GATE"))
 
 
-@unittest.skipUnless(PLAYWRIGHT, "node + playwright not available")
+@unittest.skipUnless(PLAYWRIGHT or GATE, "node + playwright not available")
 class BrowserScenarioTests(WebAppTestCase):
 
     def test_ui_scenarios(self):
+        self.assertTrue(PLAYWRIGHT, "UI_GATE is set: the wave gate needs Node.js and Playwright "
+                                    "(set PLAYWRIGHT_MODULE to the package's index.mjs)")
         artifacts = tempfile.mkdtemp(prefix="ui-artifacts-")
         env = {**os.environ, "PLAYWRIGHT_MODULE": PLAYWRIGHT, "UI_ARTIFACT_DIR": artifacts,
                "UI_FILTER": os.environ.get("UI_FILTER", "")}
@@ -46,6 +54,9 @@ class BrowserScenarioTests(WebAppTestCase):
         failures = [r for r in results if not r["ok"]]
         self.assertTrue(results, f"no scenarios ran: {proc.stderr[-2000:]}")
         self.assertEqual(failures, [], json.dumps(failures, indent=2))
+        if not env["UI_FILTER"]:
+            self.assertIn(GATE_SCENARIO, [r["scenario"] for r in results],
+                          "the GUI-only wave gate scenario must run with the others")
 
 
 if __name__ == "__main__":

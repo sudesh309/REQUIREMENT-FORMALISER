@@ -170,6 +170,28 @@ TOOLS = [{"name": "sysml_set_active_choice", "description": "...",
   any browser console error fails the scenario. Run one with
   `UI_FILTER=<name> python -m unittest tests.test_ui_browser`.
 
+### Wave gate (mandatory before a wave closes)
+
+`tests/ui/scenarios/99_avionics_e2e.mjs` builds a small avionics model the way
+an engineer does, with **GUI gestures only**: New model, functional and
+physical architectures drawn on the canvas, an ARINC 429 interface dragged
+from the Interface Editor onto a port, a profile with mass / power / DAL
+values, a requirement set whose rows are dragged onto blocks, an allocation
+matrix, a Model Check finding fixed in the editors, a report, and Save JSON /
+New / Load JSON. Along the way it checks the canvas Property Inspector, the
+block badges, the undo labels and the Model Check count, and at the end that
+no request failed, no native dialog opened and the Output log holds no error.
+
+- A wave is closed only when `UI_GATE=1 python -m unittest tests.test_ui_browser`
+  passes (with `UI_GATE` set, a missing Node.js / Playwright fails instead of
+  skipping) together with the rest of `python -m unittest discover -s tests`.
+- Each wave **extends** the scenario with its features, through their real
+  gestures (a drag is a drag, not `studio.emit`). `tests/test_wave_gate.py`
+  rejects API writes (`api("POST" | "PATCH" | "DELETE")`), `fresh()` and
+  `window.studio` calls in it, and lists the features it must cover.
+- `UI_E2E_SHOTS=1` keeps a screenshot of every stage in `UI_ARTIFACT_DIR`
+  for the acceptance review.
+
 ## Cross-feature contracts
 
 These keep independently built features consistent.
