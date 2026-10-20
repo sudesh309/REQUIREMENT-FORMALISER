@@ -40,12 +40,17 @@ class UndoHistory:
         self.undo_stack: list[tuple[str, dict]] = []
         self.redo_stack: list[tuple[str, dict]] = []
         self.baseline: Optional[dict] = None
+        # Every recorded change, undo and redo bumps the revision; ``dirty`` compares it
+        # with the revision of the last save (a new or loaded project starts clean).
+        self.revision = 0
+        self.saved_revision = 0
         self._lock = threading.RLock()
 
     # --- recording -------------------------------------------------------
     def _push(self, label: str, snapshot: dict) -> None:
         self.undo_stack.append((label, snapshot))
         del self.undo_stack[:-self.limit]
+        self.revision += 1
 
     def _catch_up(self, current: dict) -> bool:
         """Record an untracked change since the last commit; True if there was one."""
@@ -83,6 +88,7 @@ class UndoHistory:
                 return None
             label, snapshot = self.undo_stack.pop()
             self.redo_stack.append((label, current))
+            self.revision += 1
             restored = from_dict(snapshot)
             self.baseline = to_dict(restored)
             return restored
@@ -103,10 +109,19 @@ class UndoHistory:
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.baseline = None
+            self.saved_revision = self.revision
+
+    def mark_saved(self, repo) -> None:
+        """The model as it is now has been saved (``dirty`` becomes False)."""
+        with self._lock:
+            self._catch_up(to_dict(repo))
+            self.saved_revision = self.revision
 
     def state(self) -> dict:
         with self._lock:
             return {
+                "dirty": self.revision != self.saved_revision,
+                "revision": self.revision,
                 "can_undo": bool(self.undo_stack),
                 "can_redo": bool(self.redo_stack),
                 "undo_label": self.undo_stack[-1][0] if self.undo_stack else None,

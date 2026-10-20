@@ -792,6 +792,28 @@ class UndoHistoryTests(unittest.TestCase):
             h.commit(s.repo, before, f"step{i}")
         self.assertEqual(h.state()["undo_depth"], 3)
 
+    def test_dirty_until_saved(self):
+        """SU-13: New / Load warn about changes made since the last save."""
+        repo, root, *_ = _arch()
+        s = self._Session(repo)
+        self.assertFalse(history_for(s).state()["dirty"])           # a new or loaded project
+        with tracked(s, "noop"):
+            pass
+        self.assertFalse(history_for(s).state()["dirty"])           # nothing changed
+        with tracked(s, "add"):
+            A.add_component(repo, root, "New")
+        self.assertTrue(history_for(s).state()["dirty"])
+        history_for(s).mark_saved(s.repo)
+        self.assertFalse(history_for(s).state()["dirty"])
+        self.assertTrue(undo(s))                                    # differs from the saved file
+        self.assertTrue(history_for(s).state()["dirty"])
+        history_for(s).mark_saved(s.repo)
+        A.add_component(s.repo, s.repo.resolve("AircraftSystem"), "Untracked")
+        history_for(s).mark_saved(s.repo)                           # catches the change up first
+        self.assertFalse(history_for(s).state()["dirty"])
+        self.assertTrue(undo(s))
+        self.assertIsNone(s.repo.resolve("AircraftSystem::Untracked"))
+
     def test_untracked_change_becomes_its_own_step(self):
         repo, root, *_ = _arch()
         s = self._Session(repo)

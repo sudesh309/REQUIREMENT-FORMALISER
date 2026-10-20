@@ -165,9 +165,11 @@ export function createDock(el, studio, act) {
 
   function render(snapshot) {
     last = snapshot;
-    const { view: v, sel, primary, info, external } = snapshot;
+    const { view: v, sel, primary, info, external, draft } = snapshot;
     let body;
-    if (!v) body = `<div class="arch-dock-muted">No architecture open.</div>`;
+    if (draft) body = `<div class="arch-dock-kind">${icon("boundary")} New architecture</div>
+      <p class="arch-dock-muted">Type its name on the canvas and press Enter (Escape cancels).</p>`;
+    else if (!v) body = `<div class="arch-dock-muted">No architecture open.</div>`;
     else if (!sel.length && external) body = externalHtml(external);
     else if (sel.length > 1) body = multiHtml(sel);
     else if (!primary) body = compositionHtml(v);

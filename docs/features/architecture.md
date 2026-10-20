@@ -24,7 +24,10 @@ Core files touched (small, additive): `webapp/core.py` (`register_mutation_hook`
 `begin_mutation` for non-GET requests; `api_new` accepts `type`; `api_parse`
 passes `repo=` so parsed elements reach `notify_created`), `mcp_server/server.py`
 (`sysml_parse` passes `repo=` for the same reason), `docs/EXTENDING.md`
-(the `drop-on-element` event and the drag data type).
+(the `drop-on-element` event and the drag data type), `webapp/static/app.js`
+(`studio.dialog` instead of `window.prompt` / `confirm`, `registerUnsavedCheck` with
+warnings on New / Load, `project-changed` / `project-saved` events) and
+`webapp/static/styles.css` (`btn-danger`).
 
 ## Concepts
 
@@ -106,7 +109,7 @@ opens the architecture you last viewed (else the first one with components).
 
 | Task | How |
 |------|-----|
-| Start an architecture | With no architecture the canvas offers **New architecture**; type its name in place. *Model: New model…* in the studio toolstrip starts a new System or Software project |
+| Start an architecture | With no architecture the canvas offers **New architecture**; type its name in place. Another one (a functional, logical or physical architecture for allocation sets): **＋ New architecture** next to *Open ▾*, the *＋ New architecture…* entry at the end of *Open ▾*, or right-click the background → *New architecture…*. An empty frame appears with a unique suggested name; Enter creates and opens it (one undo step; a taken name is refused and can be corrected), Escape returns to the previous view. *Model: New model…* in the studio toolstrip starts a new System or Software project |
 | Open another architecture or definition | **Open ▾** at the right of the breadcrumb bar; or click it in the containment tree (the canvas follows the tree) |
 | Add a component | **Component** (toolstrip; placed at a free spot in view), or right-click the background → *Add Component here*; type the name, Enter (Escape keeps `Component`, `Component1`, …) |
 | Add a reference component | Drag a part definition from the containment tree onto the canvas background |
@@ -177,6 +180,13 @@ opens the architecture you last viewed (else the first one with components).
   does not allow, unless you tick the override).
 - *Edit: ↶ Undo / ↷ Redo* — undo any model change, including edits made by
   other features. Up to 50 steps; *New* and *Load JSON* start a fresh history.
+- Unsaved changes: every recorded change, undo or redo since the last *Save JSON*
+  (or *New* / *Load JSON*) makes the project dirty (`dirty` in the undo state). Header
+  *New*, *Load JSON…* and *Model: New model…* then show a styled warning before
+  replacing the project; *Save JSON* clears it. The studio uses styled dialogs only
+  (no `window.prompt` / `confirm`), including the core *Add* buttons and element delete.
+- After *New* or *Load JSON* the canvas fits the opened architecture (zoom remembered
+  for the old project's compositions is dropped, even when a reloaded file reuses ids).
 - The **Architecture** section of the Properties tab shows the same
   composition as tables (components, boundary ports, connectors) with the same
   operations — handy for keyboard-only editing and bulk renames.
@@ -246,8 +256,9 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | POST | `/api/arch/inline` | `{component}` | component view |
 | POST | `/api/arch/auto-layout` | `{composition, view?: {w, h}}` (`view` = canvas size in screen px; default 870 × 480) | `{positions: {id: {x, y, w, h}}}` (only positions are stored; user-set sizes are kept; deterministic) |
 | POST | `/api/arch/layout` | `{items: [{id, x, y, w?, h?} \| {id, side, offset} \| {id, points}]}` | `{updated}` (validated before anything is written; a move keeps a size set earlier, `w`/`h` null return to the automatic size) |
-| POST | `/api/undo`, `/api/redo` | | `{ok, reason?, can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}` |
-| GET | `/api/undo/state` | | the same state |
+| POST | `/api/undo`, `/api/redo` | | `{ok, reason?, dirty, revision, can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}` |
+| GET | `/api/undo/state` | | the same state (`dirty`: changed since the last save, new or load) |
+| POST | `/api/undo/saved` | | marks the current model as saved (`dirty` false); the studio calls it after *Save JSON* |
 
 A port endpoint's `port` is a port id, a qualified name, or the port's name
 on that component (`{"component": "<id>", "port": "airData"}`); omit

@@ -370,6 +370,20 @@ class UndoHttpTests(_ArchHttp):
         self.call("POST", "/api/load", {"text": text})
         self.assertFalse(self.call("GET", "/api/undo/state")["can_undo"])
 
+    def test_unsaved_changes_state(self):
+        """SU-13: the studio warns on New / Load while the project is dirty."""
+        self.assertTrue(self.call("GET", "/api/undo/state")["dirty"])     # architecture created
+        st = self.call("POST", "/api/undo/saved")
+        self.assertFalse(st["dirty"])
+        self.assertEqual(self.call("GET", "/api/undo/state")["undo_label"], st["undo_label"])   # no step
+        self.call("POST", "/api/arch/auto-layout", {"composition": self.root["id"]})   # changes nothing
+        self.call("POST", "/api/arch/component", {"composition": "missing"}, expect=404)
+        self.assertFalse(self.call("GET", "/api/undo/state")["dirty"])
+        self.comp("FMS")
+        self.assertTrue(self.call("GET", "/api/undo/state")["dirty"])
+        self.call("POST", "/api/new", {"name": "Fresh"})
+        self.assertFalse(self.call("GET", "/api/undo/state")["dirty"])
+
     def test_history_is_capped_at_50(self):
         for i in range(55):
             self.call("PATCH", f"/api/element/{self.root['id']}", {"props": {"short_name": f"s{i}"}})

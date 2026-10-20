@@ -96,6 +96,8 @@ export default async function install(studio) {
   await studio.api("GET", "/api/...");      // throws on non-2xx and logs the error
   studio.log("done", "ok");                 // severities: info, ok, warning, error
   studio.modal(title, formHtml, async values => { ... });
+  const v = await studio.dialog(title, formHtml, { ok: "Add" });  // values or null (no window.prompt/confirm)
+  studio.registerUnsavedCheck({ check: async () => reason || null, saved: async () => {} });  // New / Load warn
   await studio.refreshTree(); await studio.selectElement(id);
 }
 ```
@@ -172,6 +174,8 @@ features react with `engine.register_created_hook(fn(element, repo))`
 | `highlight` | `{ids, color?, reason?}` or `null` | emphasize elements on the canvas |
 | `canvas-filter` | `{ids, label?}` or `null` | canvas shows only these components (views) |
 | `selection-changed` | `[ids]` | multi-selection changed; read with `studio.getSelection()` |
+| `project-changed` | `{reason: "new" \| "load"}` | the project is about to be replaced (emitted before the tree reloads); drop per-project UI state such as zoom |
+| `project-saved` | `null` | *Save JSON* finished (after every `registerUnsavedCheck` `saved()` ran) |
 | `drop-on-element` | `{dragged_id, target_id}` | an element was dragged (HTML5, see below) onto a canvas block, port or connector (`target_id` = its element id; dropped on the canvas background: the composition's id); handled by the dragged element's feature |
 | `select` / `model-changed` / `tab-shown` | see above | core events |
 

@@ -26,6 +26,7 @@ const SPRING_OPEN_MS = 300;
 const EDGE_ZONE = 28;
 const SIDES = ["left", "right", "top", "bottom"];
 const FOLLOW_KINDS = new Set(["PartUsage", "PortUsage", "ConnectionUsage", "PartDefinition"]);
+const NEW_ARCH = "__new_architecture__";       // the "New architecture…" entry of Open ▾
 
 const ck = id => `c:${id}`;
 const kk = id => `k:${id}`;
@@ -95,6 +96,8 @@ class CanvasEditor {
         <div class="arch-banners"></div>
         <span class="arch-spacer"></span>
         <label class="arch-open">Open <select class="input" data-canvas="open" aria-label="Open an architecture or definition"></select></label>
+        <button type="button" class="arch-newarch" data-canvas-act="new-architecture"
+          title="New architecture… (e.g. a functional, logical or physical architecture for allocations); name it in place">＋ New architecture</button>
       </div>
       <div class="arch-main">
         <div class="arch-host" tabindex="0" role="application" aria-label="Architecture canvas">
@@ -158,6 +161,7 @@ class CanvasEditor {
       }
     });
     this.pane.addEventListener("change", (e) => {
+      if (e.target === this.openSel && e.target.value === NEW_ARCH) { this.fillOpenList(); this.newArchitecture(); return; }
       if (e.target === this.openSel && e.target.value) this.open(e.target.value, [e.target.value]);
       if (e.target.matches("[data-banner-hide]") && this.filter) {
         this.filter.hide = e.target.checked;
@@ -195,6 +199,13 @@ class CanvasEditor {
     s.on("highlight", p => this.setHighlight(p));
     s.on("canvas-filter", p => this.setFilter(p));
     s.on("undo-state", st => { this.undoState = st || {}; this.updateChrome(); });
+    // New / Load: zoom and pan remembered for the old project's compositions do not apply
+    // (a reloaded file has the same ids): fit the next view.
+    s.on("project-changed", () => {
+      this.viewports.clear();
+      this.fitNext = true;
+      if (this.draft) { this.inline.cancel(); this.draft = null; }
+    });
     const tree = document.getElementById("tree");
     tree?.addEventListener("dragstart", (e) => {
       const li = e.target.closest?.(".tree-node");
@@ -229,11 +240,13 @@ class CanvasEditor {
     const defs = [...this.studio.state.treeIndex.values()].filter(n => n.kind === "PartDefinition");
     const root = this.path[0] || this.compId;
     this.openSel.innerHTML = `<option value="">${defs.length ? "— choose —" : "— none —"}</option>`
-      + defs.map(n => `<option value="${esc(n.id)}"${n.id === root ? " selected" : ""}>${esc(n.qualified_name || n.name)}</option>`).join("");
+      + defs.map(n => `<option value="${esc(n.id)}"${n.id === root && !this.draft ? " selected" : ""}>${esc(n.qualified_name || n.name)}</option>`).join("")
+      + `<option disabled>──────────</option><option value="${NEW_ARCH}">＋ New architecture…</option>`;
   }
 
   // ------------------------------------------------------------------ loading
   async refresh() {
+    if (this.draft) return;                 // naming a new architecture: nothing to reload yet
     const idx = this.studio.state.treeIndex;
     if (!this.compId || !idx.has(this.compId) || this.path.some(id => !idx.has(id))) {
       const pick = await this.pickDefault();
@@ -276,7 +289,8 @@ class CanvasEditor {
     this.render();
     const keep = [...this.sel].filter(k => this.dom.has(k));
     if (keep.length !== this.sel.size) this.setSel(keep);
-    if (switched) {
+    if (switched || this.fitNext) {
+      this.fitNext = false;
       const saved = this.viewports.get(v.composition.id);
       if (saved) this.setViewport(saved); else this.fit();
     }
@@ -469,7 +483,7 @@ class CanvasEditor {
   updateChrome() {
     const u = this.undoState || {};
     updateToolstrip(this.strip, {
-      view: this.view, allowedKinds: this.view?.allowed_port_kinds || [], comps: this.selectedComponents(),
+      view: this.draft ? null : this.view, allowedKinds: this.view?.allowed_port_kinds || [], comps: this.selectedComponents(),
       selCount: this.sel.size, clipboard: clipboard.ids.length, canUndo: !!u.can_undo, canRedo: !!u.can_redo,
       undoLabel: u.undo_label, redoLabel: u.redo_label, componentCount: this.view?.components.length || 0,
       mode: this.mode, dockOpen: this.dockOpen, zoom: this.vp.zoom, readOnlyChildren: false,
@@ -483,7 +497,8 @@ class CanvasEditor {
     this.dockEl.hidden = !this.dockOpen;
     if (this.dockOpen) {
       const external = this.external && this.studio.state.treeIndex.has(this.external.id) ? this.external : null;
-      this.dock.render({ view: this.view, sel: [...this.sel], primary: this.primary, info: this.primaryInfo(), external });
+      this.dock.render({ view: this.draft ? null : this.view, sel: [...this.sel], primary: this.primary,
+                         info: this.primaryInfo(), external, draft: this.draft });
     }
   }
 
@@ -1297,6 +1312,8 @@ class CanvasEditor {
         { label: "Fit to view", cmd: "fit", hint: "Space" },
         ...(this.path.length > 1 ? [{ label: "Up one level", cmd: "up", hint: "Alt+↑" }] : []),
         { label: `Rename ${this.view.composition.name}`, cmd: "rename-composition" },
+        "-",
+        { label: "New architecture…", cmd: "new-architecture" },
       ];
     }
     if (h.kind === "component") {
@@ -1346,6 +1363,7 @@ class CanvasEditor {
   command(cmd, ctx = {}) {
     const h = ctx.h, at = ctx.pt;
     const [name, a, b] = cmd.split(":");
+    if (this.draft && name !== "new-architecture") return undefined;    // naming a new architecture
     switch (name) {
       case "new-architecture": return this.newArchitecture();
       case "add-component": return this.addComponent();
@@ -1424,11 +1442,84 @@ class CanvasEditor {
     await this.refreshing;
   }
 
-  async newArchitecture() {
-    const a = await this.run(() => this.studio.api("POST", "/api/arch/architecture", {}), { ok: r => `New architecture ${r.name}` });
-    if (!a) return;
-    await this.open(a.id, [a.id]);
-    this.renameComposition();
+  // New architecture (empty canvas card, Open ▾, the ＋ button, background menu): an empty
+  // frame is named in place first and the architecture is created once the name is
+  // committed, so it is a single undo step. Escape returns to the previous view.
+  newArchitecture() {
+    if (this.draft) { this.editDraft(this.draft.name); return; }
+    if (this.inline.active) this.inline.el.blur();
+    this.cancelInteractions();
+    if (this.view) this.viewports.set(this.compId, { ...this.vp });
+    const back = this.view ? { compId: this.compId, path: [...this.path] } : null;
+    const name = this.suggestArchitectureName();
+    const v = this.view;
+    this.draft = { name, back };
+    this.compId = null;
+    this.path = [];
+    this.sel = new Set();
+    this.primary = null;
+    this.view = {
+      model_type: v?.model_type || "system", allowed_port_kinds: v?.allowed_port_kinds || [],
+      composition: { id: "", name, kind: "PartDefinition", definition: null, is_reference: false, shared_by: 0,
+                     breadcrumbs: [{ id: "", name, kind: "PartDefinition" }], badges: [], style: {}, stereotypes: [] },
+      boundary_ports: [], components: [], connectors: [],
+    };
+    this.fillOpenList();
+    this.editDraft(name);
+  }
+
+  editDraft(name) {
+    this.view.composition.name = name;
+    this.render();
+    this.fit();
+    const t = this.L.frame.querySelector('[data-role="frame-name"]');
+    this.inline.edit(t, name, n => this.commitNewArchitecture(n),
+                     { minWidth: 220, always: true, onCancel: () => this.cancelDraft() });
+  }
+
+  // Names in the project's root package (where new architectures go).
+  rootNames() {
+    const root = this.studio.state.treeIndex.values().next().value;
+    return new Set((root?.children || []).map(n => n.name));
+  }
+
+  suggestArchitectureName() {
+    const taken = this.rootNames();
+    if (!taken.has("Architecture")) return "Architecture";
+    for (let i = 1; ; i++) if (!taken.has(`Architecture${i}`)) return `Architecture${i}`;
+  }
+
+  async commitNewArchitecture(name) {
+    if (!this.draft) return;
+    const bad = /::|[.\t\r\n]/.test(name) ? `A name may not contain '::', '.', tabs or line breaks: ${name}`
+      : this.rootNames().has(name) ? `The project already contains an element named '${name}'` : null;
+    if (bad) { this.toast(bad, "error"); this.editDraft(name); return; }
+    let a;
+    try {
+      a = await this.studio.api("POST", "/api/arch/architecture", { name });
+    } catch (e) {
+      this.toast(String(e?.message || e), "error");           // e.g. the name is taken: edit it again
+      if (this.draft) this.editDraft(name);
+      return;
+    }
+    this.draft = null;
+    this.studio.log(`New architecture ${a.name}`, "ok");
+    this.view = null;                 // the next view is a switch: fitted
+    this.compId = a.id;
+    this.path = [a.id];
+    await this.sync();                // reloads the tree (and so this view) and selects the architecture
+    this.host.focus({ preventScroll: true });
+  }
+
+  cancelDraft() {
+    if (!this.draft) return;
+    const { back } = this.draft;
+    this.draft = null;
+    this.view = null;
+    this.compId = back?.compId || null;
+    this.path = back?.path || [];
+    this.fillOpenList();
+    this.refreshing = this.refresh();
   }
 
   // Where a new component goes: the visible part of the frame's inside (else the view).

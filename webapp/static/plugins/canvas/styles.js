@@ -38,6 +38,8 @@ export function injectCanvasStyles() {
   .arch-spacer { flex:1; }
   .arch-open { display:flex; align-items:center; gap:4px; color:#64748b; }
   .arch-open .input { width:auto; max-width:220px; padding:1px 4px; font-size:12px; }
+  .arch-newarch { font-size:12px; color:#1d4ed8; padding:1px 6px; border-radius:4px; white-space:nowrap; }
+  .arch-newarch:hover { background:#eff6ff; }
   .arch-banners { display:flex; gap:6px; flex-wrap:wrap; }
   .arch-banner { display:inline-flex; align-items:center; gap:6px; background:#fef9c3; border:1px solid #fde68a; color:#713f12;
                  padding:1px 4px 1px 8px; border-radius:999px; }
