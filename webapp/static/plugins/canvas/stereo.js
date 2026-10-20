@@ -33,7 +33,9 @@ export class StereoSection {
     this.stale = false;
     this.quiet = false;
     this.collapsed = new Set();
-    studio.on("model-changed", () => { if (!this.quiet) this.stale = true; });
+    // Edits saved elsewhere arrive as model-changed (tree refresh) or element-changed (in place).
+    for (const ev of ["model-changed", "element-changed"])
+      studio.on(ev, () => { if (!this.quiet) this.stale = true; });
     this.el.addEventListener("change", e => this.onChange(e));
     this.el.addEventListener("click", e => this.onClick(e));
     this.el.addEventListener("keydown", e => this.onKey(e));
