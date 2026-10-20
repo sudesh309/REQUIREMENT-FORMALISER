@@ -109,8 +109,11 @@ function (it may be async; it is awaited before the next plugin loads):
 export default async function install(studio) {
   const pane = studio.registerTab({ id: "variants", title: "Variants", order: 30,
                                     mount(pane) { ... }, onShow(selected) { ... } });
-  studio.registerToolbarButton({ id: "add-variant", label: "Variant", group: "Arch",
-                                 title: "Add variant component", onClick() { ... } });
+  // The toolstrip is organised by task: section "modeling" | "views" | "requirements" |
+  // "analysis" | "interop" (default: from the group, see RIBBON_SECTION_OF_GROUP in app.js,
+  // else "modeling"); each group is a cluster inside its section.
+  studio.registerToolbarButton({ id: "add-variant", label: "Variant", group: "Variants",
+                                 section: "modeling", title: "Add variant component", onClick() { ... } });
   studio.registerInspectorSection({ id: "variant", title: "Variant", order: 20,
                                     render(el, container) { /* return false to hide */ } });
   studio.registerTreeBadge(node => node.variant ? "V" : null);
@@ -133,6 +136,13 @@ export default async function install(studio) {
 Tailwind utility classes (v4, vendored) and the component classes in
 `styles.css` (`btn-primary`, `btn-action`, `input`, ...) are available.
 No build step: write plain browser JavaScript.
+
+Studio chrome rules: dialogs are `studio.modal` (never `window.prompt`,
+`confirm` or `alert`; `tests/test_studio_chrome.py` checks it). A feature's
+editor is a tab; add a button that opens it to the toolstrip section of its
+task (`RIBBON_EDITORS` in `app.js`). Generic SysML element commands, legacy
+dialogs and rarely used tabs (Links, Parser) belong in the **Advanced ▾**
+menu at the end of the tab bar.
 
 ## MCP (`mcp_server/core.py`)
 

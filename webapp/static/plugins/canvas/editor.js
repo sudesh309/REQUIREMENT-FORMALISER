@@ -1434,7 +1434,7 @@ class CanvasEditor {
     const a = await this.run(() => this.studio.api("POST", "/api/arch/architecture", {}), { ok: r => `New architecture ${r.name}` });
     if (!a) return;
     await this.open(a.id, [a.id]);
-    this.renameComposition(a.id);
+    this.renameComposition();
   }
 
   // Where a new component goes: the visible part of the frame's inside (else the view).

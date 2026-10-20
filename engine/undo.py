@@ -46,16 +46,16 @@ class UndoHistory:
         self.undo_stack: list[tuple[str, dict]] = []
         self.redo_stack: list[tuple[str, dict]] = []
         self.baseline: Optional[dict] = None
+        self._lock = threading.RLock()
         # Relabels the top undo step after an edit was merged into it (see commit).
         self._top_relabel: Optional[Callable[[], Optional[str]]] = None
-        self._lock = threading.RLock()
 
     # --- recording -------------------------------------------------------
     def _push(self, label: str, snapshot: dict,
               relabel: Optional[Callable[[], Optional[str]]] = None) -> None:
+        self._top_relabel = relabel
         self.undo_stack.append((label, snapshot))
         del self.undo_stack[:-self.limit]
-        self._top_relabel = relabel
 
     def _catch_up(self, current: dict) -> bool:
         """Record an untracked change since the last commit; True if there was one."""
@@ -119,9 +119,9 @@ class UndoHistory:
             self._catch_up(current)
             if not self.undo_stack:
                 return None
+            self._top_relabel = None
             label, snapshot = self.undo_stack.pop()
             self.redo_stack.append((label, current))
-            self._top_relabel = None
             restored = from_dict(snapshot)
             self.baseline = to_dict(restored)
             return restored
@@ -139,10 +139,10 @@ class UndoHistory:
 
     def clear(self) -> None:
         with self._lock:
+            self._top_relabel = None
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.baseline = None
-            self._top_relabel = None
 
     def state(self) -> dict:
         with self._lock:
