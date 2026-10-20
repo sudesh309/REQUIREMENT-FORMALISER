@@ -123,7 +123,7 @@ opens the architecture you last viewed (else the first one with components).
 | Connect by clicking | **Connect** mode: click a source port, then a target port / block / frame edge; Esc leaves the mode. Right-click a port → *Start connection here* does the same |
 | Select | Click; **Shift/Ctrl+click** adds or removes; drag on the background draws a selection box; **Ctrl+A** selects all components. The selection is the studio's (`studio.setSelection`) so the Properties-tab tables tick the same rows |
 | Move | Drag selected blocks (snapped to a 10 px grid, **Alt** to place freely) or nudge with the arrow keys (**Shift** = 1 px). Saved when you drop |
-| Resize | Drag the bottom-right corner of a block. *Auto size* (context menu or Inspector) returns to the automatic size that grows with the ports |
+| Resize | Drag the bottom-right corner of a block. *Auto size* (context menu or Inspector) returns to the automatic size that grows with the ports. A block that grows (more ports, a longer name, from any feature or MCP tool) never covers a neighbour: the blocks it would cover are pushed down or right (and push the blocks they land on), in the same undo step; blocks you placed on top of each other yourself are left alone |
 | Move a port along the border | **Shift+drag** (or Alt+drag) the port to any edge; or right-click → *Side*; or the Inspector's *Side* |
 | Route a connector | Select it, drag the square handles on its middle segments; right-click → *Reset route* returns to automatic routing (which avoids other blocks) |
 | Drill down / up | Double-click a block (or select it and press **Enter**) to open it: an inline component's inside, or the shared definition of a reference component. Breadcrumbs, the ⬆ button or **Alt+↑** go back |
@@ -399,7 +399,7 @@ view = A.view(repo, root)                                   # canvas view model
 A.locate(conn)                                              # {"composition": root, "select": conn}
 ```
 
-Other functions: `rename`, `set_definition` (with `merged_ports` to preview the port merge), `update_port`, `delete_elements`,
+Other functions: `rename`, `set_definition` (with `merged_ports` to preview the port merge), `box_snapshot` + `settle_growth` (or `with growth_settled(repo):`) to push neighbours away from blocks an edit made grow, `update_port`, `delete_elements`,
 `duplicate`, `expand`, `inline_component`, `can_connect`, `classify`,
 `connector_problems`, `component_badges`, `model_tree`, `architecture_roots`.
 All raise `ArchitectureError` (with `.status`) before changing anything.

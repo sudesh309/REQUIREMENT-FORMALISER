@@ -35,14 +35,47 @@ Editing
 from __future__ import annotations
 
 import functools
-from typing import Any, Optional
+import re
+import traceback
+from typing import Any, Callable, Optional
 
 from engine import architecture as A
 from kerml.elements import Element
 from sysmlv2.definitions import PORT_KINDS, ConnectionUsage, PartUsage, PortUsage
 from webapp.core import (
-    err, ok, register_prop_hook, register_summary_hook, route, session, summarize,
+    err, ok, register_mutation_hook, register_prop_hook, register_summary_hook, route, session,
+    summarize,
 )
+
+
+# --- automatic growth never covers a neighbour ---------------------------------
+
+_REPLACES_MODEL = re.compile(r"^/api/(undo|redo|new|load|save|export|validate|plugins)(/|$)")
+
+
+def _settle_growth_hook(method: str, path: str, body: Any) -> Optional[Callable[[int], None]]:
+    """Any edit (from any feature) that makes a block grow pushes the neighbours it would
+    cover (``A.settle_growth``). This module is imported before ``undo`` (alphabetical
+    route loading), so the pushes are part of the same undo step."""
+    if _REPLACES_MODEL.match(path):
+        return None
+    repo = session().repo
+    try:
+        before = A.box_snapshot(repo)
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        return None
+
+    def finish(status: int) -> None:
+        if 200 <= status < 300 and session().repo is repo:
+            try:
+                A.settle_growth(repo, before)
+            except Exception:  # noqa: BLE001 - layout tidying must never fail an edit
+                traceback.print_exc()
+    return finish
+
+
+register_mutation_hook(_settle_growth_hook)
 
 
 # --- helpers ------------------------------------------------------------------

@@ -34,7 +34,8 @@ import json
 import math
 import re
 import uuid
-from typing import Any, Callable, Iterable, NamedTuple, Optional
+from contextlib import contextmanager
+from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
@@ -1838,6 +1839,86 @@ def auto_layout(repo, composition: Element, view: Optional[tuple] = None) -> dic
             x += plan.slot_w[s] + gx
         y0 += band_h + gb
     return positions
+
+
+GROWTH_GAP = 20      # free space kept between a block that grew and the neighbours it pushes
+
+
+def _layout_groups(repo) -> list[tuple[Element, list[PartUsage]]]:
+    """Every architecture, definition or inline component with the components it owns."""
+    out = []
+    for e in repo.root_package.walk():
+        if isinstance(e, (PartDefinition, PartUsage)) and not isinstance(e, PortUsage):
+            owned = [c for c in components_of(e) if c.owner is e]
+            if owned:
+                out.append((e, owned))
+    return out
+
+
+def box_snapshot(repo) -> dict[int, dict]:
+    """``id(component) -> box`` (stored or default position, current size) of every
+    component; give it to ``settle_growth`` after an edit."""
+    out: dict[int, dict] = {}
+    for owner, comps in _layout_groups(repo):
+        defaults = _default_boxes(owner)
+        for c in comps:
+            out[id(c)] = effective_box(c, owner, defaults)
+    return out
+
+
+def _overlap(a: dict, b: dict, margin: float = 0) -> bool:
+    return (a["x"] - margin < b["x"] + b["w"] and b["x"] < a["x"] + a["w"] + margin
+            and a["y"] - margin < b["y"] + b["h"] and b["y"] < a["y"] + a["h"] + margin)
+
+
+def settle_growth(repo, before: dict[int, dict]) -> list[Element]:
+    """Keep automatically growing blocks off their neighbours (System Composer never lets a
+    block grow over another): a component that got bigger since `before` (more ports, a
+    longer name; see ``box_snapshot``) pushes every sibling it now covers but did not cover
+    before: one below it moves down, one to its right moves right, by just enough to keep
+    GROWTH_GAP free. Pushed blocks push the blocks they land on in turn. Blocks the user had
+    already placed on top of each other are left alone. Returns the moved components (their
+    new positions are stored; sizes are kept)."""
+    moved: list[Element] = []
+    for owner, comps in _layout_groups(repo):
+        defaults = _default_boxes(owner)
+        now = {id(c): effective_box(c, owner, defaults) for c in comps}
+        queue = [(c, before[id(c)]) for c in comps if id(c) in before
+                 and (now[id(c)]["w"] > before[id(c)]["w"] or now[id(c)]["h"] > before[id(c)]["h"])]
+        budget = 20 * len(comps) * len(comps)
+        while queue and budget > 0:
+            g, old = queue.pop(0)
+            gb = now[id(g)]
+            for n in comps:
+                budget -= 1
+                nb = now[id(n)]
+                if n is g or not _overlap(gb, nb, GROWTH_GAP) or _overlap(old, nb):
+                    continue
+                down = gb["y"] + gb["h"] + GROWTH_GAP - nb["y"]
+                right = gb["x"] + gb["w"] + GROWTH_GAP - nb["x"]
+                below, beside = nb["y"] >= old["y"] + old["h"], nb["x"] >= old["x"] + old["w"]
+                if below and (not beside or down <= right):
+                    new = {**nb, "y": nb["y"] + down}
+                elif beside:
+                    new = {**nb, "x": nb["x"] + right}
+                else:
+                    new = {**nb, "y": nb["y"] + down} if down <= right else {**nb, "x": nb["x"] + right}
+                now[id(n)] = new
+                lay = n.tool_data.get("layout")
+                n.tool_data["layout"] = {"x": new["x"], "y": new["y"], **{
+                    k: lay[k] for k in ("w", "h") if isinstance(lay, dict) and isinstance(lay.get(k), (int, float))}}
+                if not any(m is n for m in moved):
+                    moved.append(n)
+                queue.append((n, nb))
+    return moved
+
+
+@contextmanager
+def growth_settled(repo) -> Iterator[None]:
+    """Run an edit, then push neighbours away from the blocks it made grow."""
+    before = box_snapshot(repo)
+    yield
+    settle_growth(repo, before)
 
 
 def _clean_view(view: Any) -> tuple:

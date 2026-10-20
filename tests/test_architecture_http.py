@@ -306,6 +306,28 @@ class EditingHttpTests(_ArchHttp):
         body["view"] = {"w": "big"}
         self.call("POST", "/api/arch/auto-layout", body, expect=400)
 
+    def test_growing_block_pushes_neighbours_in_the_same_undo_step(self):
+        """PO-8: 8 inputs on the upper block, 8 outputs on the one below, then connect."""
+        up = self.comp("DisplayFlightData", layout={"x": 100, "y": 100})
+        down = self.comp("DistributePower", layout={"x": 100, "y": 250})
+        for i in range(8):
+            self.port(up, f"x_in{i}", "in")
+        for i in range(8):
+            self.port(down, f"x_out{i}", "out")
+        boxes = {c["name"]: c["layout"] for c in self.view()["components"]}
+        u, d = boxes["DisplayFlightData"], boxes["DistributePower"]
+        self.assertGreaterEqual(d["y"], u["y"] + u["h"] + A.GROWTH_GAP)          # never covered
+        self.connect(down, "x_out7", up, "x_in7")                                 # the last pair
+        self.call("POST", "/api/undo")                                            # undo the connector
+        self.call("POST", "/api/undo")                                            # undo x_out7 ...
+        self.call("POST", "/api/undo")                                            # ... and x_out6
+        after = {c["name"]: c["layout"] for c in self.view()["components"]}
+        self.assertEqual(after["DistributePower"]["y"], d["y"])                    # pushes kept
+        for _ in range(14):
+            self.call("POST", "/api/undo")
+        self.assertEqual({c["name"]: c["layout"]["y"] for c in self.view()["components"]},
+                         {"DisplayFlightData": 100, "DistributePower": 250})       # undone together
+
     def test_everything_survives_save_and_load(self):
         self.call("POST", "/api/arch/model-type", {"type": "software"})
         adc, fms, disp = self.three()

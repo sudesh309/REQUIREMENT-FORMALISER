@@ -696,6 +696,66 @@ class LayoutAndViewTests(unittest.TestCase):
         self.assertEqual([r.name for r in A.architecture_roots(repo)], ["AircraftSystem"])
 
 
+class GrowthTests(unittest.TestCase):
+    """PO-8 / SU-12a: blocks that grow with their ports or names never cover a neighbour."""
+
+    def grid(self):
+        repo = Repository("P")
+        root = A.create_architecture(repo, "R")
+        cs = {}
+        for name, x, y in (("TL", 100, 100), ("TR", 360, 100), ("BL", 100, 260), ("BR", 360, 260)):
+            cs[name] = A.add_component(repo, root, name, layout={"x": x, "y": y})
+        return repo, root, cs
+
+    def boxes(self, root):
+        defaults = A._default_boxes(root)
+        return {c.name: A.effective_box(c, root, defaults) for c in components_of(root)}
+
+    def test_ports_push_the_block_below_down(self):
+        repo, root, cs = self.grid()
+        before = A.box_snapshot(repo)
+        for i in range(10):
+            A.add_port(repo, cs["TL"], f"in{i}", "in")
+        moved = A.settle_growth(repo, before)
+        self.assertEqual([c.name for c in moved], ["BL"])
+        b = self.boxes(root)
+        self.assertEqual(_overlaps(b), [])
+        self.assertEqual(b["BL"]["y"], b["TL"]["y"] + b["TL"]["h"] + A.GROWTH_GAP)
+        self.assertEqual((b["BL"]["x"], b["TR"], b["BR"]["x"]), (100, b["TR"], 360))
+
+    def test_wider_names_push_right_and_pushes_cascade(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BR"].element_id, "x": 360, "y": 420}])
+        before = A.box_snapshot(repo)
+        A.rename(repo, cs["TL"], "IntegratedModularAvionicsCabinetLeft")
+        for i in range(12):
+            A.add_port(repo, cs["TL"], f"discreteSignal{i}", "in")
+            A.add_port(repo, cs["TL"], f"arinc429Out{i}", "out")
+        A.settle_growth(repo, before)
+        b = self.boxes(root)
+        self.assertEqual(_overlaps(b), [])
+        self.assertGreater(b["TR"]["x"], 360)                     # pushed right
+        self.assertGreater(b["BL"]["y"], 260)                     # pushed down
+
+    def test_user_overlaps_are_left_alone(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BL"].element_id, "x": 120, "y": 150}])   # placed on TL
+        before = A.box_snapshot(repo)
+        A.add_port(repo, cs["TL"], "a", "in")
+        self.assertEqual(A.settle_growth(repo, before), [])
+
+    def test_growth_settled_context_and_sizes_stay_automatic(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BL"].element_id, "x": 100, "y": 260, "w": 200, "h": 120}])
+        with A.growth_settled(repo):
+            for i in range(8):
+                A.add_port(repo, cs["TL"], f"p{i}", "in")
+        self.assertEqual(cs["BL"].tool_data["layout"]["w"], 200)            # a user-set size is kept
+        self.assertGreater(cs["BL"].tool_data["layout"]["y"], 260)
+        self.assertNotIn("w", cs["TL"].tool_data["layout"])
+        self.assertEqual(_overlaps(self.boxes(root)), [])
+
+
 class ArrangeScaleTests(unittest.TestCase):
     """PO-1 / SU-12b: Arrange on realistic, cyclic avionics networks stays compact and readable."""
 
