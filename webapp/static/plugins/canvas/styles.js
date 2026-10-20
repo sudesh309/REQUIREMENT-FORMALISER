@@ -184,6 +184,19 @@ export function injectCanvasStyles() {
   .arch-kv > b { font-weight:500; text-align:right; word-break:break-word; }
   .arch-stereo-row { color:#7c3aed; }
   .arch-stereo-row .arch-kv { color:#334155; padding-left:8px; }
+  .arch-dock-part { display:contents; }
+  .arch-dock-stereo { display:flex; flex-direction:column; gap:6px; }
+  .arch-dock-stereo[hidden] { display:none; }
+  .arch-st-bar select { width:100%; padding:2px 5px; font-size:12px; }
+  .arch-st-partial { display:flex; align-items:center; justify-content:space-between; gap:6px; color:#6d28d9; }
+  .arch-st-partial .btn-action { padding:0 6px; font-size:11px; }
+  .arch-dock .pf-app { margin-bottom:0; }
+  .arch-dock .pf-app > summary { font-size:12px; padding:3px 6px; gap:5px; }
+  .arch-dock .pf-props { grid-template-columns:minmax(0, 40%) minmax(0, 1fr) auto; gap:3px 5px; padding:6px; font-size:12px; }
+  .arch-dock .pf-props .input { padding:2px 5px; font-size:12px; min-width:0; width:100%; }
+  .arch-dock .pf-props .pf-unit { max-width:46px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .arch-dock .pf-msg { margin:0; min-height:0; word-break:break-word; }
+  .arch-dock .pf-msg:empty { display:none; }
   .arch-tips { margin:0; padding-left:16px; list-style:disc; color:#64748b; display:flex; flex-direction:column; gap:2px; }
   `;
   document.head.appendChild(st);

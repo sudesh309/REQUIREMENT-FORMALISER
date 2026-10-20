@@ -14,7 +14,7 @@ step. The same operations are available over HTTP, as MCP tools and in Python.
 | Undo / redo history | `engine/undo.py` |
 | Parser / IBD fixes | `engine/parser.py`, `engine/diagram.py`, `engine/diagram_mermaid.py` |
 | HTTP API | `webapp/routes/architecture.py`, `webapp/routes/undo.py` |
-| Canvas (Architecture tab) | `webapp/static/plugins/10-canvas.js` → `canvas/editor.js` (controller), `geometry.js` (routing, placement, zoom maths), `render.js` (SVG), `toolstrip.js`, `dock.js` (Property Inspector), `ui.js` (toasts, menu, inline editor), `styles.js` |
+| Canvas (Architecture tab) | `webapp/static/plugins/10-canvas.js` → `canvas/editor.js` (controller), `geometry.js` (routing, placement, zoom maths), `render.js` (SVG), `toolstrip.js`, `dock.js` (Property Inspector), `stereo.js` (its Stereotypes section; value editors from the profiles plugin's `studio.profiles.ui`), `ui.js` (toasts, menu, inline editor), `styles.js` |
 | Other studio pieces | `canvas/undo.js` (Undo / Redo), `canvas/model.js` (New model, model type), `canvas/inspector.js` (Properties-tab tables), `canvas/common.js` (shared clipboard, helpers) |
 | MCP tools | `mcp_server/tools/architecture.py` |
 | Tests | `tests/test_architecture*.py`, `tests/ui/10_canvas_geometry.test.mjs` (node unit tests), `tests/ui/scenarios/10_canvas_*.mjs` (browser) |
@@ -134,7 +134,7 @@ opens the architecture you last viewed (else the first one with components).
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
 | Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view. Cycles (bidirectional A429 / AFDX links) are broken with as few backward connectors as possible, so they never create one layer per block; big networks wrap their layers into bands (like lines of text, at most ⌈√n⌉ + 2 layers side by side) shaped for the canvas, so 30 LRUs with 90 connectors fit a 1400 × 900 window at about 40 % zoom. Small diagrams keep one row |
 | Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool |
-| Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface (SysML definitions and the interface dictionary's interfaces and value types), side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. *Properties tab ↗* opens the full studio inspector |
+| Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface (SysML definitions and the interface dictionary's interfaces and value types), side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. Its **Stereotypes** section applies stereotypes (*Add stereotype…* lists the applicable, non-abstract ones), removes them (✕) and edits their values in place with the Properties tab's typed editors and checks: number with unit and expression (`2*1.5`, `3 lb`), enumeration list, checkbox, text; a refused value is marked in red with the reason and not stored. With several components selected it works on all of them: values that differ show as *mixed*, typing a value sets it on every component, *Apply to all* completes a stereotype found on some of them, ✕ removes it from all; each edit is one undo step and a value refused for one component is stored for none. *Properties tab ↗* opens the full studio inspector |
 | Context menu | Right-click anything, or **Shift+F10** / the Menu key for the selection; arrow keys move in the menu |
 
 ### Keyboard (canvas focused)
@@ -264,6 +264,10 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | POST | `/api/arch/inline` | `{component}` | component view |
 | POST | `/api/arch/auto-layout` | `{composition, view?: {w, h}}` (`view` = canvas size in screen px; default 870 × 480) | `{positions: {id: {x, y, w, h}}}` (only positions are stored; user-set sizes are kept; deterministic) |
 | POST | `/api/arch/layout` | `{items: [{id, x, y, w?, h?} \| {id, side, offset} \| {id, points}]}` | `{updated}` (validated before anything is written; a move keeps a size set earlier, `w`/`h` null return to the automatic size) |
+| GET | `/api/arch/stereotypes?ids=a,b,…` | | `{elements, applied, partial, applicable}`: stereotypes on every element (properties shaped as `GET /api/elements/<id>/stereotypes`, `mixed: true` and value null where they differ), on some of them (`count`), applicable to all |
+| POST | `/api/arch/stereotypes` | `{ids, stereotype}` | the same view + `report` (applied to those without it) |
+| PATCH | `/api/arch/stereotypes` | `{ids, values: {"Profile.Stereotype.prop": value}}` or `{ids, property, value}` | the same view + `stored` (checked for every element before any is stored; 400 names the element) |
+| DELETE | `/api/arch/stereotypes` | `{ids, stereotype}` | the same view + `removed` |
 | POST | `/api/undo`, `/api/redo` | | `{ok, reason?, dirty, revision, can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}` |
 | GET | `/api/undo/state` | | the same state (`dirty`: changed since the last save, new or load) |
 | POST | `/api/undo/saved` | | marks the current model as saved (`dirty` false); the studio calls it after *Save JSON* |

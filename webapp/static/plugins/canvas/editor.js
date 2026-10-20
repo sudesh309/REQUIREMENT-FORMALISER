@@ -1788,6 +1788,9 @@ class CanvasEditor {
       group: () => this.group(),
       duplicate: () => this.duplicate(),
       toggleDock: on => this.toggleDock(on),
+      // The dock applied / removed a stereotype or set a value: redraw the blocks (stereotype
+      // line, badges, style) and refresh undo; the dock keeps its stereotype fields.
+      stereotypesChanged: () => this.sync(),
     };
   }
 }

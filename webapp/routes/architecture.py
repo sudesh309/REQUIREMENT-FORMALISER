@@ -31,6 +31,12 @@ Editing
     POST  /api/arch/inline                     {component}
     POST  /api/arch/auto-layout                {composition, view?: {w, h} (canvas size in px)}
     POST  /api/arch/layout                     {items: [{id, x, y, w?, h?} | {id, side, offset} | {id, points}]}
+Stereotypes of a multi-selection (Property Inspector; engine/profiles.py checks every value)
+    GET    /api/arch/stereotypes?ids=a,b,...   {elements, applied (mixed values flagged), partial, applicable}
+    POST   /api/arch/stereotypes               {ids, stereotype}     apply to those without it
+    PATCH  /api/arch/stereotypes               {ids, values: {path: value}} or {ids, property, value}
+    DELETE /api/arch/stereotypes               {ids, stereotype}     remove from those with it
+    (each answers the GET view; one request is one undo step, nothing changes if a value is refused)
 """
 from __future__ import annotations
 
@@ -409,6 +415,53 @@ def api_auto_layout(req):
 @arch_route("POST", r"^/api/arch/layout$")
 def api_layout(req):
     return ok({"updated": A.apply_layout(_repo(), _body(req).get("items"))})
+
+
+# --- stereotypes of a multi-selection --------------------------------------------
+
+def _elements(ids: Any) -> list[Element]:
+    if isinstance(ids, str):
+        ids = [i for i in ids.split(",") if i]
+    if not isinstance(ids, list) or not ids:
+        raise A.ArchitectureError("ids must be a non-empty list")
+    out: list[Element] = []
+    for i in ids:
+        e = _find(i, "element")
+        if not any(x is e for x in out):
+            out.append(e)
+    return out
+
+
+@arch_route("GET", r"^/api/arch/stereotypes$")
+def api_common_stereotypes(req):
+    return ok(A.common_stereotypes(_repo(), _elements((req.get("query") or {}).get("ids"))))
+
+
+@arch_route("POST", r"^/api/arch/stereotypes$")
+def api_apply_stereotype(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    report = A.apply_stereotype_to(_repo(), els, b.get("stereotype"))
+    return ok({**A.common_stereotypes(_repo(), els), "report": report})
+
+
+@arch_route("PATCH", r"^/api/arch/stereotypes$")
+def api_set_stereotype_values(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    values = dict(b.get("values") or {})
+    if "property" in b:
+        values[b["property"]] = b.get("value")
+    stored = A.set_stereotype_values(_repo(), els, values)
+    return ok({**A.common_stereotypes(_repo(), els), "stored": stored})
+
+
+@arch_route("DELETE", r"^/api/arch/stereotypes$")
+def api_remove_stereotype(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    n = A.remove_stereotype_from(_repo(), els, b.get("stereotype"))
+    return ok({**A.common_stereotypes(_repo(), els), "removed": n})
 
 
 # --- element JSON: badges, port kind, connector contexts; PATCH validation -------

@@ -2195,6 +2195,134 @@ def part_definitions(repo) -> list[PartDefinition]:
 
 
 # ---------------------------------------------------------------------------
+# Stereotypes of a multi-selection (Property Inspector)
+# ---------------------------------------------------------------------------
+# The Property Inspector edits the stereotypes of every selected component at once, as
+# System Composer does. engine.profiles stays the authority (lookup, type and range checks,
+# unit conversion); these functions only spread one edit over several elements, checking
+# all of them before changing any.
+
+def _profiles():
+    from engine import profiles as P      # imported late: profiles is an optional feature
+    return P
+
+
+def _stereo_error(ex: Exception, element: Optional[Element] = None, many: bool = False) -> ArchitectureError:
+    msg = str(ex)
+    if many and element is not None:
+        msg = f"{element.name}: {msg}"
+    return ArchitectureError(msg, getattr(ex, "status", 400))
+
+
+def _brief(e: Element) -> dict:
+    return {"id": e.element_id, "name": e.name, "kind": e.kind, "qualified_name": e.qualified_name}
+
+
+def common_stereotypes(repo, elements: list[Element]) -> dict:
+    """The stereotypes of ``elements`` as one Property Inspector edits them together.
+
+    ``applied``: stereotypes on every element, shaped like ``profiles.element_stereotypes``;
+    a property whose values differ has ``mixed: true`` and value None. ``partial``:
+    stereotypes on some of them (``count``). ``applicable``: non-abstract stereotypes that can
+    be applied to every element and are not on all of them yet."""
+    P = _profiles()
+    els = list(elements)
+    if not els:
+        raise ArchitectureError("select at least one element")
+    views = [{a["id"]: a for a in P.element_stereotypes(e)} for e in els]
+    applied = []
+    for app in P.element_stereotypes(els[0]):
+        if not all(app["id"] in v for v in views):
+            continue
+        groups = []
+        for gi, g in enumerate(app["groups"]):
+            props = []
+            for pi, p in enumerate(g["properties"]):
+                same = [v[app["id"]]["groups"][gi]["properties"][pi] for v in views]
+                if all(s["value"] == p["value"] for s in same):
+                    bad = next((s for s in same if s.get("valid") is False), None)
+                    props.append({**p, "mixed": False, "valid": bad is None,
+                                  **({"problem": bad.get("problem")} if bad else {})})
+                else:
+                    props.append({**{k: v for k, v in p.items() if k != "problem"},
+                                  "value": None, "display": "", "valid": True, "mixed": True})
+            groups.append({**g, "properties": props})
+        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups})
+    on_all = {a["id"] for a in applied}
+    counts: dict[str, list] = {}
+    for v in views:
+        for sid, a in v.items():
+            if sid not in on_all:
+                counts.setdefault(sid, [a, 0])[1] += 1
+    partial = [{"id": sid, "qualified_name": a["qualified_name"], "name": a["name"], "count": n}
+               for sid, (a, n) in counts.items()]
+    offered: dict[str, Any] = {}
+    possible = []
+    for e in els:
+        mine = {s.element_id: s for s in P.applicable_stereotypes(repo, e)}
+        possible.append(set(mine) | {a.stereotype.element_id for a in stereotypes_on(e)})
+        for sid, s in mine.items():
+            offered.setdefault(sid, s)
+    applicable = [{"id": s.element_id, "qualified_name": s.full_name, "name": s.name,
+                   "profile": s.profile.name if s.profile else None,
+                   "applies_to": s.effective_category(), "description": s.description}
+                  for sid, s in offered.items() if all(sid in p for p in possible)]
+    return {"elements": [_brief(e) for e in els], "applied": applied, "partial": partial,
+            "applicable": applicable}
+
+
+def apply_stereotype_to(repo, elements: list[Element], stereotype: Any) -> dict:
+    """Apply a stereotype to every element that does not have it yet (one undo step on the
+    web). Returns ``{applied: [ids], skipped: [...]}`` as ``profiles.batch_apply``."""
+    P = _profiles()
+    els = list(elements)
+    try:
+        st = P.find_stereotype(repo, stereotype)
+        return P.batch_apply(repo, st, scope="selection", elements=[e.element_id for e in els])
+    except (P.StereotypeError, ValueError) as ex:
+        raise _stereo_error(ex) from None
+
+
+def remove_stereotype_from(repo, elements: list[Element], stereotype: Any) -> int:
+    """Remove a stereotype (and its values) from every element that has it."""
+    P = _profiles()
+    try:
+        st = P.find_stereotype(repo, stereotype)
+    except (P.StereotypeError, ValueError) as ex:
+        raise _stereo_error(ex) from None
+    having = [e for e in elements if P.application_of(e, st) is not None]
+    if not having:
+        raise ArchitectureError(f"«{st.full_name}» is not applied to the selection", 404)
+    for e in having:
+        P.remove_stereotype(repo, e, st)
+    return len(having)
+
+
+def set_stereotype_values(repo, elements: list[Element], values: dict) -> dict:
+    """Set ``{"Profile.Stereotype.property": value}`` on every element, all or nothing: each
+    value is checked (and converted) for each element before any is stored."""
+    P = _profiles()
+    els = list(elements)
+    if not isinstance(values, dict) or not values:
+        raise ArchitectureError("send {values: {'Profile.Stereotype.property': value}} or {property, value}")
+    many = len(els) > 1
+    for e in els:
+        for path, value in values.items():
+            try:
+                a, tag = P.resolve_value_path(e, path)
+                tag.coerce(value, f"{a.stereotype.full_name}.{tag.name}")
+            except (P.StereotypeError, ValueError) as ex:
+                raise _stereo_error(ex, e, many) from None
+    stored = {}
+    for e in els:
+        try:
+            stored[e.element_id] = P.set_property_values(repo, e, values)
+        except (P.StereotypeError, ValueError) as ex:     # checked above: should not happen
+            raise _stereo_error(ex, e, many) from None
+    return stored
+
+
+# ---------------------------------------------------------------------------
 # Persistence, validation, cleanup and graph registrations
 # ---------------------------------------------------------------------------
 

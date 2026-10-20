@@ -370,6 +370,102 @@ class EditingHttpTests(_ArchHttp):
         self.assertIn("-->", out["text"])
 
 
+class StereotypeInspectorHttpTests(_ArchHttp):
+    """PO-4: the Property Inspector applies stereotypes and edits their values for every
+    selected component at once (one undo step), with the profiles' checks."""
+
+    def setUp(self):
+        super().setUp()
+        prof = self.call("POST", "/api/profiles", {"name": "Avionics"})
+        self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "Base", "abstract": True,
+                                                                       "applies_to": "Component"})
+        lru = self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "LRU", "applies_to": "Component"})
+        for body in ({"name": "mass", "type": "double", "unit": "kg", "min": 0},
+                     {"name": "dal", "type": "enumeration", "literals": ["A", "B", "C", "D", "E"]},
+                     {"name": "ata", "type": "string"}, {"name": "ima", "type": "boolean"}):
+            self.call("POST", f"/api/stereotypes/{lru['id']}/properties", body)
+        self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "Sensor", "applies_to": "Component"})
+        self.adc, self.fms, self.disp = self.comp("ADC"), self.comp("FMS"), self.comp("Display")
+        self.ids = [self.adc["id"], self.fms["id"], self.disp["id"]]
+
+    def common(self, ids=None):
+        return self.call("GET", "/api/arch/stereotypes?ids=" + ",".join(ids or self.ids))
+
+    def depth(self):
+        return self.call("GET", "/api/undo/state")["undo_depth"]
+
+    def test_apply_edit_and_remove_for_the_selection(self):
+        v = self.common()
+        self.assertEqual(v["applied"], [])
+        self.assertEqual(sorted(s["qualified_name"] for s in v["applicable"]), ["Avionics.LRU", "Avionics.Sensor"])
+        # Applied to one component first, then to the whole selection in one step.
+        self.call("POST", f"/api/elements/{self.adc['id']}/stereotypes", {"stereotype": "Avionics.LRU"})
+        v = self.common()
+        self.assertEqual(v["partial"], [{"id": v["partial"][0]["id"], "qualified_name": "Avionics.LRU",
+                                         "name": "LRU", "count": 1}])
+        self.assertIn("Avionics.LRU", [s["qualified_name"] for s in v["applicable"]])
+        d = self.depth()
+        v = self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.assertEqual(len(v["report"]["applied"]), 2)
+        self.assertEqual([a["qualified_name"] for a in v["applied"]], ["Avionics.LRU"])
+        self.assertNotIn("Avionics.LRU", [s["qualified_name"] for s in v["applicable"]])
+        self.assertEqual(self.depth(), d + 1)
+        # Values: differing ones are 'mixed'; one PATCH sets all three (one undo step), with units.
+        self.call("PATCH", f"/api/elements/{self.adc['id']}/stereotypes", {"property": "Avionics.LRU.mass", "value": 4})
+        props = {p["name"]: p for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertTrue(props["mass"]["mixed"])
+        self.assertIsNone(props["mass"]["value"])
+        self.assertFalse(props["dal"]["mixed"])
+        d = self.depth()
+        v = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.mass", "value": "2 lb"})
+        mass = v["applied"][0]["groups"][0]["properties"][0]
+        self.assertFalse(mass["mixed"])
+        self.assertAlmostEqual(mass["value"], 0.90718474)
+        self.assertEqual(self.depth(), d + 1)
+        for c in (self.adc, self.fms, self.disp):
+            one = self.call("GET", f"/api/elements/{c['id']}/stereotypes")["applied"][0]["groups"][0]["properties"][0]
+            self.assertAlmostEqual(one["value"], 0.90718474)
+        v = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {
+            "Avionics.LRU.dal": "b", "Avionics.LRU.ata": "34", "Avionics.LRU.ima": True}})
+        props = {p["name"]: p["value"] for p in v["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual((props["dal"], props["ata"], props["ima"]), ("B", "34", True))
+        # Undo takes the whole multi-edit back.
+        self.call("POST", "/api/undo")
+        props = {p["name"]: p for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual(props["ata"]["value"], "")
+        # Remove from all in one step.
+        d = self.depth()
+        v = self.call("DELETE", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.assertEqual((v["removed"], v["applied"], self.depth()), (3, [], d + 1))
+        self.call("DELETE", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"}, expect=404)
+
+    def test_refused_values_change_nothing(self):
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.mass", "value": 3})
+        d = self.depth()
+        for value, why in (("-1", "below the minimum"), ("3 W", ""), ("abc", "")):
+            out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {
+                "Avionics.LRU.ata": "21", "Avionics.LRU.mass": value}}, expect=400)
+            self.assertIn(why, out["error"])
+        out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.dal",
+                                                            "value": "Z"}, expect=400)
+        self.assertIn("ADC:", out["error"])                     # names the element it failed on
+        self.assertIn("not one of the literals", out["error"])
+        props = {p["name"]: p["value"] for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual((props["mass"], props["ata"]), (3.0, ""))
+        self.assertEqual(self.depth(), d)
+        # A component without the stereotype: refused for the whole selection.
+        other = self.comp("RDC")
+        out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids + [other["id"]],
+                                                            "property": "Avionics.LRU.mass", "value": 1}, expect=404)
+        self.assertIn("RDC", out["error"])
+        self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {}}, expect=400)
+        self.call("GET", "/api/arch/stereotypes?ids=", expect=400)
+        self.call("GET", "/api/arch/stereotypes?ids=missing", expect=404)
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.Base"}, expect=400)
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Nope"}, expect=404)
+
+
 class UndoHttpTests(_ArchHttp):
 
     def test_undo_redo_any_mutation(self):
