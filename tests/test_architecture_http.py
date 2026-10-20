@@ -297,7 +297,7 @@ class UndoHttpTests(_ArchHttp):
         self.call("POST", "/api/undo")
         self.assertEqual(self.call("GET", f"/api/element/{el['id']}")["name"], "Gen")
         st = self.call("POST", "/api/redo")
-        self.assertEqual((st["ok"], st["redo_label"]), (True, "Delete element"))
+        self.assertEqual((st["ok"], st["redo_label"]), (True, "Delete Generator"))
         self.assertEqual(self.call("GET", f"/api/element/{el['id']}")["name"], "Generator")
         # a new edit clears redo
         self.comp("X")

@@ -65,6 +65,34 @@ register_summary_hook(lambda e, d: d.update(variant=...))   # extra fields in el
 register_prop_hook(lambda e, key, value: ...)          # return True if it handled a PATCH prop
 ```
 
+**Undo step labels.** Every non-GET request that changes the model becomes
+one undo step automatically. Name it for users (the Undo / Redo tooltips and
+the Output log show it) next to the route; no label ever shows an HTTP
+method, a route or an id:
+
+```python
+from webapp.core import register_undo_label
+
+register_undo_label("POST", r"^/api/variants/(?P<vid>[^/]+)/activate$",
+                    lambda c: f"Activate {c.name(c.body.get('choice'))} in {c.name(c.args['vid'])}")
+```
+
+The function runs after the handler and gets a `LabelContext`: `c.body`,
+`c.payload` (the answer; `c.pid()` is its `id`), `c.args` (URL-decoded named
+groups), `c.name(ref)` (display name now, or before the request for deleted
+elements; requirements by their id such as SYS-3), `c.old_name(ref)`,
+`c.names(refs)` and `c.port(ref)` ("ADIRU.airData"). Unlabelled routes get a
+generic label ("Edit variants"). The labels of the wave-1 features are in
+`webapp/routes/labels.py`.
+
+**Create, then name in place = one step.** When the UI names an element in
+place right after creating it (canvas Add Component / Group / ports, a new
+interface or element, a new requirement's summary), it sends the rename with
+`studio.api(method, path, body, { undoMerge: <new element id> })`. The server
+folds that edit into the creation step (only if the creation is the latest
+step), so one Ctrl+Z removes the element and the step is labelled with its
+final name ("Group ADIRU, FMS into CPM_Pair").
+
 Never import `webapp.server` from a plugin: under `python -m webapp.server`
 it is `__main__`, and a second import would create a second session. Use
 `session().plugin_state["<feature>"]` for runtime state; it is cleared when
@@ -93,7 +121,9 @@ export default async function install(studio) {
   studio.on("tab-shown", id => ...);
   studio.emit("my-event", payload);        // plugins can talk to each other
 
-  await studio.api("GET", "/api/...");      // throws on non-2xx and logs the error
+  await studio.api("GET", "/api/...");      // throws on non-2xx and logs the error (in words:
+                                            // no HTTP method, route or ids)
+  await studio.api("PATCH", url, body, { undoMerge: newId });   // see "Create, then name"
   studio.log("done", "ok");                 // severities: info, ok, warning, error
   studio.modal(title, formHtml, async values => { ... });
   await studio.refreshTree(); await studio.selectElement(id);

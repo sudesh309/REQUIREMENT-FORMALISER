@@ -34,10 +34,14 @@ const shortcuts = [];                // {key, ctrl, shift, alt, handler}
 
 /* ---------- API ---------- */
 
-async function api(method, path, body) {
+// opts.undoMerge = <element id>: this edit completes the creation of that element (naming
+// it in place right after adding it), so it joins the creation's undo step.
+async function api(method, path, body, opts = {}) {
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  if (opts.undoMerge) headers["X-Undo-Merge"] = opts.undoMerge;
   const resp = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await resp.text();
@@ -45,10 +49,26 @@ async function api(method, path, body) {
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
   if (!resp.ok) {
-    log(`${resp.status} ${method} ${path}: ${data?.error || text}`, "error");
-    throw new Error(data?.error || text);
+    // Users read messages, not routes: no HTTP method, path or element ids.
+    const message = readableError(data?.error || text || resp.statusText, resp.status);
+    log(message, "error");
+    throw new Error(message);
   }
   return data;
+}
+
+const UUID_RE = /'?\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b'?/gi;
+
+// An error message with element ids replaced by names (or "an element" when unknown).
+function readableError(message, status = 0) {
+  let text = String(message || "").trim();
+  if (status >= 500) text = text.split("\n")[0] || "Internal error";
+  text = text.replace(UUID_RE, (m) => {
+    const id = m.replace(/'/g, "");
+    const node = state.treeIndex.get(id);
+    return node ? `'${node.name || node.kind}'` : "an element";
+  });
+  return text || (status === 404 ? "Not found" : "The request failed");
 }
 
 /* ---------- model revision: every view hears about every model change ---------- */

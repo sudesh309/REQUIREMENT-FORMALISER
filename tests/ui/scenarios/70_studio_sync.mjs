@@ -6,7 +6,7 @@ export default async function (ctx) {
   try { await run(ctx, (name) => { step = name; }); } catch (e) { throw new Error(`[${step}] ${e.message}`); }
 }
 
-async function run({ page, fresh, waitReady, expect, api }, step) {
+async function run({ page, fresh, waitReady, expect, api, errors }, step) {
   await fresh("StudioSync");
   const prof = await api("POST", "/api/profiles", { name: "Avionics" });
   const lru = await api("POST", `/api/profiles/${prof.id}/stereotypes`, { name: "LRU", applies_to: "Component" });
@@ -38,6 +38,13 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   const mass = '[data-section="stereotypes"] [data-path="Avionics.LRU.mass"]';
   await page.waitForSelector(mass);
   const before = (await api("GET", "/api/undo/state")).undo_depth;
+  // A rejected value is reported in words (no HTTP method, route or id in the log).
+  await page.fill(mass, "heavy");
+  await page.press(mass, "Enter");
+  await until(() => document.querySelector("#log .log-error"), null, "rejected value logged");
+  const err = await page.textContent("#log .log-error");
+  expect(!/\b(PATCH|POST)\b|\/api\/|[0-9a-f]{8}-[0-9a-f]{4}-/.test(err), `readable error: ${err}`);
+  errors.splice(0);                // the browser reports the expected 400 on its console
   await page.fill(mass, "7");
   await page.press(mass, "Tab");                       // commit and move on to power
   await until(() => document.querySelector('[data-section="stereotypes"] [data-path="Avionics.LRU.mass"]')?.dataset.orig === "7",
@@ -54,6 +61,10 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
               "studio Undo enabled after a Properties-tab edit");
   await until(() => !document.querySelector('[data-canvas-act="undo"]').disabled, null,
               "canvas Undo enabled after a Properties-tab edit");
+  // Human-readable step names, no HTTP routes or ids (PO-5, SU-8).
+  const tip = await page.getAttribute('button[data-plugin-button="undo"]', "title");
+  expect(tip === "Undo Set Avionics.LRU.mass of FMS (Ctrl+Z)", `undo tooltip: ${tip}`);
+  expect(await page.getAttribute('[data-canvas-act="undo"]', "title") === tip, "canvas Undo names the same step");
 
   step("canvas dock is current");
   await page.click('.tab[data-tab="architecture"]');
@@ -68,4 +79,28 @@ async function run({ page, fresh, waitReady, expect, api }, step) {
   await page.click('[data-canvas-act="undo"]');
   await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "4.5 kg",
               null, "undo restored the mass in the dock");
+
+  step("group and name in place is one undo step");
+  const names = () => page.$$eval(".arch-block", xs => xs.map(x => x.dataset.name).sort().join());
+  await clickBlock("ADIRU");
+  await page.keyboard.down("Control");
+  await clickBlock("FMS");
+  await page.keyboard.up("Control");
+  await until(() => document.querySelectorAll(".arch-block.sel").length === 2, null, "two blocks selected");
+  await page.keyboard.press("Control+g");
+  await page.waitForSelector(".arch-inline-edit:not([hidden])");
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("CPM_Pair");
+  await page.keyboard.press("Enter");
+  await until(() => document.querySelector('.arch-block[data-name="CPM_Pair"]'), null, "group named in place");
+  await until(() => /^Undo Group (ADIRU, FMS|FMS, ADIRU) into CPM_Pair \(Ctrl\+Z\)$/
+    .test(document.querySelector('button[data-plugin-button="undo"]').title), null, "one step named after the group");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Control+z");
+  await until(() => [...document.querySelectorAll(".arch-block")].map(x => x.dataset.name).sort().join() === "ADIRU,FMS",
+              null, "one Ctrl+Z removes the group (no 'Component' left)");
+  expect(await names() === "ADIRU,FMS", `blocks after undo: ${await names()}`);
+  // The Output log speaks of steps, not of HTTP requests.
+  const log = await page.textContent("#log");
+  expect(!/\b(GET|POST|PATCH|DELETE) \/api\//.test(log), "no HTTP routes in the Output log");
 }

@@ -500,13 +500,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "query": dict(urllib.parse.parse_qsl(parsed.query)),
                 }
                 if method != "GET":   # undo/redo snapshots (webapp.core.register_mutation_hook)
-                    finish = begin_mutation(method, path, body)
+                    finish = begin_mutation(method, path, body, dict(self.headers.items()))
                 status, payload = fn(request, **m.groupdict()) if m.groupdict() else fn(request)
             except Exception as ex:  # noqa: BLE001
                 status, payload = 500, {"error": str(ex),
                                         "traceback": traceback.format_exc()}
             if finish is not None:
-                finish(status)
+                try:
+                    finish(status, payload)
+                except Exception:  # noqa: BLE001 - the edit itself succeeded; say so
+                    traceback.print_exc()
             data = json.dumps(payload, default=str).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")

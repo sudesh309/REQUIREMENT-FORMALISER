@@ -18,6 +18,12 @@ tracked calls (e.g. by a tool that is not wrapped) are detected at the next
 ``begin`` / ``undo`` by comparing with the last committed state and become
 their own undo step.
 
+``commit(..., merge_into=element_id)`` folds an edit into the previous step
+when that step created the element (for example naming a component right
+after adding it): undo then removes the element in one step. The previous
+step's label is recomputed with its ``relabel`` callable so it shows the
+final name ("Add component CPM_Pair").
+
 The history lives in ``session.plugin_state["undo"]``: loading or creating a
 project (``Session.set_repo``) clears it; undo/redo themselves use
 :func:`swap_repo`, which keeps it.
@@ -26,7 +32,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
-from typing import Any, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from .serializer import from_dict, to_dict
 
@@ -40,12 +46,16 @@ class UndoHistory:
         self.undo_stack: list[tuple[str, dict]] = []
         self.redo_stack: list[tuple[str, dict]] = []
         self.baseline: Optional[dict] = None
+        # Relabels the top undo step after an edit was merged into it (see commit).
+        self._top_relabel: Optional[Callable[[], Optional[str]]] = None
         self._lock = threading.RLock()
 
     # --- recording -------------------------------------------------------
-    def _push(self, label: str, snapshot: dict) -> None:
+    def _push(self, label: str, snapshot: dict,
+              relabel: Optional[Callable[[], Optional[str]]] = None) -> None:
         self.undo_stack.append((label, snapshot))
         del self.undo_stack[:-self.limit]
+        self._top_relabel = relabel
 
     def _catch_up(self, current: dict) -> bool:
         """Record an untracked change since the last commit; True if there was one."""
@@ -62,16 +72,44 @@ class UndoHistory:
             self._catch_up(snapshot)
         return snapshot
 
-    def commit(self, repo, before: dict, label: str = "") -> bool:
-        """Record `before` as an undo step if the model changed since it was taken."""
+    def commit(self, repo, before: dict, label: str = "", *,
+               merge_into: Optional[str] = None,
+               relabel: Optional[Callable[[], Optional[str]]] = None) -> bool:
+        """Record `before` as an undo step if the model changed since it was taken.
+
+        With ``merge_into`` (an element id) the change joins the previous step instead
+        when that step created the element and nothing happened in between; ``relabel``
+        recomputes this step's label should a later edit be merged into it.
+        """
         after = to_dict(repo)
         with self._lock:
             self.baseline = after
             if after == before:
                 return False
-            self._push(label or "edit", before)
+            if merge_into and self._can_merge(merge_into, before):
+                top_label, snapshot = self.undo_stack[-1]
+                fresh = None
+                if self._top_relabel is not None:
+                    try:
+                        fresh = self._top_relabel()
+                    except Exception:      # noqa: BLE001 - a label must never break an edit
+                        fresh = None
+                self.undo_stack[-1] = (fresh or top_label, snapshot)
+                return True
+            self._push(label or "edit", before, relabel)
             self.redo_stack.clear()
             return True
+
+    def _can_merge(self, element_id: str, before: dict) -> bool:
+        """The previous step created `element_id` and is the last thing that happened."""
+        if not self.undo_stack or self.redo_stack or self._top_relabel is None:
+            return False
+        label, snapshot = self.undo_stack[-1]
+        if label == EXTERNAL:
+            return False
+        existed = any(e.get("id") == element_id for e in snapshot.get("elements", ()))
+        exists = any(e.get("id") == element_id for e in before.get("elements", ()))
+        return exists and not existed
 
     # --- undo / redo -----------------------------------------------------
     def undo(self, repo) -> Optional[Any]:
@@ -83,6 +121,7 @@ class UndoHistory:
                 return None
             label, snapshot = self.undo_stack.pop()
             self.redo_stack.append((label, current))
+            self._top_relabel = None
             restored = from_dict(snapshot)
             self.baseline = to_dict(restored)
             return restored
@@ -103,6 +142,7 @@ class UndoHistory:
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.baseline = None
+            self._top_relabel = None
 
     def state(self) -> dict:
         with self._lock:
