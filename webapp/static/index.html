@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <title>SysML v2 Studio</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  <!-- Vendored locally (see static/vendor/README.md) so the UI works offline. -->
+  <script src="/static/vendor/tailwindcss-browser-4.3.3.js"></script>
+  <script src="/static/vendor/mermaid-10.9.8.min.js"></script>
+  <script>
     mermaid.initialize({ startOnLoad: false, theme: "neutral",
-                          themeVariables: { fontFamily: "ui-sans-serif" }});
-    window.mermaid = mermaid;
+                         themeVariables: { fontFamily: "ui-sans-serif" }});
   </script>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
@@ -20,14 +20,13 @@
     <div class="font-semibold tracking-tight">SysML v2 Studio</div>
     <span class="text-xs text-slate-400" id="project-name">UntitledProject</span>
     <div class="flex-1"></div>
-    <button class="btn-ghost" data-cmd="new">New</button>
-    <button class="btn-ghost" data-cmd="load">Load JSON…</button>
-    <button class="btn-ghost" data-cmd="save">Save JSON</button>
-    <button class="btn-ghost" data-cmd="import-sysml">Import .sysml…</button>
-    <button class="btn-ghost" data-cmd="validate" title="F5">Validate</button>
+    <button class="btn-ghost" data-cmd="new" title="New project">New</button>
+    <button class="btn-ghost" data-cmd="load" title="Open a saved project (.json)">Load JSON…</button>
+    <button class="btn-ghost" data-cmd="save" title="Download the project (.json)">Save JSON</button>
+    <button class="btn-ghost" data-cmd="import-sysml" title="Parse a .sysml file into the project">Import .sysml…</button>
     <div class="relative">
-      <button class="btn-ghost" data-cmd="export-menu">Export ▾</button>
-      <div id="export-menu" class="hidden absolute right-0 top-9 bg-white text-slate-900 shadow-lg rounded-md py-1 min-w-[180px] z-10 text-sm">
+      <button class="btn-ghost" data-cmd="export-menu" aria-haspopup="menu">Export ▾</button>
+      <div id="export-menu" class="hidden absolute right-0 top-9 bg-white text-slate-900 shadow-lg rounded-md py-1 min-w-[180px] z-30 text-sm">
         <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="turtle">Knowledge graph · Turtle</a>
         <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="json-ld">Knowledge graph · JSON-LD</a>
         <a class="block px-3 py-1.5 hover:bg-slate-100 cursor-pointer" data-export="graphml">Knowledge graph · GraphML</a>
@@ -38,34 +37,20 @@
     </div>
   </header>
 
-  <!-- Toolbar -->
-  <div class="bg-white border-b border-slate-200 px-3 py-2 flex flex-wrap items-center gap-1 text-sm">
-    <span class="text-slate-500 mr-2">Add:</span>
-    <button class="btn-add" data-kind="Package">Package</button>
-    <button class="btn-add" data-kind="PartDefinition">Part Def</button>
-    <button class="btn-add" data-kind="PartUsage">Part</button>
-    <button class="btn-add" data-kind="AttributeDefinition">Attr Def</button>
-    <button class="btn-add" data-kind="AttributeUsage">Attribute</button>
-    <button class="btn-add" data-kind="PortDefinition">Port Def</button>
-    <button class="btn-add" data-kind="PortUsage">Port</button>
-    <button class="btn-add" data-kind="InterfaceDefinition">Interface Def</button>
-    <button class="btn-add" data-kind="ConnectionUsage">Connection</button>
-    <button class="btn-add" data-kind="ActionDefinition">Action Def</button>
-    <button class="btn-add" data-kind="StateDefinition">State Def</button>
-    <button class="btn-add" data-kind="RequirementDefinition">Req Def</button>
-    <button class="btn-add" data-kind="ConstraintDefinition">Constraint Def</button>
-    <button class="btn-add" data-kind="ParameterUsage">Parameter</button>
-    <button class="btn-add" data-kind="Stereotype">Stereotype</button>
-    <span class="mx-2 border-l h-5 border-slate-300"></span>
-    <button class="btn-action" data-cmd="link" title="Ctrl+L">Link…</button>
-    <button class="btn-action" data-cmd="define-stereotype">Define stereotype…</button>
-    <button class="btn-action" data-cmd="apply-stereotype">Apply stereotype…</button>
-    <span class="mx-2 border-l h-5 border-slate-300"></span>
-    <span class="text-slate-500">SM:</span>
-    <button class="btn-action" data-cmd="sm-attach">Attach</button>
-    <button class="btn-action" data-cmd="sm-state">+State</button>
-    <button class="btn-action" data-cmd="sm-transition">+Transition</button>
-    <button class="btn-action" data-cmd="sm-fire" title="Ctrl+E">Fire event</button>
+  <!-- Toolstrip (System Composer style): commands grouped by task. Plugin buttons
+       (studio.registerToolbarButton) go into the section of their group; generic SysML
+       element commands, links, state machine commands and the Links / Parser tabs live in
+       the Advanced menu at the end of the tab bar. -->
+  <div id="ribbon" class="rb" role="toolbar" aria-label="Studio toolstrip">
+    <div class="rb-section" data-section="modeling"><div class="rb-tools"></div><div class="rb-caption">Modeling</div></div>
+    <div class="rb-section" data-section="views"><div class="rb-tools"></div><div class="rb-caption">Views</div></div>
+    <div class="rb-section" data-section="requirements"><div class="rb-tools"></div><div class="rb-caption">Requirements</div></div>
+    <div class="rb-section" data-section="analysis"><div class="rb-tools">
+        <span class="rb-group" data-group="Analysis"><button class="btn-action" data-cmd="validate" title="Validate the model (F5)">Validate</button></span>
+      </div><div class="rb-caption">Analysis</div></div>
+    <div class="rb-section" data-section="interop"><div class="rb-tools"></div><div class="rb-caption">Interop</div></div>
+    <!-- Kept for plugins that look it up: buttons of unknown sections land here. -->
+    <span id="toolbar-plugins" class="hidden"></span>
   </div>
 
   <!-- Body -->
@@ -79,14 +64,52 @@
 
     <!-- Right pane (tabs) -->
     <section class="flex-1 flex flex-col">
-      <div class="bg-white border-b border-slate-200 flex text-sm">
+      <div id="tab-bar" class="bg-white border-b border-slate-200 flex text-sm">
         <button class="tab tab-active" data-tab="properties">Properties</button>
         <button class="tab" data-tab="diagram">Diagram</button>
-        <button class="tab" data-tab="links">Links</button>
-        <button class="tab" data-tab="parser">Parser</button>
+        <!-- Advanced tabs: opened from the Advanced menu, shown only while active. -->
+        <button class="tab hidden" data-tab="links" data-advanced-tab>Links</button>
+        <button class="tab hidden" data-tab="parser" data-advanced-tab>Parser</button>
+        <!-- Advanced ▾ stays last (plugin tabs are inserted before it, see data-order). -->
+        <div class="relative ml-auto self-center pr-2" data-order="100000">
+          <button class="btn-action" data-cmd="advanced-menu" aria-haspopup="menu" aria-expanded="false"
+                  title="Generic SysML elements, links, state machines, Links and Parser tabs">Advanced ▾</button>
+          <div id="advanced-menu" class="rb-menu hidden" role="menu" aria-label="Advanced">
+            <div class="rb-menu-h">Generic element (inside the selection)</div>
+            <div class="rb-menu-grid">
+              <button type="button" role="menuitem" class="btn-add" data-kind="Package">Package</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="PartDefinition">Part Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="PartUsage">Part</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="AttributeDefinition">Attr Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="AttributeUsage">Attribute</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="PortDefinition">Port Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="PortUsage">Port</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="InterfaceDefinition">Interface Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="ConnectionUsage">Connection</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="ActionDefinition">Action Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="StateDefinition">State Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="RequirementDefinition">Req Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="ConstraintDefinition">Constraint Def</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="ParameterUsage">Parameter</button>
+              <button type="button" role="menuitem" class="btn-add" data-kind="Stereotype">Stereotype</button>
+            </div>
+            <div class="rb-menu-h">Generic SysML</div>
+            <button type="button" role="menuitem" data-cmd="link">Link… <kbd>Ctrl+L</kbd></button>
+            <button type="button" role="menuitem" data-cmd="define-stereotype">Define stereotype…</button>
+            <button type="button" role="menuitem" data-cmd="apply-stereotype">Apply stereotype…</button>
+            <div class="rb-menu-h">State machine</div>
+            <button type="button" role="menuitem" data-cmd="sm-attach">Attach state machine…</button>
+            <button type="button" role="menuitem" data-cmd="sm-state">Add state…</button>
+            <button type="button" role="menuitem" data-cmd="sm-transition">Add transition…</button>
+            <button type="button" role="menuitem" data-cmd="sm-fire">Fire event… <kbd>Ctrl+E</kbd></button>
+            <div class="rb-menu-h">Tabs</div>
+            <button type="button" role="menuitem" data-cmd="show-tab" data-show-tab="links">Links</button>
+            <button type="button" role="menuitem" data-cmd="show-tab" data-show-tab="parser">Parser (SysML text)</button>
+          </div>
+        </div>
       </div>
 
-      <div class="flex-1 overflow-hidden relative">
+      <div id="tab-panes" class="flex-1 overflow-hidden relative">
 
         <!-- Properties tab -->
         <div id="tab-properties" class="tab-pane absolute inset-0 p-4 overflow-auto">
@@ -132,6 +155,8 @@
               <button type="submit" class="btn-primary">Apply changes</button>
             </div>
           </form>
+          <!-- Plugin inspector sections (stereotype properties, interfaces, ...) -->
+          <div id="inspector-sections" class="space-y-4 max-w-2xl mt-6"></div>
         </div>
 
         <!-- Diagram tab -->
@@ -179,9 +204,12 @@
   </main>
 
   <!-- Output log -->
-  <footer class="bg-slate-900 text-slate-100 text-xs h-32 flex flex-col">
+  <footer id="output-pane" class="bg-slate-900 text-slate-100 text-xs h-24 flex flex-col">
     <div class="px-3 py-1 border-b border-slate-700 flex items-center gap-2">
+      <button class="btn-ghost-dark" data-cmd="toggle-log" aria-expanded="true" aria-controls="log"
+              title="Collapse the output pane">▾</button>
       <span class="font-semibold tracking-wider uppercase">Output / Validation</span>
+      <span id="log-unread" class="hidden rounded px-1.5 bg-red-500/80 text-white" title="Messages while collapsed"></span>
       <span id="status" class="text-slate-400"></span>
       <span class="flex-1"></span>
       <button class="btn-ghost-dark" data-cmd="clear-log">Clear</button>

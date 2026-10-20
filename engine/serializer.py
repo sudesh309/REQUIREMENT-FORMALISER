@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 from kerml.elements import Documentation, Element, Relationship
 from kerml.features import Feature, MultiplicityRange
@@ -31,6 +31,87 @@ def _resolve_class(fqcn: str) -> type:
     return getattr(importlib.import_module(mod), name)
 
 
+# -- extension codecs ----------------------------------------------------
+#
+# Feature modules persist extra state without editing this file:
+#
+#   register_codec("variants", encode, decode)
+#       encode(element) -> JSON-able data, or None when the element has nothing to save
+#       decode(element, data, by_id) runs after every element, link and stereotype
+#       application is restored; by_id maps saved ids to restored elements.
+#
+#   register_repo_codec("allocations", encode, decode)
+#       project-level state: encode(repo) -> data|None, decode(repo, data, by_id).
+#
+# The registering module's name is saved next to the data and imported on load,
+# so a project loads correctly even if that module was not imported yet.
+
+_CODECS: dict[str, tuple[str, Callable, Callable]] = {}
+_REPO_CODECS: dict[str, tuple[str, Callable, Callable]] = {}
+
+
+def register_codec(name: str, encode: Callable[[Element], Any],
+                   decode: Callable[[Element, Any, dict], None]) -> None:
+    _CODECS[name] = (encode.__module__, encode, decode)
+
+
+def register_repo_codec(name: str, encode: Callable[["Repository"], Any],
+                        decode: Callable[["Repository", Any, dict], None]) -> None:
+    _REPO_CODECS[name] = (encode.__module__, encode, decode)
+
+
+def _encode_ext(codecs: dict, target: Any) -> dict:
+    out = {}
+    for name, (module, encode, _decode) in codecs.items():
+        data = encode(target)
+        if data is not None:
+            out[name] = {"module": module, "data": data}
+    return out
+
+
+def _decode_ext(codecs: dict, ext: dict, target: Any, by_id: dict) -> None:
+    for name, entry in ext.items():
+        if name not in codecs:
+            importlib.import_module(entry["module"])
+        codecs[name][2](target, entry["data"], by_id)
+
+
+def _json_safe(value: Any) -> bool:
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+# Library elements get fresh UUIDs in every process, so references to them are
+# saved by qualified name ("lib:KerML::ScalarValues::Real"): files stay stable
+# across sessions and such typings survive a load.
+_LIB_PREFIX = "lib:"
+
+
+def _libraries() -> tuple:
+    from kerml.library import KERML_LIBRARY
+    from sysmlv2.library import SYSML_LIBRARY
+    return (KERML_LIBRARY, SYSML_LIBRARY)
+
+
+def _ref(e: Element) -> str:
+    root = e.root()
+    if any(root is lib for lib in _libraries()):
+        return _LIB_PREFIX + e.qualified_name
+    return e.element_id
+
+
+def _library_index() -> dict[str, Element]:
+    index: dict[str, Element] = {}
+    for lib in _libraries():
+        for x in lib.walk():
+            index[x.element_id] = x
+            index[_LIB_PREFIX + x.qualified_name] = x
+    return index
+
+
 # -- encode ---------------------------------------------------------------
 
 def _encode_element(e: Element) -> dict:
@@ -51,12 +132,12 @@ def _encode_element(e: Element) -> dict:
         payload["is_derived"] = e.is_derived
         payload["is_end"] = e.is_end
         payload["default_value"] = e.default_value
-        payload["typed_by"] = [t.element_id for t in e.types]
-        payload["subsets"] = [s.target.element_id for s in e.subsettings if s.target]
-        payload["redefines"] = [r.target.element_id for r in e.redefinitions if r.target]
+        payload["typed_by"] = [_ref(t) for t in e.types]
+        payload["subsets"] = [_ref(s.target) for s in e.subsettings if s.target]
+        payload["redefines"] = [_ref(r.target) for r in e.redefinitions if r.target]
     if hasattr(e, "specializations"):
         payload["specializes"] = [
-            s.target.element_id for s in e.specializations if s.target
+            _ref(s.target) for s in e.specializations if s.target
         ]
     # SysML-specific extras ------------------------------------------------
     for attr in ("req_id", "text", "is_conjugated", "portion_kind", "is_variant",
@@ -64,7 +145,7 @@ def _encode_element(e: Element) -> dict:
         if hasattr(e, attr):
             payload[attr] = getattr(e, attr)
     if hasattr(e, "ends"):
-        payload["ends"] = [f.element_id for f in getattr(e, "ends", []) if f]
+        payload["ends"] = [_ref(f) for f in getattr(e, "ends", []) if f]
     doc = next((a.body for a in e.annotations if isinstance(a, Documentation)), None)
     if doc:
         payload["doc"] = doc
@@ -99,6 +180,13 @@ def _encode_element(e: Element) -> dict:
             "initial": e.initial_state.element_id if e.initial_state else None,
             "finals": [s.element_id for s in e.final_states],
         }
+    # UI state such as canvas layout; only JSON-able entries are kept.
+    tool_data = {k: v for k, v in e.tool_data.items() if _json_safe(v)}
+    if tool_data:
+        payload["tool_data"] = tool_data
+    ext = _encode_ext(_CODECS, e)
+    if ext:
+        payload["ext"] = ext
     return payload
 
 
@@ -118,7 +206,11 @@ def to_dict(repo: "Repository") -> dict:
     link_classes = tuple(lk.cls for lk in LINK_KINDS)
     elements: list[dict] = []
     links: list[dict] = []
-    for e in repo.all_elements():
+    # Containment order (not registry order), so the same model always saves the same way.
+    ordered = list(repo.root_package.walk())
+    seen = {id(e) for e in ordered}
+    ordered += [e for e in repo.all_elements() if id(e) not in seen]
+    for e in ordered:
         # Relationships are captured by element payloads (structural) or the
         # `links` list (typed links); they are not model elements in their own right.
         if isinstance(e, Relationship) or _in_library(e):
@@ -138,11 +230,13 @@ def to_dict(repo: "Repository") -> dict:
         "root": repo.root_package.element_id,
         "elements": elements,
         "links": links,
+        "ext": _encode_ext(_REPO_CODECS, repo),
     }
 
 
 def to_json(repo: "Repository", *, indent: int = 2) -> str:
-    return json.dumps(to_dict(repo), indent=indent)
+    """Deterministic JSON (sorted keys, newline at EOF) so saved projects diff cleanly."""
+    return json.dumps(to_dict(repo), indent=indent, sort_keys=True) + "\n"
 
 
 # -- decode ---------------------------------------------------------------
@@ -150,7 +244,8 @@ def to_json(repo: "Repository", *, indent: int = 2) -> str:
 def from_dict(data: dict) -> "Repository":
     from .repository import Repository
     repo = Repository(name=data.get("name", "Project"))
-    by_id: dict[str, Element] = {repo.root_package.element_id: repo.root_package}
+    by_id: dict[str, Element] = _library_index()
+    by_id[repo.root_package.element_id] = repo.root_package
 
     # Files written before links were split out stored Relationship objects as
     # elements; those are rebuilt from payloads/links instead, so drop them.
@@ -165,6 +260,10 @@ def from_dict(data: dict) -> "Repository":
             # Keep the saved id so references to the root stay valid across saves.
             repo.registry.unregister(inst)
             inst.element_id = r["id"]
+            if r.get("doc"):
+                inst.add_annotation(Documentation(body=r["doc"]))
+            if r.get("tool_data"):
+                inst.tool_data = dict(r["tool_data"])
         else:
             cls = _resolve_class(r["class"])
             inst = cls.__new__(cls)
@@ -237,6 +336,8 @@ def from_dict(data: dict) -> "Repository":
             inst.transition_source = by_id.get(t["source"])
             inst.transition_target = by_id.get(t["target"])
             inst.trigger_event, inst.guard, inst.effect = t["trigger"], t["guard"], t["effect"]
+        if r.get("tool_data"):
+            inst.tool_data = dict(r["tool_data"])
         if isinstance(inst, Stereotype):
             inst.applies_to = [_resolve_class(c) for c in r.get("applies_to", [])]
             inst.base = by_id.get(r.get("base"))
@@ -262,6 +363,13 @@ def from_dict(data: dict) -> "Repository":
         rel = _resolve_class(link["class"])(src, tgt, element_id=link["id"])
         src.add_relationship(rel)
         _replay_link_side_effects(rel, src, tgt)
+
+    # Pass 4: extension codecs, once the core model is complete.
+    repo.registry.register_tree(repo.root_package)
+    for r in raw:
+        if r.get("ext"):
+            _decode_ext(_CODECS, r["ext"], by_id[r["id"]], by_id)
+    _decode_ext(_REPO_CODECS, data.get("ext") or {}, repo, by_id)
 
     repo.registry.register_tree(repo.root_package)
     return repo

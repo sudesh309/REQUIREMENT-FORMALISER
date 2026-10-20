@@ -1,5 +1,5 @@
 """Engine layer: repository, parser, validator, serializer."""
-from .repository import Repository, ElementRegistry
+from .repository import Repository, ElementRegistry, register_removal_hook
 from .validator import Validator, ValidationIssue, Severity
 from .serializer import to_dict, to_json, from_dict, from_json
 from .parser import parse, ParseError
@@ -11,8 +11,12 @@ from .diagram_mermaid import (
 from .graph_export import export_knowledge_graph, EXPORTERS
 from .links import (
     LINK_KINDS, LinkKind, create_link, link_kind, links_of, describe_link,
-    list_link_kinds,
+    list_link_kinds, register_link_kind,
 )
+from .serializer import register_codec, register_repo_codec
+from .validator import register_rule, register_repo_rule
+from .graph_export import register_edge_source
+from .hooks import notify_created, register_created_hook
 
 __all__ = [
     "Repository", "ElementRegistry",
@@ -25,4 +29,8 @@ __all__ = [
     "export_knowledge_graph", "EXPORTERS",
     "LINK_KINDS", "LinkKind", "create_link", "link_kind",
     "links_of", "describe_link", "list_link_kinds",
+    # extension points for feature modules
+    "register_link_kind", "register_codec", "register_repo_codec",
+    "register_rule", "register_repo_rule", "register_edge_source",
+    "register_removal_hook", "register_created_hook", "notify_created",
 ]

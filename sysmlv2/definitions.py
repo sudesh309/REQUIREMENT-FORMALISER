@@ -68,7 +68,29 @@ class PortDefinition(OccurrenceDefinition):
         super().__init__(*args, **kwargs)
         self.is_conjugated = is_conjugated
 
-class PortUsage(OccurrenceUsage): kind = "PortUsage"
+# Port kinds (System Composer): 'data' (directional signals/messages),
+# 'physical' (non-directional physical/conserving connections such as power or
+# wiring), 'client' / 'server' (software service ports). Which kinds a model
+# may use depends on its architecture type (see engine.architecture).
+PORT_KINDS: tuple[str, ...] = ("data", "physical", "client", "server")
+
+
+class PortUsage(OccurrenceUsage):
+    kind = "PortUsage"
+
+    def __init__(self, *args, port_kind: str = "data", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.port_kind = port_kind
+
+    @property
+    def port_kind(self) -> str:
+        return getattr(self, "_port_kind", "data")
+
+    @port_kind.setter
+    def port_kind(self, value: str) -> None:
+        if value not in PORT_KINDS:
+            raise ValueError(f"port kind must be one of {list(PORT_KINDS)}, not {value!r}")
+        self._port_kind = value
 
 class InterfaceDefinition(Definition): kind = "InterfaceDefinition"
 class InterfaceUsage(Usage):           kind = "InterfaceUsage"
@@ -76,10 +98,19 @@ class InterfaceUsage(Usage):           kind = "InterfaceUsage"
 class ConnectionDefinition(Definition): kind = "ConnectionDefinition"
 
 class ConnectionUsage(Usage):
+    """A connector. ``ends[i]`` is a port (or feature); ``end_contexts[i]`` is the
+    sub-component usage through which that port is reached, or None when the end
+    is a port of the composition itself (a boundary port). The contexts tell two
+    usages of the same definition port apart. It is a tuple (not a list) on
+    purpose: Repository.remove filters lists element-wise, which would shift the
+    remaining contexts out of alignment with ``ends``.
+    """
     kind = "ConnectionUsage"
-    def __init__(self, *args, ends: Optional[list[Feature]] = None, **kwargs):
+    def __init__(self, *args, ends: Optional[list[Feature]] = None,
+                 end_contexts: Optional[tuple] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.ends: list[Feature] = ends or []
+        self.end_contexts: tuple = tuple(end_contexts or ())
 
 class FlowConnectionDefinition(ConnectionDefinition):
     kind = "FlowConnectionDefinition"

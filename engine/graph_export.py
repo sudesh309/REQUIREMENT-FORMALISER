@@ -24,7 +24,7 @@ from __future__ import annotations
 import html
 import json
 import xml.sax.saxutils as sx
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 
 from kerml.elements import Element, Relationship
 from kerml.features import Feature, Redefinition, Subsetting, FeatureTyping
@@ -39,6 +39,15 @@ NS = "https://example.org/sysmlv2#"
 
 
 # --- shared edge collector ----------------------------------------------
+
+# Feature modules contribute extra edges with
+# register_edge_source(fn(element) -> iterable of (predicate, src, tgt, props)).
+_EDGE_SOURCES: list[Callable[[Element], Iterable[tuple[str, Element, Element, dict]]]] = []
+
+
+def register_edge_source(fn: Callable[[Element], Iterable[tuple[str, Element, Element, dict]]]) -> None:
+    _EDGE_SOURCES.append(fn)
+
 
 def _iter_edges(root: Element) -> Iterator[tuple[str, Element, Element, dict]]:
     """Yield ``(predicate, src, tgt, props)`` tuples spanning the project."""
@@ -71,6 +80,8 @@ def _iter_edges(root: Element) -> Iterator[tuple[str, Element, Element, dict]]:
         if isinstance(e, ConnectionUsage):
             for end in e.ends:
                 yield ("connects", e, end, {})
+        for source in _EDGE_SOURCES:
+            yield from source(e)
 
 
 def _rel_label(rel: Relationship) -> str | None:

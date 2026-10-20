@@ -4,14 +4,28 @@ This is a hands-on, diagram-driven tour of every capability in the
 engine. Every section ends with a runnable snippet (Python and/or the
 matching MCP tool call) so you can reproduce it yourself.
 
+> **Modelling an architecture in the browser?** Start with
+> [chapter 4, *Studio: System Composer workflow*](#4-studio-system-composer-workflow):
+> a map of the studio's tabs and a click-by-click tutorial that builds a
+> small avionics model (architecture → interfaces → profile → requirements
+> → allocation → report) without writing any code.
+
 ```mermaid
 mindmap
   root((SysML v2<br/>Core Engine))
     Install
       pip / source
       python -m engine.cli
+      python -m webapp.server
       python -m gui.app
       python -m mcp_server.server
+    Studio (System Composer workflow)
+      Architecture canvas
+      Interfaces
+      Profiles
+      Requirements
+      Allocation
+      Model Check / Report
     Author models
       Packages
       Parts / Ports / Connections
@@ -50,7 +64,7 @@ mindmap
 ```bash
 git clone <repo>
 cd REQUIREMENT-FORMALISER
-python -m unittest discover -s tests -v     # 51 tests, all pass
+python -m unittest discover -s tests -v     # all pass (browser scenarios need Node + Playwright)
 
 # Four surfaces, pick any:
 python -m engine.cli examples/vehicle.sysml  # parse + validate + print
@@ -127,33 +141,43 @@ python -m webapp.server          # listens on http://127.0.0.1:8765
 ```
 
 Open the URL in any browser — Chrome, Firefox, Edge, Safari. The
-backend is stdlib-only (no `pip install`); the frontend is Tailwind +
-Mermaid via CDN (no `npm`).
+backend is stdlib-only (no `pip install`); the frontend's Tailwind and
+Mermaid are vendored in `webapp/static/vendor/` (no `npm`, works offline).
 
 ```mermaid
 flowchart TB
-    subgraph Browser["Browser SPA"]
+    subgraph Browser["Browser studio"]
         direction LR
-        HD["Header<br/>New · Load · Save · Import · Validate · Export ▾"]
-        TB["Toolbar<br/>Add: Package · Part Def · Part · ... · Stereotype · Parameter | Link · Stereotype · SM ops"]
+        HD["Header (File)<br/>New · Load JSON · Save JSON · Import .sysml · Export ▾"]
+        TB["Toolstrip by task<br/>Modeling · Views · Requirements · Analysis · Interop"]
         subgraph Body
             direction LR
             TREE["Containment tree"]
-            subgraph Right["Tabbed right pane"]
+            subgraph Right["Tabs"]
                 direction TB
-                P1["Properties"]
-                P2["Diagram (Mermaid)<br/>BDD · IBD · Requirements · StateMachine"]
-                P3["Links"]
-                P4["Parser"]
+                P0["Architecture (canvas + Property Inspector)"]
+                P1["Properties · Diagram"]
+                P2["Interfaces · Profiles · Requirements · Traceability · Allocation"]
+                P3["Import / Export · Compare · Model Check"]
+                P4["Advanced ▾ : generic elements, links, state machines, Links / Parser tabs"]
             end
         end
-        LOG["Output / Validation log"]
+        LOG["Output / Validation (collapsible)"]
     end
     Browser <-->|fetch + JSON| API["webapp.server<br/>stdlib http.server"]
     API <--> ENG((Engine))
 ```
 
-Shortcuts: **F5** validate · **Ctrl+L** create link · **Ctrl+E** fire event · **Del** delete.
+The studio's System Composer-style editors (architecture canvas,
+interfaces, profiles, requirements, allocation, interop) are described in
+[chapter 4](#4-studio-system-composer-workflow). The generic SysML element
+commands of the original web frontend (one *Add* button per element kind,
+*Link…*, *Define / Apply stereotype…*, the state-machine commands) and the
+*Links* and *Parser* tabs are in the **Advanced ▾** menu at the right of
+the tab bar; every dialog is an in-page modal.
+
+Shortcuts: **F5** validate · **Ctrl+Z / Ctrl+Y** undo / redo · **Ctrl+L** create link ·
+**Ctrl+E** fire event · **Del** delete.
 
 ### 3b. Desktop GUI (Tkinter)
 
@@ -210,11 +234,174 @@ Key shortcuts: **F2** rename · **Del** delete · **F5** validate · **Ctrl+L** 
 
 ---
 
-## 4. Authoring a model — three vehicles in three ways
+## 4. Studio: System Composer workflow
+
+The web studio (`python -m webapp.server`, then open
+http://127.0.0.1:8765) follows MATLAB System Composer: you draw
+architectures on a canvas, type ports with interfaces, classify components
+with profiles and stereotypes, trace requirements, allocate functions to
+hardware and check the result, all with the mouse and the keyboard.
+
+### 4a. Where things are
+
+```mermaid
+flowchart TB
+    HD["Header (File): New · Load JSON… · Save JSON · Import .sysml… · Export ▾"]
+    RB["Toolstrip: Modeling · Views · Requirements · Analysis · Interop"]
+    subgraph Main[" "]
+        direction LR
+        TREE["Containment tree<br/>(drag rows onto the canvas)"]
+        TABS["Tabs: Architecture · Properties · Diagram · Interfaces · Profiles ·<br/>Requirements · Traceability · Allocation · Import / Export · Compare ·<br/>Model Check · Advanced ▾"]
+    end
+    DOCK["Requirements Perspective (optional, under any tab)"]
+    LOG["Output / Validation (▾ collapses it)"]
+    HD --> RB --> Main --> DOCK --> LOG
+```
+
+| You want to… | Toolstrip button / tab | Details |
+|---|---|---|
+| Draw architectures: components, ports, connectors, reference components, Group, Arrange | **Modeling ▸ New model…**, tab **Architecture** (canvas toolstrip, Property Inspector on the right) | [features/architecture.md](features/architecture.md) |
+| Define interfaces, value types, ARINC 429 / AFDX / MIL-STD-1553 / discrete / analog templates, adapters | **Modeling ▸ Interface Editor** (tab **Interfaces**, Alt+I) | [features/interfaces.md](features/interfaces.md) |
+| Define profiles and stereotypes (DAL, ATA chapter, mass, power, MTBF…), apply them, enter values | **Modeling ▸ Profile Editor**, **Apply stereotypes…**; values in tab **Properties** | [features/profiles.md](features/profiles.md) |
+| Author requirements, link them (Implement, Verify, Derive…), see traceability and suspect links | **Requirements ▸ Requirements**, **Req Perspective** (Alt+Shift+R), **Traceability** | [features/requirements.md](features/requirements.md) |
+| Allocate functions to partitions and hardware | **Modeling ▸ Allocation** (tab **Allocation**) | [features/allocation.md](features/allocation.md) |
+| Check the model, generate a report, exchange tables / SysML text / XMI, compare and merge | **Analysis ▸ Validate**, **Model Check** (Ctrl+Shift+K); **Interop ▸ Import / Export**, **Compare** | [features/interop.md](features/interop.md) |
+| Generic SysML elements, typed links, state machines, the Links and Parser tabs | **Advanced ▾** at the end of the tab bar | chapters 5–11 |
+
+**Undo / redo.** Every change, from any tab, is one named step of a single
+history: the *Edit* buttons at the left of the toolstrip and the canvas's
+Undo / Redo show what they will undo ("Undo Set Avionics.LRU.mass of FMS",
+"Undo Allocate ComputeNavigation → FMS"); Ctrl+Z / Ctrl+Y work everywhere
+outside text fields. Adding an element and naming it in place is one step.
+New project and Load replace the model and start a fresh history: use
+Save JSON before them.
+
+**Every view stays current.** A value typed in the Properties tab shows at
+once on the canvas (blocks, badges, the Property Inspector), in the undo
+buttons and in Model Check, without reloading the page.
+
+### 4b. Tutorial: a small avionics model, GUI only
+
+The steps below build an air data → navigation → display chain as a
+functional and a physical architecture, type the bus with an ARINC 429
+word, classify the LRUs, trace requirements, allocate the functions and
+report. They use only clicks, drags and the keyboard. (The same steps run
+automatically as the wave gate, `tests/ui/scenarios/99_avionics_e2e.mjs`.)
+
+```mermaid
+flowchart LR
+    A["1. New model +<br/>functional architecture"] --> B["2. Physical<br/>architecture"]
+    B --> C["3. Interfaces<br/>(ARINC 429)"]
+    C --> D["4. Profile<br/>Avionics.LRU"]
+    D --> E["5. Requirements<br/>+ links"]
+    E --> F["6. Allocation<br/>functions → LRUs"]
+    F --> G["7. Model Check"]
+    G --> H["8. Report"]
+    H --> I["9. Save / Load"]
+```
+
+**1. New model and the functional architecture.**
+Click **Modeling ▸ New model…**, name the model `AircraftAvionics`, keep
+*System*, set *Root architecture* to `FunctionalArch` and press Enter. The
+**Architecture** tab shows the empty architecture.
+Click **Component** in the canvas toolstrip and type `AcquireAirData`
+(Enter); repeat for `ComputeNavigation` and `DisplayFlightData`.
+Select a block and click **Out** (or **In**) in the *Port* section, then
+type the port name: `AcquireAirData.airData` (out),
+`ComputeNavigation.airData` (in), `ComputeNavigation.navSolution` (out),
+`DisplayFlightData.navSolution` (in). Click **Arrange** to lay the blocks
+out, then drag from each output port to the matching input port to draw
+the connectors. (Dropping a connector on a block or on the frame edge
+creates the matching port for you.)
+
+**2. The physical architecture.**
+Select `AircraftAvionics` in the containment tree, open **Advanced ▾ ▸
+Generic element ▸ Part Def** and name it `PhysicalArch`; then pick
+`AircraftAvionics::PhysicalArch` in the canvas's **Open** list. Add the
+LRUs `ADIRU`, `FMS` and `CDS` as in step 1, the ports `ADIRU.airData`
+(out), `FMS.airData` (in), `FMS.navData` (out), `CDS.navData` (in),
+**Arrange** and connect them. Press Escape: the Property Inspector now
+summarizes the architecture (3 components, 2 connectors).
+
+**3. Interfaces.**
+Click **Modeling ▸ Interface Editor** and choose **Template… ▸ ARINC 429
+word**: the interface `A429Word` (label, SDI, data, SSM, parity) appears.
+Drag `A429Word` from the editor's list, hold it over the **Architecture**
+tab until the canvas opens, and drop it on the `ADIRU.airData` port. For
+the other end, click the port `FMS.airData` and pick `A429Word` in the
+Property Inspector's *Interface* list. The connector now carries the
+interface's colour; its inspector lists the interface.
+
+**4. Profile and stereotype values.**
+Click **Modeling ▸ Profile Editor ▸ New Profile**, name it `Avionics`.
+**New Stereotype** `LRU`, *Applies to* `Component`. **Add Property** three
+times and edit the table: `mass` (unit `kg`), `power` (unit `W`), `dal`
+(type *enumeration*, literals `A, B, C, D, E`).
+Back on the canvas, click a block of `PhysicalArch` and press Ctrl+A to
+select all three LRUs, then **Modeling ▸ Apply stereotypes…** (scope
+*Selected elements*) ▸ OK. Each block shows a `«LRU»` badge.
+Select `FMS`, click **Properties tab ↗** in the Property Inspector and
+type the values in the *Stereotypes* section: mass `7` (Enter), power
+`120`, dal `B`. Values may carry a compatible unit: `9 lb` for the ADIRU's
+mass is stored as 4.08 kg. Return to **Architecture**: the inspector shows
+`mass 7 kg`, `power 120 W`, `dal B`.
+
+**5. Requirements and traceability.**
+Click **Requirements ▸ Requirements ▸ New Set**, name the set
+`AvionicsSystemRequirements` with ID prefix `SYS-`. Click **Add** (or
+press Insert) and type the summary of `SYS-1` (Enter); add `SYS-2` and
+`SYS-3` the same way. Requirement text goes in the detail pane on the
+right (Ctrl+Enter saves).
+Click **Req Perspective** (Alt+Shift+R): the requirements stay visible
+under the canvas. Drag the row `SYS-1` onto the `ADIRU` block, `SYS-2`
+onto `FMS`, `SYS-3` onto `CDS`: each drop creates an *Implement* link, the
+blocks show a `1 req` badge and the *Implemented* column reaches 100 %.
+**Traceability** shows the matrix and diagram. Editing a linked
+requirement later marks its links *suspect* (change impact); review them
+and use **Clear Suspect**.
+
+**6. Allocation.**
+Click **Modeling ▸ Allocation ▸ New Set**, name it `FunctionsToLRUs`,
+source `FunctionalArch`, target `PhysicalArch`. Click the matrix cells
+`AcquireAirData → ADIRU`, `ComputeNavigation → FMS` and
+`DisplayFlightData → CDS`. The *Coverage* panel shows 100 %. Clicking a
+function's row header highlights its LRU on the canvas.
+
+**7. Model Check.**
+Click **Analysis ▸ Model Check** (Ctrl+Shift+K). The tab's badge counts
+the findings (errors, warnings, info); filter them by severity, rule or
+text and click a finding to select its element. Fix one in its editor
+(for example give a requirement its text) and the count goes down.
+
+**8. Report.**
+Click **Interop ▸ Import / Export ▸ Generate Report**: the HTML report
+(model summary, architecture diagrams, components, interfaces,
+requirements and traceability, validation) is previewed in the tab;
+**Download HTML** saves it.
+
+**9. Save and load.**
+**Save JSON** in the header downloads `project.json`. **New** starts an
+empty project; **Load JSON…** opens the file again with every
+architecture, interface, stereotype value, requirement link and
+allocation.
+
+### 4c. Keyboard
+
+| Where | Keys |
+|---|---|
+| Everywhere | Ctrl+Z / Ctrl+Y undo / redo · F5 validate · Alt+I Interface Editor · Alt+Shift+R Requirements Perspective · Ctrl+Shift+K Model Check |
+| Canvas | Enter open a component · Alt+↑ up one level · F2 rename · Delete delete · Ctrl+C / Ctrl+V / Ctrl+D copy, paste, duplicate · Ctrl+G group · Ctrl+A select all · arrows nudge · Space fit · +/− zoom · Shift+drag a port to move it |
+| Requirements | Insert add · Shift+Insert add child · Alt+Shift+arrows move / indent · Ctrl+Enter save the text |
+| Interface Editor | Insert add element · Alt+↑ / Alt+↓ reorder |
+| Dialogs | Enter OK · Escape cancel |
+
+---
+
+## 5. Authoring a model — three vehicles in three ways
 
 The same model can be built in three equivalent ways.
 
-### 4a. Textual `.sysml`
+### 5a. Textual `.sysml`
 
 ```sysml
 package Vehicles {
@@ -233,7 +420,7 @@ package Vehicles {
 
 Run: `python -m engine.cli vehicle.sysml`.
 
-### 4b. Python builder
+### 5b. Python builder
 
 ```python
 from engine import Repository
@@ -255,7 +442,7 @@ repo.validate()
 repo.save("vehicle.json")
 ```
 
-### 4c. MCP (driven by an AI agent)
+### 5c. MCP (driven by an AI agent)
 
 ```jsonc
 // Tool calls an LLM would emit
@@ -269,7 +456,7 @@ repo.save("vehicle.json")
 
 ---
 
-## 5. Block Definition Diagram (BDD)
+## 6. Block Definition Diagram (BDD)
 
 ```mermaid
 classDiagram
@@ -291,7 +478,7 @@ GUI: Diagram tab → BDD. Programmatic: `engine.bdd(repo.root_package)` returns 
 
 ---
 
-## 6. Internal Block Diagram (IBD)
+## 7. Internal Block Diagram (IBD)
 
 Internal structure of one part: nested usages + ports + connections.
 
@@ -320,7 +507,7 @@ GUI: select a Part, switch Diagram tab to **IBD**.
 
 ---
 
-## 7. Requirements with subject / stakeholders / actors
+## 8. Requirements with subject / stakeholders / actors
 
 ```mermaid
 graph LR
@@ -370,7 +557,7 @@ GUI: **Links** menu → Create link… (Ctrl+L). MCP: `sysml_link kind=… sourc
 
 ---
 
-## 8. Parameters on actions / calculations / constraints
+## 9. Parameters on actions / calculations / constraints
 
 ```mermaid
 flowchart LR
@@ -393,7 +580,7 @@ accel.own(ParameterUsage(name="result", parameter_kind="return", typed_by=Real))
 
 ---
 
-## 9. State machines — one per Part (or many)
+## 10. State machines — one per Part (or many)
 
 ```mermaid
 stateDiagram-v2
@@ -449,7 +636,7 @@ MCP: `sysml_attach_state_machine`, `sysml_add_state`, `sysml_add_transition`, `s
 
 ---
 
-## 10. Custom stereotypes (your own profile, in 4 lines)
+## 11. Custom stereotypes (your own profile, in 4 lines)
 
 ```mermaid
 classDiagram
@@ -474,7 +661,7 @@ Stereotypes round-trip through JSON, appear in every diagram, and serialize to t
 
 ---
 
-## 11. Validation
+## 12. Validation
 
 ```mermaid
 flowchart LR
@@ -498,7 +685,7 @@ GUI: **F5** or Model → Validate. MCP: `sysml_validate`.
 
 ---
 
-## 12. Knowledge graph export
+## 13. Knowledge graph export
 
 Export the entire project as a graph any KG tool can ingest.
 
@@ -540,7 +727,7 @@ RETURN p.name, r.req_id, r.text;
 
 ---
 
-## 13. MCP — drive everything from an AI agent
+## 14. MCP — drive everything from an AI agent
 
 ```mermaid
 flowchart LR
@@ -612,7 +799,7 @@ See [LOCAL_LLM_VSCODE.md](LOCAL_LLM_VSCODE.md) for Ollama + Continue / Cline / C
 
 ---
 
-## 14. End-to-end example — "Design and verify a vehicle"
+## 15. End-to-end example — "Design and verify a vehicle"
 
 ```mermaid
 sequenceDiagram
@@ -646,7 +833,12 @@ API.
 
 ---
 
-## 15. Cheat sheet
+## 16. Cheat sheet
+
+The *GUI / Web* column names the desktop GUI's menus. In the web studio the
+generic element, link, stereotype and state-machine commands are under
+**Advanced ▾** (chapter 3a); the System Composer workflow is indexed in
+chapter 4a and summarized in the last rows.
 
 | Task                            | Python                                   | GUI / Web                    | MCP tool                       |
 |---------------------------------|------------------------------------------|------------------------------|--------------------------------|
@@ -668,3 +860,10 @@ API.
 | Validate                        | `Validator().validate(repo)`             | Model ▸ Validate (F5)        | `sysml_validate`               |
 | Export DOT                      | `engine.bdd/ibd/state_machine/...`       | Diagram ▸ Export DOT…        | `sysml_export_diagram`         |
 | Export knowledge graph          | `export_knowledge_graph(root, "turtle")` | Export ▸ Knowledge graph     | `sysml_export_graph`           |
+| Draw an architecture ([doc](features/architecture.md)) | `engine.architecture`     | Web: tab *Architecture*      | `sysml_new_architecture`, `sysml_add_component`, `sysml_connect_ports` |
+| Interfaces, bus templates ([doc](features/interfaces.md)) | `engine.interfaces`    | Web: *Interface Editor* (Alt+I) | `sysml_create_interface`, `sysml_assign_interface` |
+| Profiles, stereotype values ([doc](features/profiles.md)) | `engine.profiles`      | Web: *Profile Editor*, tab *Properties* | `sysml_add_stereotype`, `sysml_set_stereotype_property` |
+| Requirements, trace links ([doc](features/requirements.md)) | `engine.requirements` | Web: *Requirements*, *Req Perspective* | `sysml_add_requirement`, `sysml_link_requirement` |
+| Allocation ([doc](features/allocation.md)) | `engine.allocation`                     | Web: *Allocation*            | `sysml_create_allocation_set`, `sysml_allocate` |
+| Model Check, report, tables ([doc](features/interop.md)) | `engine.interop`         | Web: *Model Check*, *Import / Export* | `sysml_model_check`, `sysml_generate_report` |
+| Undo / redo                     | `engine.undo`                            | Web: *Undo / Redo*, Ctrl+Z / Ctrl+Y | `sysml_undo` / `sysml_redo` |

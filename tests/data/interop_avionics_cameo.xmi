@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+         xmlns:uml="http://www.omg.org/spec/UML/20131001"
+         xmlns:sysml="http://www.omg.org/spec/SysML/20181001/SysML"
+         xmlns:StandardProfile="http://www.omg.org/spec/UML/20131001/StandardProfile"
+         xmlns:MagicDraw_Profile="http://www.omg.org/spec/UML/20131001/MagicDrawProfile"
+         xmlns:Avionics="http://www.example.com/profiles/Avionics">
+  <xmi:Documentation>
+    <xmi:exporter>MagicDraw Clean XMI Exporter</xmi:exporter>
+    <xmi:exporterVersion>2022x Refresh2</xmi:exporterVersion>
+  </xmi:Documentation>
+  <uml:Model xmi:type="uml:Model" xmi:id="_model_flightdeck" name="FlightDeckModel">
+    <ownedComment xmi:type="uml:Comment" xmi:id="_cm_model" body="Integrated modular avionics flight deck (training fixture).">
+      <annotatedElement xmi:idref="_model_flightdeck"/>
+    </ownedComment>
+    <packagedElement xmi:type="uml:Package" xmi:id="_pkg_interfaces" name="Interfaces">
+      <packagedElement xmi:type="uml:Class" xmi:id="_ib_a429" name="A429Word">
+        <ownedComment xmi:type="uml:Comment" xmi:id="_cm_a429" body="ARINC 429 32-bit word.">
+          <annotatedElement xmi:idref="_ib_a429"/>
+        </ownedComment>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_fp_label" name="label" visibility="public">
+          <type href="http://www.omg.org/spec/UML/20131001/PrimitiveTypes.xmi#Integer"/>
+        </ownedAttribute>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_fp_data" name="data" visibility="public" type="_vt_altitude"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:DataType" xmi:id="_vt_altitude" name="Altitude_ft"/>
+      <packagedElement xmi:type="uml:Enumeration" xmi:id="_en_phase" name="FlightPhase">
+        <ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="_lit_taxi" name="Taxi"/>
+        <ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="_lit_cruise" name="Cruise"/>
+        <ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="_lit_land" name="Landing"/>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="_pkg_structure" name="Structure">
+      <packagedElement xmi:type="uml:Class" xmi:id="_blk_lru" name="AvionicsLRU" isAbstract="true"/>
+      <packagedElement xmi:type="uml:Class" xmi:id="_blk_gps" name="GPSReceiver">
+        <generalization xmi:type="uml:Generalization" xmi:id="_gen_gps" general="_blk_lru"/>
+        <ownedAttribute xmi:type="uml:Port" xmi:id="_port_gps_nav" name="navOut" aggregation="composite" type="_ib_a429"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="_blk_fmc" name="FlightManagementComputer">
+        <ownedComment xmi:type="uml:Comment" xmi:id="_cm_fmc">
+          <body>Computes the lateral and vertical flight plan.</body>
+          <annotatedElement xmi:idref="_blk_fmc"/>
+        </ownedComment>
+        <generalization xmi:type="uml:Generalization" xmi:id="_gen_fmc">
+          <general xmi:idref="_blk_lru"/>
+        </generalization>
+        <ownedAttribute xmi:type="uml:Port" xmi:id="_port_fmc_nav" name="navIn" aggregation="composite" type="_ib_a429" isConjugated="true"/>
+        <ownedAttribute xmi:type="uml:Port" xmi:id="_port_fmc_disp" name="displayOut" aggregation="composite" type="_ib_a429"/>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_vp_fmc_alt" name="cruiseAltitude" type="_vt_altitude">
+          <defaultValue xmi:type="uml:LiteralReal" xmi:id="_dv_alt" value="35000"/>
+        </ownedAttribute>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_vp_fmc_phase" name="phase" type="_en_phase"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="_blk_pfd" name="PrimaryFlightDisplay">
+        <ownedAttribute xmi:type="uml:Port" xmi:id="_port_pfd_in" name="displayIn" aggregation="composite" type="_ib_a429"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="_blk_system" name="FlightDeck">
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_part_gps" name="gps" aggregation="composite" type="_blk_gps" association="_assoc_1"/>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_part_fmc" name="fmc" aggregation="composite" type="_blk_fmc">
+          <lowerValue xmi:type="uml:LiteralInteger" xmi:id="_lv_fmc" value="1"/>
+          <upperValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="_uv_fmc" value="1"/>
+        </ownedAttribute>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_part_pfd" name="pfd" aggregation="composite" type="_blk_pfd">
+          <lowerValue xmi:type="uml:LiteralInteger" xmi:id="_lv_pfd" value="2"/>
+          <upperValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="_uv_pfd" value="2"/>
+        </ownedAttribute>
+        <ownedConnector xmi:type="uml:Connector" xmi:id="_con_nav" name="navBus">
+          <end xmi:type="uml:ConnectorEnd" xmi:id="_con_nav_e1" partWithPort="_part_gps" role="_port_gps_nav"/>
+          <end xmi:type="uml:ConnectorEnd" xmi:id="_con_nav_e2" role="_port_fmc_nav">
+            <partWithPort xmi:idref="_part_fmc"/>
+          </end>
+        </ownedConnector>
+        <ownedConnector xmi:type="uml:Connector" xmi:id="_con_disp">
+          <end xmi:type="uml:ConnectorEnd" xmi:id="_con_disp_e1" partWithPort="_part_fmc" role="_port_fmc_disp"/>
+          <end xmi:type="uml:ConnectorEnd" xmi:id="_con_disp_e2" partWithPort="_part_pfd" role="_port_pfd_in"/>
+        </ownedConnector>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Association" xmi:id="_assoc_1" memberEnd="_part_gps _assoc_1_end"/>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="_pkg_reqs" name="Requirements">
+      <packagedElement xmi:type="uml:Class" xmi:id="_req_nav" name="Navigation accuracy"/>
+      <packagedElement xmi:type="uml:Class" xmi:id="_req_disp" name="Attitude display"/>
+      <packagedElement xmi:type="uml:Class" xmi:id="_req_hlr" name="FMC lateral guidance"/>
+      <packagedElement xmi:type="uml:Activity" xmi:id="_tc_nav" name="RNP flight test"/>
+      <packagedElement xmi:type="uml:Abstraction" xmi:id="_sat_1">
+        <client xmi:idref="_blk_fmc"/>
+        <supplier xmi:idref="_req_nav"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Abstraction" xmi:id="_sat_2" client="_blk_pfd" supplier="_req_disp"/>
+      <packagedElement xmi:type="uml:Abstraction" xmi:id="_ver_1" client="_tc_nav" supplier="_req_nav"/>
+      <packagedElement xmi:type="uml:Abstraction" xmi:id="_der_1" client="_req_hlr" supplier="_req_nav"/>
+    </packagedElement>
+  </uml:Model>
+  <sysml:InterfaceBlock xmi:id="_s_ib_a429" base_Class="_ib_a429"/>
+  <sysml:FlowProperty xmi:id="_s_fp_label" base_Property="_fp_label" direction="out"/>
+  <sysml:FlowProperty xmi:id="_s_fp_data" base_Property="_fp_data" direction="out"/>
+  <sysml:ValueType xmi:id="_s_vt_alt" base_DataType="_vt_altitude"/>
+  <sysml:Block xmi:id="_s_blk_lru" base_Class="_blk_lru"/>
+  <sysml:Block xmi:id="_s_blk_gps" base_Class="_blk_gps"/>
+  <sysml:Block xmi:id="_s_blk_fmc" base_Class="_blk_fmc"/>
+  <sysml:Block xmi:id="_s_blk_pfd" base_Class="_blk_pfd"/>
+  <sysml:Block xmi:id="_s_blk_sys" base_Class="_blk_system"/>
+  <sysml:ProxyPort xmi:id="_s_pp_gps" base_Port="_port_gps_nav"/>
+  <sysml:ProxyPort xmi:id="_s_pp_fmc" base_Port="_port_fmc_nav"/>
+  <sysml:FlowPort xmi:id="_s_fp_fmc_disp" base_Port="_port_fmc_disp" direction="out"/>
+  <sysml:FlowPort xmi:id="_s_fp_pfd_in" base_Port="_port_pfd_in" direction="in"/>
+  <sysml:Requirement xmi:id="_s_req_nav" base_Class="_req_nav" Id="SRS-001" Text="The system shall determine aircraft position within RNP 0.3."/>
+  <sysml:Requirement xmi:id="_s_req_disp" base_Class="_req_disp" Id="SRS-002">
+    <Text>The system shall display attitude on both PFDs.</Text>
+  </sysml:Requirement>
+  <sysml:Requirement xmi:id="_s_req_hlr" base_Class="_req_hlr" Id="HLR-010" Text="The FMC shall compute lateral guidance commands."/>
+  <sysml:TestCase xmi:id="_s_tc_nav" base_Behavior="_tc_nav"/>
+  <sysml:Satisfy xmi:id="_s_sat_1" base_Abstraction="_sat_1"/>
+  <sysml:Satisfy xmi:id="_s_sat_2" base_Abstraction="_sat_2"/>
+  <sysml:Verify xmi:id="_s_ver_1" base_Abstraction="_ver_1"/>
+  <sysml:DeriveReqt xmi:id="_s_der_1" base_Abstraction="_der_1"/>
+  <Avionics:LRU xmi:id="_s_lru_fmc" base_Class="_blk_fmc" mass="4.2" dal="A" ataChapter="34"/>
+  <Avionics:LRU xmi:id="_s_lru_gps" base_Class="_blk_gps" mass="1.1" dal="B" ataChapter="34"/>
+  <xmi:Extension extender="MagicDraw UML 2022x">
+    <filePart name="com.nomagic.magicdraw.uml_umodel.shared_umodel" type="XML" header="&lt;?xml version=&quot;1.0&quot;?&gt;"/>
+  </xmi:Extension>
+</xmi:XMI>

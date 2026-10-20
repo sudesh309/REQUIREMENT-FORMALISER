@@ -41,6 +41,20 @@ specifications.
   diagrams, requirements & parameters, typed links, stereotypes,
   knowledge graph, MCP, GUI workflow, end-to-end LLM example, cheat
   sheet). Rich with Mermaid diagrams.
+- **[Studio: System Composer workflow](docs/USER_GUIDE.md#4-studio-system-composer-workflow)**
+  — where everything is in the web studio and a click-by-click tutorial
+  that builds a small avionics model (architecture → interfaces → profile
+  → requirements → allocation → report) without writing code.
+- **Feature references** (studio editors, HTTP API, MCP tools, System
+  Composer parity):
+  [architecture canvas](docs/features/architecture.md) ·
+  [interfaces](docs/features/interfaces.md) ·
+  [profiles & stereotypes](docs/features/profiles.md) ·
+  [requirements & traceability](docs/features/requirements.md) ·
+  [allocation](docs/features/allocation.md) ·
+  [interop, Model Check & reports](docs/features/interop.md).
+- **[docs/EXTENDING.md](docs/EXTENDING.md)** — how features plug in
+  (registries, cross-feature contracts, tests and the wave gate).
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 11 Mermaid diagrams
   covering layered overview, KerML metamodel, SysML v2 taxonomy,
   link registry, engine data flow, GUI runtime, state-machine runtime,
@@ -227,26 +241,41 @@ The GUI exposes Export › Knowledge graph; the MCP server exposes
 
 ## Web frontend
 
-A modern browser-based UI ships in `webapp/` — same capabilities as the
-Tkinter GUI but with **zero dependencies** (stdlib HTTP backend, Tailwind
-+ Mermaid via CDN, no `pip install`, no `npm`):
+The browser studio in `webapp/` is the primary UI: a System Composer-style
+modelling environment with **zero dependencies** (stdlib HTTP backend,
+Tailwind and Mermaid vendored, no `pip install`, no `npm`, works offline):
 
 ```bash
 python -m webapp.server
 # → SysML v2 web frontend ready at http://127.0.0.1:8765
 ```
 
-Then open the URL in any browser. Use this if Tkinter isn't available on
-your machine (or you simply prefer a browser workflow).
+Then open the URL in any browser. Start with the user guide's
+[Studio: System Composer workflow](docs/USER_GUIDE.md#4-studio-system-composer-workflow)
+chapter.
 
-Features:
+Features (toolstrip by task: Modeling · Views · Requirements · Analysis · Interop):
 
-- Tree (left) · tabbed right pane (Properties · Diagram · Links · Parser) · log (bottom)
-- Toolbar: one-click add for every SysML v2 element kind + Stereotype + Parameter
-- Diagrams rendered live by Mermaid: BDD, IBD, Requirements, StateMachine
-- Modal dialogs: Link (with all 15 kinds), Stereotype define/apply, StateMachine attach/state/transition/fire
-- One-click knowledge-graph export: Turtle / JSON-LD / GraphML / Cypher
-- F5 validate · Ctrl+L link · Ctrl+E fire event · Del delete
+- **Architecture** canvas: components, ports (data / physical / client-server),
+  connectors drawn port to port, reference components, Group, Arrange, a
+  Property Inspector with stereotype values and badges
+  ([docs/features/architecture.md](docs/features/architecture.md))
+- **Interfaces**: data / physical / service interfaces, value types, ARINC 429,
+  AFDX, MIL-STD-1553, discrete and analog templates, compatibility checks, adapters
+  ([docs/features/interfaces.md](docs/features/interfaces.md))
+- **Profiles**: stereotypes with typed properties and units (mass, power, DAL…),
+  applied in bulk and edited per element ([docs/features/profiles.md](docs/features/profiles.md))
+- **Requirements**: sets, Implement / Verify / Derive links by drag and drop,
+  suspect links, traceability matrix ([docs/features/requirements.md](docs/features/requirements.md))
+- **Allocation**: sets and scenarios, allocation matrix, coverage
+  ([docs/features/allocation.md](docs/features/allocation.md))
+- **Interop**: Model Check, HTML report, Excel / CSV tables, SysML v2 text, XMI
+  import, compare and merge ([docs/features/interop.md](docs/features/interop.md))
+- One undo history for every edit (Ctrl+Z / Ctrl+Y, named steps)
+- **Advanced ▾**: every generic SysML v2 element kind, typed links (Ctrl+L),
+  stereotype and state-machine commands, the Links and Parser tabs
+- Diagrams rendered live by Mermaid: BDD, IBD, Requirements, StateMachine;
+  knowledge-graph export: Turtle / JSON-LD / GraphML / Cypher
 - Save / Load JSON, Import `.sysml`, Export current DOT diagram
 
 ## GUI
