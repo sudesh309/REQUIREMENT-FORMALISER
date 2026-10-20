@@ -248,8 +248,13 @@ last run).
 - Severity buttons (`● Errors`, `▲ Warnings`, `i Info`, with counts) toggle severities.
 - The rule list filters by rule (with counts and titles); the search box filters by
   element name or message.
-- Click an issue, or focus it and press Enter, to navigate (`studio.emit("navigate", {id})`);
-  arrows, Home and End move between issues.
+- Click an issue, or focus it and press Enter, to show its element in context: an
+  architecture, component, port or connector opens on the **Architecture** canvas (the
+  composition that holds it, with the element selected and scrolled into view; an
+  unconnected port of a reference component is reported on the usage, which is selected),
+  anything else (requirement, interface, function, ...) opens in **Properties**; the tree
+  selects it as well (`studio.emit("navigate", {id})`). The issue stays marked when you come
+  back to Model Check. Arrows, Home and End move between issues.
 
 Advisor checks (registered with `engine.register_rule` / `register_repo_rule`, so they also
 appear in Validate, `/api/validate` and `sysml_validate`):
@@ -428,7 +433,10 @@ saves are identical across processes, and order follows containment, not creatio
   download / import, CSV export), `60_interop_profiles.mjs` (a real profile's stereotype:
   `Avionics.LRU.*` grid columns, a value typed in another unit, a unit change in the
   Profiles sheet, XLSX round trip into a new project, Compare "No differences" then a
-  `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value).
+  `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value),
+  `65_model_check_navigate.mjs` (no `feature.typed` noise for inline components, connectors
+  and untyped ports; open ports reported per reference usage; an issue opens the canvas
+  composition with its component or port selected, or Properties for a requirement).
 
 ## System Composer parity
 

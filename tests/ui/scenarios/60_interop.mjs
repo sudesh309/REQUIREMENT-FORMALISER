@@ -101,6 +101,10 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   // The port belongs to the GPSReceiver definition: the issue names the usage that leaves it open.
   expect(issue.qn.endsWith("FlightDeck::gnss") && issue.text.includes("Port gnss.maintenance is not connected in FlightDeck"),
          `unconnected port reported on its usage: ${issue.qn} ${issue.text}`);
+  // The click showed the component on the canvas; Model Check keeps its filter and the row.
+  await page.waitForSelector(`#tab-architecture .arch-block.sel[data-id="${issue.id}"]`);
+  await page.click('.tab[data-tab="checks"]');
+  expect(await page.$eval("#tab-checks tr.io-issue", (tr) => tr.classList.contains("sel")), "the clicked issue stays marked");
   // Back to all rules; search narrows the table; keyboard Enter navigates as well.
   await page.selectOption('#tab-checks select[data-k="rule"]', "");
   await page.fill('#tab-checks input[data-k="search"]', "maintenance");
@@ -112,4 +116,5 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await page.focus("#tab-checks tr.io-issue");
   await page.keyboard.press("Enter");
   await page.waitForFunction((id) => document.querySelector("#tree .tree-node.selected")?.dataset.id === id, kbIssue);
+  await page.waitForFunction(() => window.studio.state.tab === "architecture");
 }

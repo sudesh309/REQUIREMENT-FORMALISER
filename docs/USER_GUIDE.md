@@ -370,8 +370,10 @@ function's row header highlights its LRU on the canvas.
 **7. Model Check.**
 Click **Analysis ▸ Model Check** (Ctrl+Shift+K). The tab's badge counts
 the findings (errors, warnings, info); filter them by severity, rule or
-text and click a finding to select its element. Fix one in its editor
-(for example give a requirement its text) and the count goes down.
+text and click a finding to see its element in context: a component,
+port or connector opens on the canvas with the element selected, anything
+else (a requirement, an interface) opens in **Properties**. Fix one in its
+editor (for example give a requirement its text) and the count goes down.
 
 **8. Report.**
 Click **Interop ▸ Import / Export ▸ Generate Report**: the HTML report
