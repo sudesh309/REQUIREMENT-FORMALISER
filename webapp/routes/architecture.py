@@ -17,7 +17,7 @@ Canvas
     GET   /api/arch/locate/<id>                                            -> {composition, select}
 Editing
     POST  /api/arch/component                  {composition, name?, definition?, layout?}
-    PATCH /api/arch/component/<id>             {name?, definition? (id | null)}
+    PATCH /api/arch/component/<id>             {name?, definition? (id | null)} -> + merged_ports
     POST  /api/arch/port                       {owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}
     PATCH /api/arch/port/<id>                  {name?, direction?, kind?, interface? (id | null), force?}
     POST  /api/arch/connector                  {composition, source: {component?, port}, target: {component?, port}, name?}
@@ -226,11 +226,14 @@ def api_add_component(req):
 def api_update_component(req, eid):
     b = _body(req)
     c = A.require_component(_find(eid, "component"))
+    merged: list[str] = []
     if "definition" in b:
-        A.set_definition(_repo(), c, _find(b["definition"], "definition", required=False))
+        d = _find(b["definition"], "definition", required=False)
+        merged = [p.name for p, _ in A.merged_ports(c, d)]
+        A.set_definition(_repo(), c, d)
     if b.get("name") is not None:
         A.rename(_repo(), c, b["name"])
-    return ok(_component_json(c))
+    return ok({**_component_json(c), "merged_ports": merged})
 
 
 @arch_route("POST", r"^/api/arch/delete$")

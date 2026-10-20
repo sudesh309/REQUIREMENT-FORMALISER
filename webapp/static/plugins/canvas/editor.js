@@ -1655,8 +1655,10 @@ class CanvasEditor {
     return {
       rename: (key, name) => this.commitRename(key, name),
       renameComposition: name => this.commitCompositionName(name),
-      setDefinition: (id, def) => this.run(() => this.studio.api("PATCH", `/api/arch/component/${id}`, { definition: def }),
-                                           { ok: def ? "Component now references the definition" : "Component is now inline" }),
+      setDefinition: (id, def) => this.run(() => this.studio.api("PATCH", `/api/arch/component/${id}`, { definition: def }), {
+        ok: r => (!def ? `${r.name} is now inline`
+          : `${r.name} now references ${r.definition?.name}${r.merged_ports?.length
+            ? `; its ports ${r.merged_ports.join(", ")} were merged into the definition's ports (connectors kept)` : ""}`) }),
       updatePort: (id, body) => this.updatePort(id, body),
       movePort: (key, side) => this.movePortSide(key, side),
       addPort: (kind, dir) => {

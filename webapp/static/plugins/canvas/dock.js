@@ -18,6 +18,13 @@ function stereoRows(stereotypes) {
   }).join("");
 }
 
+// Where a reference component's ports live: shared on the definition, or on this usage only.
+function portsWhere(c) {
+  const own = c.ports.filter(p => !p.on_definition).length;
+  const shared = c.ports.length - own;
+  return `${shared} on ${esc(c.definition.name)}${own ? `, ${own} on this component only` : ""}`;
+}
+
 function pills(badges) {
   return (badges || []).map(b => `<span class="tree-badge">${esc(b)}</span>`).join("") || `<span class="arch-dock-muted">—</span>`;
 }
@@ -29,9 +36,10 @@ export function createDock(el, studio, act) {
     return `<label class="arch-field"><span>${esc(label)}</span>${control}</label>`;
   }
 
-  function portRow(p, allowed) {
+  function portRow(p, allowed, usageOnly = false) {
     const kinds = [...new Set([...allowed, p.kind])];
-    return `<div class="arch-prow" data-port-row="${esc(p.id)}">
+    return `<div class="arch-prow${usageOnly ? " usage-only" : ""}" data-port-row="${esc(p.id)}"
+        ${usageOnly ? `title="Only on this component (not on the referenced definition)"` : ""}>
       <input class="input" data-dock-port="name" data-id="${esc(p.id)}" value="${esc(p.name)}" aria-label="Port name"/>
       <select class="input" data-dock-port="direction" data-id="${esc(p.id)}" aria-label="Direction of ${esc(p.name)}" ${p.kind !== "data" ? "disabled" : ""}>
         ${options(DIRECTIONS.map(d => [d, d]), p.direction)}</select>
@@ -51,8 +59,8 @@ export function createDock(el, studio, act) {
       ${field("Reference", `<select class="input" data-dock="definition">${options(defs, c.definition?.id || "", { empty: "— inline component —" })}</select>`)}
       <div class="arch-dock-sub">Stereotypes</div>${stereoRows(c.stereotypes)}
       <div class="arch-dock-sub">Badges</div><div>${pills(c.badges)}</div>
-      <div class="arch-dock-sub">Ports (${c.ports.length})${c.is_reference ? ` <span class="arch-dock-muted">on ${esc(c.definition.name)}</span>` : ""}</div>
-      <div class="arch-dock-ports">${c.ports.map(p => portRow(p, v.allowed_port_kinds)).join("")
+      <div class="arch-dock-sub" data-dock-ports-head>Ports (${c.ports.length})${c.is_reference ? ` <span class="arch-dock-muted">${portsWhere(c)}</span>` : ""}</div>
+      <div class="arch-dock-ports">${c.ports.map(p => portRow(p, v.allowed_port_kinds, c.is_reference && !p.on_definition)).join("")
         || `<div class="arch-dock-muted">No ports</div>`}</div>
       <div class="arch-dock-btns">${portButtons}</div>
       <div class="arch-dock-sub">Layout</div>

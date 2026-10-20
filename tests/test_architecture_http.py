@@ -98,6 +98,26 @@ class ComponentHttpTests(_ArchHttp):
         self.call("PATCH", f"/api/arch/component/{c['id']}", {"definition": self.root["id"]},
                   expect=400)                                 # would contain itself
 
+    def test_reference_merges_same_named_ports(self):
+        adc, fms, disp = self.three()
+        self.connect(adc, "airData", fms, "airData")
+        self.connect(fms, "route", disp, "route")
+        fmc = self.call("POST", "/api/element", {"kind": "PartDefinition", "name": "FmcType"})
+        self.port({"id": fmc["id"]}, "airData", "in")
+        self.port({"id": fmc["id"]}, "route", "out")
+        out = self.call("PATCH", f"/api/arch/component/{fms['id']}", {"definition": fmc["id"]})
+        self.assertEqual(out["merged_ports"], ["airData", "route"])
+        self.assertEqual([(p["name"], p["on_definition"]) for p in out["ports"]],
+                         [("airData", True), ("route", True)])
+        conns = self.view()["connectors"]
+        self.assertEqual([k["issues"] for k in conns], [[], []])
+        port_ids = {p["id"] for p in out["ports"]}
+        self.assertTrue(all({k["source"]["port_id"], k["target"]["port_id"]} & port_ids for k in conns))
+        issues = self.call("GET", "/api/validate")["issues"]
+        self.assertFalse([i for i in issues if i["rule"] == "arch.port.unique"])
+        self.call("POST", "/api/undo")                        # one step
+        self.assertEqual([p["on_definition"] for p in self.view()["components"][1]["ports"]], [False, False])
+
     def test_ports_and_port_kind_props(self):
         adc = self.comp("ADC")
         p = self.port(adc, None, "out")

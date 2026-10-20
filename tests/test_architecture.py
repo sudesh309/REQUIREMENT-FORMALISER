@@ -202,6 +202,56 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(A.connector_problems(c1), [])
         self.assertEqual(A.connector_problems(c2)[0][0], "arch.connector.scope")   # shown as broken
 
+    def test_reference_merges_same_named_ports_and_keeps_connectors(self):
+        """SU-2: FCC-R (inline, connected) set to Reference = FlightControlComputer, which
+        was saved from FCC-L and has ports of the same names."""
+        repo = Repository("IMA")
+        root = A.create_architecture(repo, "Aircraft")
+        adc, iru, srv = (A.add_component(repo, root, n) for n in ("ADC", "IRU", "Servo"))
+        A.add_port(repo, adc, "airData", "out")
+        A.add_port(repo, iru, "inertial", "out")
+        A.add_port(repo, srv, "cmdL", "in")
+        A.add_port(repo, srv, "cmdR", "in")
+        fccs = []
+        for name, cmd in (("FCC-L", "cmdL"), ("FCC-R", "cmdR")):
+            f = A.add_component(repo, root, name)
+            A.add_port(repo, f, "airData", "in")
+            A.add_port(repo, f, "inertial", "in")
+            A.add_port(repo, f, "surfaceCmd", "out")
+            A.add_port(repo, f, "maint", "inout")
+            A.connect(repo, root, _ep(adc, "airData"), _ep(f, "airData"))
+            A.connect(repo, root, _ep(iru, "inertial"), _ep(f, "inertial"))
+            A.connect(repo, root, _ep(f, "surfaceCmd"), _ep(srv, cmd))
+            fccs.append(f)
+        left, right = fccs
+        law = A.add_component(repo, right, "ControlLaw")     # inside FCC-R: boundary connector
+        A.add_port(repo, law, "air", "in")
+        inner = A.connect(repo, right, {"port": "airData"}, _ep(law, "air"))
+        Fcc = A.save_as_reference(repo, left, "FlightControlComputer")
+        debug = A.add_port(repo, right, "debug", "inout")       # FCC-R only: stays usage-only
+        self.assertEqual([p.name for p, _ in A.merged_ports(right, Fcc)],
+                         ["airData", "inertial", "surfaceCmd", "maint"])
+        A.set_definition(repo, right, Fcc)
+        names = sorted(p.name for p in ports_of(right))
+        self.assertEqual(names, ["airData", "debug", "inertial", "maint", "surfaceCmd"])
+        self.assertEqual([p for p in ports_of(right) if p.owner is right], [debug])
+        # Every connector of FCC-R now ends on the definition's ports, through FCC-R.
+        for conn in connectors_of(root):
+            for ctx, p in connector_ends(conn):
+                if ctx is right:
+                    self.assertIs(p.owner, Fcc)
+        self.assertEqual(len(connectors_of(root)), 6)
+        self.assertEqual(connector_ends(inner, right)[0], (None, A.resolve_port(Fcc, "airData")))
+        self.assertEqual(_issues(repo), [])                      # no arch.port.unique
+        view = A.view(repo, root)
+        fcc_r = [c for c in view["components"] if c["name"] == "FCC-R"][0]
+        self.assertEqual(len(fcc_r["ports"]), 5)
+        self.assertEqual(sorted(p["name"] for p in fcc_r["ports"] if not p["on_definition"]), ["debug"])
+        self.assertTrue(all(not k["issues"] for k in view["connectors"]))
+        # Saved and loaded unchanged.
+        loaded = from_json(to_json(repo))
+        self.assertEqual(_issues(loaded), [])
+
     def test_generic_creation_keeps_names_unique(self):
         repo, root, adc, *_ = _arch()
         dup = PartUsage(name="ADC")

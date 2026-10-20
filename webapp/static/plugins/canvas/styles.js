@@ -176,6 +176,7 @@ export function injectCanvasStyles() {
   .arch-dock-ports { display:flex; flex-direction:column; gap:3px; }
   .arch-prow { display:grid; grid-template-columns:minmax(0,1fr) 62px 74px 18px; gap:3px; align-items:center; }
   .arch-prow .input { padding:1px 3px; font-size:11.5px; min-width:0; }
+  .arch-prow.usage-only input[data-dock-port="name"] { border-style:dashed; }
   .arch-kv { display:flex; justify-content:space-between; gap:8px; }
   .arch-kv > span { color:#64748b; }
   .arch-kv > b { font-weight:500; text-align:right; word-break:break-word; }

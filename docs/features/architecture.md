@@ -125,7 +125,7 @@ opens the architecture you last viewed (else the first one with components).
 | Route a connector | Select it, drag the square handles on its middle segments; right-click → *Reset route* returns to automatic routing (which avoids other blocks) |
 | Drill down / up | Double-click a block (or select it and press **Enter**) to open it: an inline component's inside, or the shared definition of a reference component. Breadcrumbs, the ⬆ button or **Alt+↑** go back |
 | Create component from selection | Select blocks → **Group** (Ctrl+G); crossing connectors are routed through new ports; name it in place. **Expand** is the inverse |
-| Reference components | **Save as Ref** (asks for the definition name) / **Inline** on the selected component |
+| Reference components | **Save as Ref** (asks for the definition name) / **Inline** on the selected component. To reuse a type for a second channel (FCC-L / FCC-R), pick it as the component's **Reference** in the Property Inspector: the component's own ports that the definition also has (same name) are merged into the definition's ports and their connectors, inside and outside, stay connected (the log names the merged ports; one undo step). Own ports with other names stay as usage-only ports (dashed name field in the Inspector) |
 | Copy / paste / duplicate | **Copy** (Ctrl+C), **Paste** (Ctrl+V, into the composition being viewed; context menu *Paste inside* targets a block), **Duplicate** (Ctrl+D). Copies are deep (ports, internals, stereotypes) with fresh names |
 | Delete | **Delete** / Backspace, the toolstrip or the context menu (no confirmation: undo with Ctrl+Z) |
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
@@ -233,7 +233,7 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | GET | `/api/arch/connect-targets` | `?composition&source_component&source_port` | `{source, targets: [{component_id, port_id, ok, reason, kind, swapped}]}` for every other port of the view (no change) |
 | GET | `/api/arch/locate/<id>` | | `{composition, select}`: where the canvas shows an element (nulls when it is not in an architecture) |
 | POST | `/api/arch/component` | `{composition, name?, definition?, layout?}` | component view |
-| PATCH | `/api/arch/component/<id>` | `{name?, definition?: id\|null}` | component view |
+| PATCH | `/api/arch/component/<id>` | `{name?, definition?: id\|null}` | component view + `merged_ports` (names of the component's own ports merged into the new definition's same-named ports, their connectors re-attached) |
 | POST | `/api/arch/port` | `{owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}` | port view |
 | PATCH | `/api/arch/port/<id>` | `{name?, direction?, kind?, interface?: id\|null, force?}` | port view |
 | POST | `/api/arch/connector` | `{composition, source: {component?, port}, target: {component?, port}, name?}`; one end may instead be `{component?, new_port: true \| {name?, side?, offset?}}` | connector view (+ `created_port` for a new port) |
@@ -388,7 +388,7 @@ view = A.view(repo, root)                                   # canvas view model
 A.locate(conn)                                              # {"composition": root, "select": conn}
 ```
 
-Other functions: `rename`, `set_definition`, `update_port`, `delete_elements`,
+Other functions: `rename`, `set_definition` (with `merged_ports` to preview the port merge), `update_port`, `delete_elements`,
 `duplicate`, `expand`, `inline_component`, `can_connect`, `classify`,
 `connector_problems`, `component_badges`, `model_tree`, `architecture_roots`.
 All raise `ArchitectureError` (with `.status`) before changing anything.
@@ -433,7 +433,7 @@ package Avionics {
 | drag-and-drop onto the canvas | closed | HTML5 drops of any element (`drop-on-element`): interfaces onto ports (assigned by the interfaces feature), requirements onto elements (linked by the requirements feature), part definitions onto the background; the Architecture tab is spring-loaded so drags can start in other tabs |
 | property-inspector | closed | docked Property Inspector on the canvas (component, port, connector, composition, multi-selection) plus the full Properties tab |
 | create-component-from-selection | closed | Group (Ctrl+G) with boundary ports per crossing connector; Expand as the inverse |
-| reference-components | closed | save as reference / inline; reference marker and `: Definition` on the block |
+| reference-components | closed | save as reference / inline; reference marker and `: Definition` on the block; setting an existing component's Reference merges its same-named ports into the definition's and keeps the connectors |
 | copy-paste | closed | Ctrl+C / Ctrl+V / Ctrl+D, paste inside a component; deep copies with fresh names |
 | auto-layout | closed | Arrange: layered left to right by connector direction (greedy feedback-arc ordering for cycles, barycenter ordering in each layer), packed into bands shaped for the canvas for big or cyclic networks, then fit |
 | layout-persistence | closed | `tool_data.layout` (components; sizes only when resized), `tool_data.port_layout`, `tool_data.points`; survives save / load and page reloads |

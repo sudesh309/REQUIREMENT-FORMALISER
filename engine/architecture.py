@@ -386,12 +386,28 @@ def rename(repo, element: Element, name: str) -> Element:
     return element
 
 
+def merged_ports(component: Element, definition: Optional[Element]) -> list[tuple[PortUsage, PortUsage]]:
+    """The component's own ports that `definition` already has (same name), each paired
+    with that definition port: making the component a reference to `definition` merges
+    them (see ``set_definition``)."""
+    if not isinstance(definition, PartDefinition):
+        return []
+    by_name = {q.name: q for q in ports_of(definition) if q.name}
+    return [(p, by_name[p.name]) for p in component.owned_elements
+            if isinstance(p, PortUsage) and p.name in by_name]
+
+
 def set_definition(repo, component: Element, definition: Optional[Element]) -> PartUsage:
     """Retype a component: make it a reference to `definition`, or clear the typing (None).
 
-    Connectors that reached the old definition's ports through this component are
-    re-attached to the new definition's ports of the same name; the others stay
-    and show up as broken (validator / view ``issues``), as in System Composer.
+    As System Composer's reference components, the component then shows the
+    definition's ports: its own ports with a name the definition already has are merged
+    into those (their connectors, inside and outside, are re-attached to the
+    definition's port and the duplicate is deleted), so reusing an LRU type for a
+    second channel keeps every connection. Own ports with other names stay as
+    usage-only ports. Connectors that reached the old definition's ports through this
+    component are re-attached to the new definition's ports of the same name; the
+    others stay and show up as broken (validator / view ``issues``).
     """
     c = require_component(component)
     old = definition_of(c)
@@ -399,11 +415,13 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
         if not isinstance(definition, PartDefinition):
             raise ArchitectureError(f"{definition.qualified_name} is not a PartDefinition")
         _check_no_cycle(c.owner, definition)
+    swap = {id(p): q for p, q in merged_ports(c, definition)}
+    retyped = old is not None and old is not definition
     affected = []
-    if old is not None and old is not definition:
+    if retyped or swap:
         for conn in [x for x in repo.root_package.walk() if isinstance(x, ConnectionUsage)]:
-            ends = connector_ends(conn)
-            if any(ctx is c and p.owner is old for ctx, p in ends):
+            ends = connector_ends(conn)       # contexts resolved before the typing changes
+            if any((retyped and ctx is c and p.owner is old) or id(p) in swap for ctx, p in ends):
                 affected.append((conn, ends))
     c.feature_typings = []
     c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
@@ -412,11 +430,15 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
     for conn, ends in affected:
         new_ends = []
         for ctx, p in ends:
-            if ctx is c and p.owner is old and definition is not None:
+            if id(p) in swap:
+                p = swap[id(p)]
+            elif retyped and ctx is c and p.owner is old and definition is not None:
                 p = next((q for q in ports_of(definition) if q.name == p.name), p)
             new_ends.append((ctx, p))
         conn.ends = [p for _, p in new_ends]
         conn.end_contexts = tuple(ctx for ctx, _ in new_ends)
+    for p in [x for x in c.owned_elements if id(x) in swap]:
+        repo.remove(p)                       # no connector ends on it any more
     return c
 
 
