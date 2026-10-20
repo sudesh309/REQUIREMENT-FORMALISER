@@ -103,4 +103,20 @@ async function run({ page, fresh, waitReady, expect, api, errors }, step) {
   // The Output log speaks of steps, not of HTTP requests.
   const log = await page.textContent("#log");
   expect(!/\b(GET|POST|PATCH|DELETE) \/api\//.test(log), "no HTTP routes in the Output log");
+
+  step("a command of several requests is announced once it is done");
+  // New model sends two requests (new project, then its architecture) and only then reloads
+  // the tree. The views must not reload from the old tree in between: the canvas would ask
+  // for the old architecture (404 on the console, "Not found" in the Output log).
+  await page.click('[data-cmd="clear-log"]');            // drop the rejected value logged above
+  const failed = [];
+  page.on("response", (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
+  await page.click('[data-plugin-button="new-model"]');
+  await page.fill('#modal-form [name="name"]', "SecondModel");
+  await page.fill('#modal-form [name="arch"]', "Cockpit");
+  await page.click("#modal-root [data-modal-submit]");
+  await until(() => document.querySelector(".arch-frame-title")?.textContent.startsWith("Cockpit"), null, "new model open");
+  await page.waitForTimeout(300);
+  expect(!failed.length, `no failed requests: ${failed.join(", ")}`);
+  expect(!(await page.$("#log .log-error")), `no error in the Output log: ${await page.$eval("#log .log-error", e => e.textContent).catch(() => "")}`);
 }

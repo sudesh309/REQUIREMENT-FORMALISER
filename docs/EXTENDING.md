@@ -229,7 +229,11 @@ calls `studio.refreshTree()` after its edit gets `model-changed` (as before);
 an editor that saves in place and keeps its focus (the Stereotypes section of
 the Properties tab, table cells) need not do anything: once its request has
 returned and the tree was not refreshed, the studio emits `element-changed`
-and updates `studio.selected` without re-rendering the Properties tab. So:
+and updates `studio.selected` without re-rendering the Properties tab.
+"Returned" means no `studio.api` request is in flight any more: a command that
+sends several requests before it refreshes the tree (New model: a new project,
+then its architecture) gets one `model-changed` at the end and no
+`element-changed` in between, so no view reloads from the old tree. So:
 
 - Displays that mirror the model (canvas blocks, badges and Property Inspector,
   undo / redo buttons, Model Check results) listen to **both** events.

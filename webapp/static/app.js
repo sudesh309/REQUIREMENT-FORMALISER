@@ -39,12 +39,19 @@ const shortcuts = [];                // {key, ctrl, shift, alt, handler}
 async function api(method, path, body, opts = {}) {
   const headers = body ? { "Content-Type": "application/json" } : {};
   if (opts.undoMerge) headers["X-Undo-Merge"] = opts.undoMerge;
-  const resp = await fetch(path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await resp.text();
+  let resp, text;
+  rev.inflight++;
+  try {
+    resp = await fetch(path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    text = await resp.text();
+  } finally {
+    rev.inflight--;
+    if (!rev.inflight && settlePending()) scheduleSettle();   // also after a network error
+  }
   noteRevision(resp.headers.get("X-Model-Revision"));
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
@@ -79,15 +86,22 @@ function readableError(message, status = 0) {
 // saved in place, keeping its focus), the studio emits "element-changed" instead once
 // the request's caller is done, so the canvas, its Property Inspector and the undo
 // buttons are never stale. studio.selected follows silently (no re-render).
+// "Done" means no studio.api request is in flight: a command that sends several requests
+// before refreshing the tree (New model: new project, then its architecture) must not
+// have views reload from the old tree in between.
 
-const rev = { seen: null, tree: null, notified: null, refreshing: 0, timer: 0 };
+const rev = { seen: null, tree: null, notified: null, refreshing: 0, inflight: 0, timer: 0 };
 
 function noteRevision(header) {
   if (header === null || header === undefined) return;
   if (rev.seen === null) { rev.seen = rev.tree = rev.notified = header; return; }
-  if (header === rev.seen) return;
   rev.seen = header;
-  scheduleSettle();
+  if (settlePending()) scheduleSettle();
+}
+
+// The model moved and no view has heard of it yet.
+function settlePending() {
+  return rev.seen !== null && rev.seen !== rev.tree && rev.seen !== rev.notified;
 }
 
 function scheduleSettle() {
@@ -98,7 +112,8 @@ function scheduleSettle() {
 }
 
 async function settle() {
-  if (rev.refreshing || rev.seen === rev.tree || rev.seen === rev.notified) return;
+  // A request still running reschedules the settle when its answer arrives.
+  if (rev.refreshing || rev.inflight || !settlePending()) return;
   const revision = rev.notified = rev.seen;
   let selected = null;
   if (state.selectedId) {
