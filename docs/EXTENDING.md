@@ -55,7 +55,7 @@ from webapp.core import route, ok, err, session, summarize, register_kind, \
 
 @route("GET", r"^/api/variants/(?P<eid>[^/]+)$")
 def get_variants(req, eid):              # req = {"body": dict|None, "query": dict}
-    e = session().find(eid)              # by id or qualified name
+    e = session().find(eid)              # id or qualified name, with or without the project root
     if e is None:
         return err("not found", 404)
     return ok(summarize(e))

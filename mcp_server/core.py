@@ -90,7 +90,9 @@ class Session:
 
     # -- resolution ----------------------------------------------------
     def find(self, ref: str) -> Optional[Element]:
-        """Find an element by UUID first, then by qualified name."""
+        """Find an element by UUID first, then by qualified name: root-relative
+        (``Avionics::ADIRU``) or as summaries report it, with the project root in front
+        (``Project::Avionics::ADIRU``); see ``Repository.resolve``."""
         if not ref:
             return None
         hit = self.repo.by_id(ref)
