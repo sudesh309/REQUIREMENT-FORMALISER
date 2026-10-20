@@ -108,6 +108,22 @@ is reported with table, row number and name and nothing changes (should the real
 fail, the project is restored from a snapshot taken just before it). `export → import →
 export` reproduces identical tables (ids, values and row order), profiles included.
 
+What a workbook carries besides the elements, so that **XLSX export → import as a new
+project → Compare** reports *No differences* (with **layout** ticked too):
+
+- allocation sets with their source / target architecture and allocations with their
+  ends (`source_architecture ID`, `target_architecture ID`, `source ID`, `target ID`
+  columns of the Elements sheet);
+- canvas layout and other tool data (block positions and sizes, port sides, connector
+  waypoints, an enumeration's default literal) in the read-only **Tool Data** sheet;
+- project-level feature state in `Data: <name>` rows of the Model sheet (JSON): the
+  requirement links' change baselines (suspect flags), the architecture type (system /
+  software), the profile import log.
+
+An import into **the current project** gives tool data only to the elements it creates
+(existing blocks keep their current layout) and ignores the `Data:` rows (the project's
+own suspect baselines and settings stay).
+
 ### Export and import SysML v2 text
 
 - **Export → SysML v2 Text** downloads `<Project>.sysml`. The **SysML Text** view shows
@@ -272,7 +288,7 @@ Sheets, in order (first row = header):
 
 | Sheet | Rows | Base columns |
 |---|---|---|
-| Model | export information | `Property`, `Value` (Format, Name, Root ID, Documentation) |
+| Model | export information | `Property`, `Value` (Format, Name, Root ID, Documentation, and `Data: <name>` rows: project-level feature state as JSON, continued on further rows of the same name beyond 32 000 characters) |
 | Profiles | one row per stereotype property (a stereotype without properties and a profile without stereotypes get one row) | `Profile ID`, `Profile`, `Profile Version`, `Profile Description`, `Root Stereotype`, `Stereotype ID`, `Stereotype`, `Base`, `Applies To`, `Abstract`, `Stereotype Description`, `Style`, `Defaults`, `Property ID`, `Property`, `Type`, `Unit`, `Default`, `Min`, `Max`, `Literals`, `Description` |
 | Components | architectures (`PartDefinition`) and components (`PartUsage`) | `ID`, `Name`, `Kind`, `Parent ID`, `Parent`, `Reference ID`, `Reference`, `Specializes ID`, `Specializes`, `Multiplicity`, `Abstract`, `Short Name`, `Documentation`, `Stereotypes` |
 | Ports | ports | `ID`, `Name`, `Kind`, `Component ID`, `Component`, `Direction`, `Interface ID`, `Interface`, `Multiplicity`, `Short Name`, `Documentation`, `Stereotypes` |
@@ -281,10 +297,14 @@ Sheets, in order (first row = header):
 | Requirements | requirement definitions / usages | `ID`, `Req ID`, `Name`, `Kind`, `Owner ID`, `Owner`, `Text`, `Type ID`, `Type`, `Specializes ID`, `Specializes`, `Short Name`, `Documentation`, `Stereotypes` |
 | Elements | everything else (packages, attributes, actions, states, ...) | `ID`, `Name`, `Kind`, `Owner ID`, `Owner`, `Type ID`, `Type`, `Specializes ID`, `Specializes`, `Multiplicity`, `Direction`, `Abstract`, `Short Name`, `Documentation`, `Stereotypes` |
 | Links | typed links | `ID`, `Kind`, `Source ID`, `Source`, `Target ID`, `Target` |
+| Tool Data | one row per `Element.tool_data` entry (read-only in the Model Tables view) | `ID`, `Name`, `Kind`, `Key` (`layout`, `port_layout`, `points`, ...), `Value` (JSON) |
 
 - Qualified names are relative to the project root (`Structure::FlightDeck::gps`); several
   references are separated by `;`. Multiplicity is `1`, `0..1`, `1..*`, `*`; Direction is
   `in`, `out`, `inout`.
+- In an attribute column, an empty cell keeps the attribute's default and `null` means *no
+  value* (written for an attribute whose default is a value, e.g. `primitive_type` of a
+  data element typed by a value type).
 - **Stereotypes** are named by the profiles feature (`Stereotype.full_name`), which is the
   authority for stereotype names, lookup, typed values and units:
   - `Stereotypes` lists the applied stereotypes, in order (the first one's style wins), as
@@ -325,8 +345,10 @@ Sheets, in order (first row = header):
   - interfaces / buses: attributes such as `port_kind`, `bus_type`, `data_type`,
     `units`, `rate_hz` on ports, interfaces and interface elements;
   - profiles: see *Stereotypes* and *Profiles sheet* above;
-  - allocation: `allocate_from ID` / `allocate_to ID` (pre-registered element-valued
-    attributes) and `allocate` links in the Links sheet;
+  - allocation: allocation sets' `source_architecture ID` / `target_architecture ID`,
+    allocations' `source ID` / `target ID`, `allocate_from ID` / `allocate_to ID`
+    (pre-registered element-valued attributes; a library element is written by its
+    qualified name) and `allocate` links in the Links sheet;
   - requirements: `rationale`, `priority`, `status`, ... attributes and the link kinds the
     feature registers;
   - element-valued attributes of new features: `register_reference_attribute("<attr>")`
@@ -422,7 +444,11 @@ saves are identical across processes, and order follows containment, not creatio
   `test_interop_checks`, `test_interop_report`, `test_interop_vcs`, `test_interop_profiles`
   (stereotypes of real profiles next to a legacy plain-package one: naming, XLSX / CSV round
   trip, typed values and units, Profiles sheet edits and errors, report, SysML text,
-  compare / merge, XMI, atomic imports in a fresh process and after a failing real run).
+  compare / merge, XMI, atomic imports in a fresh process and after a failing real run),
+  `test_interop_fidelity` (on the acceptance model `tests/data/interop_ima_avionics_demo.json`:
+  XLSX round trip identical with layout, allocation ends, suspect links, tool data, project
+  data split over cells, report edges of two reference usages of one definition, and over
+  HTTP the round trip and the Compare baseline).
 - HTTP: `test_interop_http`; MCP: `test_interop_mcp` (in process and over stdio).
 - Browser: `60_interop.mjs` (XMI import → XLSX export download → import into a new project
   via the file chooser → Compare: No differences → property diff → Model Check filter and
@@ -500,8 +526,11 @@ Deferred:
 - The report's embedded-Mermaid download is about 3 MB; untick *embed diagrams library*
   for a small file that renders diagrams when opened next to a running studio.
 - The tables do not carry a profile's provenance (the `.profile.json` file it was imported
-  from and the project's profile import log) nor a profile's owning package when it is not
-  the project root: a profile recreated from tables sits at the root without that history
-  (Compare shows the difference in its `profiles` data). Use *Export* / *Import* of the
-  Profile Editor to move profiles with their history.
+  from; the project's profile import log is carried in the Model sheet) nor a profile's
+  owning package when it is not the project root: a profile recreated from tables sits at
+  the root without that history (Compare shows the difference in its `profiles` data). Use
+  *Export* / *Import* of the Profile Editor to move profiles with their history.
+- A ZIP of CSV files is text only: an attribute without a typed default (a data element's
+  `minimum`, an enumeration literal's value) comes back as text, so Compare against the
+  original lists those values (`0` → `"0"`). XLSX cells keep numbers.
 - An empty stereotype value cell means "unchanged": values cannot be cleared from tables.

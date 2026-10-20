@@ -855,7 +855,10 @@ def coverage(scenario: AllocationScenario, *, kinds: Any = ("component", "functi
     return {
         "set": s.name, "scenario": scenario.name, "scenario_id": scenario.element_id,
         "kinds": list(kinds), "leaves_only": leaves_only,
-        "total": total, "allocated": done, "ratio": (done / total) if total else 1.0,
+        # Nothing to allocate (no source architecture, or none of these kinds in it):
+        # coverage is not applicable (None), not 100 %.
+        "total": total, "allocated": done, "ratio": (done / total) if total else None,
+        "source_missing": s.source_architecture is None,
         "unallocated": unallocated, "per_target": per_target,
         "allocation_count": len(allocs),
     }
