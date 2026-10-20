@@ -120,7 +120,20 @@ async function run({ page, waitReady, expect, api }, step) {
     await tab("architecture");
     await openArchitecture(name);
   };
-  const dockValue = (key) => page.$eval(`.arch-dock [data-stereo-value="${key}"] b`, (b) => b.textContent.trim()).catch(() => null);
+  // The canvas Property Inspector's value of a stereotype property with its unit ("7 kg"):
+  // a read-only row, or a value editor followed by its unit.
+  const DOCK_VALUE = (k) => {
+    const row = document.querySelector(`.arch-dock [data-stereo-value="${k}"] b`);
+    if (row) return row.textContent.trim();
+    const input = document.querySelector(`.arch-dock [data-path$=".${k}"]`);
+    if (!input) return null;
+    const unit = input.nextElementSibling?.matches(".pf-unit") ? input.nextElementSibling.textContent.trim() : "";
+    return unit ? `${input.value} ${unit}` : input.value;
+  };
+  const dockValue = (key) => page.evaluate(DOCK_VALUE, key);
+  const dockValueIs = (key, v, what) => page.waitForFunction(`(${DOCK_VALUE})(${JSON.stringify(key)}) === ${JSON.stringify(v)}`,
+                                                             null, { timeout: 10000 })
+    .catch(async () => { throw new Error(`timed out: ${what} (the dock shows ${await dockValue(key)})`); });
   const pills = (name) => page.$$eval(`${block(name)} .arch-pill text`, (ts) => ts.map((t) => t.textContent));
 
   // =========================================================================================
@@ -265,13 +278,11 @@ async function run({ page, waitReady, expect, api }, step) {
   await setValues("CDS", { mass: "6.5", power: "85" });
   await tab("architecture");
   await clickBlock("FMS");
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "7 kg",
-              null, "FMS mass in the dock");
+  await dockValueIs("mass", "7 kg", "FMS mass in the dock");
   expect(await dockValue("power") === "120 W" && await dockValue("dal") === "B",
          `FMS values in the dock: ${await dockValue("power")}, ${await dockValue("dal")}`);
   await clickBlock("ADIRU");
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "4.08233133 kg",
-              null, "ADIRU mass converted from lb");
+  await dockValueIs("mass", "4.08233133 kg", "ADIRU mass converted from lb");
   await shot("profile");
 
   // =========================================================================================
@@ -437,8 +448,7 @@ async function run({ page, waitReady, expect, api }, step) {
   await until(() => document.querySelector("#project-name")?.textContent.startsWith("AircraftAvionics"), null, "project loaded");
   await openArchitecture("PhysicalArch");
   await clickBlock("FMS");
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "7 kg",
-              null, "FMS mass after loading");
+  await dockValueIs("mass", "7 kg", "FMS mass after loading");
   expect(await dockValue("power") === "120 W" && await dockValue("dal") === "B", "FMS values after loading");
   for (const lru of ["ADIRU", "FMS", "CDS"]) {
     const p = await pills(lru);

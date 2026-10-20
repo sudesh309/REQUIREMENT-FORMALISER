@@ -26,12 +26,23 @@ async function run({ page, fresh, waitReady, expect, api, errors }, step) {
     const b = await (await page.waitForSelector(`.arch-block[data-name="${name}"] .arch-body`)).boundingBox();
     await page.mouse.click(b.x + 14, b.y + b.height - 12);
   };
-  const dockMass = () => page.$eval('.arch-dock [data-stereo-value="mass"] b', el => el.textContent.trim());
+  // The canvas Property Inspector's value of a stereotype property with its unit ("7 kg"):
+  // a read-only row, or a value editor followed by its unit.
+  const DOCK_VALUE = (k) => {
+    const row = document.querySelector(`.arch-dock [data-stereo-value="${k}"] b`);
+    if (row) return row.textContent.trim();
+    const input = document.querySelector(`.arch-dock [data-path$=".${k}"]`);
+    if (!input) return null;
+    const unit = input.nextElementSibling?.matches(".pf-unit") ? input.nextElementSibling.textContent.trim() : "";
+    return unit ? `${input.value} ${unit}` : input.value;
+  };
+  const dockMass = () => page.evaluate(DOCK_VALUE, "mass");
+  const dockMassIs = (v, what) => page.waitForFunction(`(${DOCK_VALUE})("mass") === ${JSON.stringify(v)}`, null, { timeout: 10000 })
+    .catch(async () => { throw new Error(`timed out: ${what} (the dock shows ${await dockMass()})`); });
 
   step("dock shows units");
   await clickBlock("FMS");
-  await page.waitForSelector('.arch-dock [data-stereo-value="mass"]');
-  expect(await dockMass() === "4.5 kg", `mass with its unit in the dock: ${await dockMass()}`);
+  await dockMassIs("4.5 kg", "mass with its unit in the dock");
 
   step("edit in the Properties tab");
   await page.click('.arch-dock [data-dock-act="properties"]');
@@ -68,17 +79,14 @@ async function run({ page, fresh, waitReady, expect, api, errors }, step) {
 
   step("canvas dock is current");
   await page.click('.tab[data-tab="architecture"]');
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "7 kg",
-              null, "dock shows the new mass without a reload");
+  await dockMassIs("7 kg", "dock shows the new mass without a reload");
   await clickBlock("ADIRU");
   await clickBlock("FMS");
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "7 kg",
-              null, "dock shows the new mass after reselecting");
+  await dockMassIs("7 kg", "dock shows the new mass after reselecting");
 
   step("undo from the canvas");
   await page.click('[data-canvas-act="undo"]');
-  await until(() => document.querySelector('.arch-dock [data-stereo-value="mass"] b')?.textContent.trim() === "4.5 kg",
-              null, "undo restored the mass in the dock");
+  await dockMassIs("4.5 kg", "undo restored the mass in the dock");
 
   step("group and name in place is one undo step");
   const names = () => page.$$eval(".arch-block", xs => xs.map(x => x.dataset.name).sort().join());
