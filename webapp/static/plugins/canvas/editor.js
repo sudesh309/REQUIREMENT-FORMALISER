@@ -713,7 +713,10 @@ class CanvasEditor {
     if (this.emitting || !this.scene || !Array.isArray(ids)) return;
     const keys = ids.map(id => this.keyFor(id)).filter(Boolean);
     if (!keys.length) {
-      if (!ids.length && this.sel.size) this.setSel([]);
+      // Nothing, or the shown composition itself (selected in the tree), is selected: like a
+      // click on the canvas background, no block stays picked.
+      const composition = ids.length === 1 && ids[0] === this.compId;
+      if ((!ids.length || composition) && this.sel.size) this.setSel([]);
       return;
     }
     const same = keys.length === this.sel.size && keys.every(k => this.sel.has(k));

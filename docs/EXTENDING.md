@@ -244,6 +244,11 @@ features react with `engine.register_created_hook(fn(element, repo))`
 
 `studio.setSelection(ids)` sets the multi-selection (canvas rubber band,
 table rows); `studio.getSelection()` falls back to the selected element.
+The latest selection wins wherever it was made: a click in the containment tree
+and a `navigate` replace the multi-selection (and emit `selection-changed`), so
+`getSelection()` never returns an earlier canvas pick. `studio.selectElement(id)`
+alone keeps the multi-selection (the canvas publishes its picks with
+`setSelection` and then selects the primary one; editors re-select after a reload).
 
 **Model changes reach every view** (the rule): every successful request that
 changes the model results in `model-changed` or `element-changed`, whichever

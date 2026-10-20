@@ -177,7 +177,10 @@ form of a requirement also has *Verified by test case… / Add Verify link*.
 - **Link to Selection**: select a model element in the containment tree or on the canvas
   (multi-selection works), select a requirement row, pick the link type, click *Link to
   Selection*. For Implement / Verify / Confirm the selected elements become the source; for
-  Refine / Derive / Relate the selected requirement is the source.
+  Refine / Derive / Relate the selected requirement is the source. The latest selection counts,
+  wherever it was made: a click in the tree (or on a link in a link list) replaces an earlier
+  canvas pick, and the *Selection:* note under the link-type picker always names what will be
+  linked.
 - **Link from Selection**: the selected elements are always the source.
 - **Context menu** on a row: *Link to Selection as Implement / Verify / Refine / Derive / Relate /
   Confirm*.
