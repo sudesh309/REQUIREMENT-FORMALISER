@@ -39,6 +39,16 @@ export function installUndo(studio) {
     }
   }
 
+  // Unsaved changes = edits recorded since the last Save JSON (New and Load start clean);
+  // the studio warns before New / Load would discard them.
+  studio.registerUnsavedCheck?.({
+    async check() {
+      const s = await studio.api("GET", "/api/undo/state");
+      return s.dirty ? "The current project has unsaved changes" : null;
+    },
+    saved: () => studio.api("POST", "/api/undo/saved"),
+  });
+
   studio.registerShortcut({ key: "z", ctrl: true, handler: () => step("undo") });
   studio.registerShortcut({ key: "z", ctrl: true, shift: true, handler: () => step("redo") });
   studio.registerShortcut({ key: "y", ctrl: true, handler: () => step("redo") });

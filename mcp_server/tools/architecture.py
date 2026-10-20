@@ -38,7 +38,7 @@ def _run(label: Optional[str], fn) -> dict:
     try:
         if label is None:
             return _ok(fn())
-        with tracked(SESSION, label):
+        with tracked(SESSION, label), A.growth_settled(SESSION.repo):
             return _ok(fn())
     except A.ArchitectureError as ex:
         return _err(f"{ex} (status {ex.status})")

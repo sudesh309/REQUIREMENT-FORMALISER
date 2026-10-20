@@ -38,6 +38,8 @@ export function injectCanvasStyles() {
   .arch-spacer { flex:1; }
   .arch-open { display:flex; align-items:center; gap:4px; color:#64748b; }
   .arch-open .input { width:auto; max-width:220px; padding:1px 4px; font-size:12px; }
+  .arch-newarch { font-size:12px; color:#1d4ed8; padding:1px 6px; border-radius:4px; white-space:nowrap; }
+  .arch-newarch:hover { background:#eff6ff; }
   .arch-banners { display:flex; gap:6px; flex-wrap:wrap; }
   .arch-banner { display:inline-flex; align-items:center; gap:6px; background:#fef9c3; border:1px solid #fde68a; color:#713f12;
                  padding:1px 4px 1px 8px; border-radius:999px; }
@@ -91,7 +93,7 @@ export function injectCanvasStyles() {
   .arch-port-hit { fill:transparent; }
   .arch-port-ring { fill:none; stroke:none; }
   .arch-port-glyph { stroke-width:1.2; }
-  .arch-port-label { font-size:10.5px; fill:#334155; cursor:text; }
+  .arch-port-label { font-size:11.5px; fill:#334155; cursor:text; }
   .arch-port:hover .arch-port-ring { stroke:#2563eb; stroke-width:1.5; fill:rgb(219 234 254 / .6); }
   .arch-port.sel .arch-port-ring { stroke:#2563eb; stroke-width:2; fill:rgb(191 219 254 / .7); }
   .arch-port.sel .arch-port-label { fill:#1d4ed8; font-weight:600; }
@@ -176,11 +178,25 @@ export function injectCanvasStyles() {
   .arch-dock-ports { display:flex; flex-direction:column; gap:3px; }
   .arch-prow { display:grid; grid-template-columns:minmax(0,1fr) 62px 74px 18px; gap:3px; align-items:center; }
   .arch-prow .input { padding:1px 3px; font-size:11.5px; min-width:0; }
+  .arch-prow.usage-only input[data-dock-port="name"] { border-style:dashed; }
   .arch-kv { display:flex; justify-content:space-between; gap:8px; }
   .arch-kv > span { color:#64748b; }
   .arch-kv > b { font-weight:500; text-align:right; word-break:break-word; }
   .arch-stereo-row { color:#7c3aed; }
   .arch-stereo-row .arch-kv { color:#334155; padding-left:8px; }
+  .arch-dock-part { display:contents; }
+  .arch-dock-stereo { display:flex; flex-direction:column; gap:6px; }
+  .arch-dock-stereo[hidden] { display:none; }
+  .arch-st-bar select { width:100%; padding:2px 5px; font-size:12px; }
+  .arch-st-partial { display:flex; align-items:center; justify-content:space-between; gap:6px; color:#6d28d9; }
+  .arch-st-partial .btn-action { padding:0 6px; font-size:11px; }
+  .arch-dock .pf-app { margin-bottom:0; }
+  .arch-dock .pf-app > summary { font-size:12px; padding:3px 6px; gap:5px; }
+  .arch-dock .pf-props { grid-template-columns:minmax(0, 40%) minmax(0, 1fr) auto; gap:3px 5px; padding:6px; font-size:12px; }
+  .arch-dock .pf-props .input { padding:2px 5px; font-size:12px; min-width:0; width:100%; }
+  .arch-dock .pf-props .pf-unit { max-width:46px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .arch-dock .pf-msg { margin:0; min-height:0; word-break:break-word; }
+  .arch-dock .pf-msg:empty { display:none; }
   .arch-tips { margin:0; padding-left:16px; list-style:disc; color:#64748b; display:flex; flex-direction:column; gap:2px; }
   `;
   document.head.appendChild(st);

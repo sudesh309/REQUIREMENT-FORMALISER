@@ -17,7 +17,7 @@ Canvas
     GET   /api/arch/locate/<id>                                            -> {composition, select}
 Editing
     POST  /api/arch/component                  {composition, name?, definition?, layout?}
-    PATCH /api/arch/component/<id>             {name?, definition? (id | null)}
+    PATCH /api/arch/component/<id>             {name?, definition? (id | null)} -> + merged_ports
     POST  /api/arch/port                       {owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}
     PATCH /api/arch/port/<id>                  {name?, direction?, kind?, interface? (id | null), force?}
     POST  /api/arch/connector                  {composition, source: {component?, port}, target: {component?, port}, name?}
@@ -29,20 +29,59 @@ Editing
     POST  /api/arch/expand                     {component}
     POST  /api/arch/save-as-reference          {component, name?, package?}
     POST  /api/arch/inline                     {component}
-    POST  /api/arch/auto-layout                {composition}
+    POST  /api/arch/auto-layout                {composition, view?: {w, h} (canvas size in px)}
     POST  /api/arch/layout                     {items: [{id, x, y, w?, h?} | {id, side, offset} | {id, points}]}
+Stereotypes of a multi-selection (Property Inspector; engine/profiles.py checks every value)
+    GET    /api/arch/stereotypes?ids=a,b,...   {elements, applied (mixed values flagged), partial, applicable}
+    POST   /api/arch/stereotypes               {ids, stereotype}     apply to those without it
+    PATCH  /api/arch/stereotypes               {ids, values: {path: value}} or {ids, property, value}
+    DELETE /api/arch/stereotypes               {ids, stereotype}     remove from those with it
+    (each answers the GET view; one request is one undo step, nothing changes if a value is refused)
 """
 from __future__ import annotations
 
 import functools
-from typing import Any, Optional
+import re
+import traceback
+from typing import Any, Callable, Optional
 
 from engine import architecture as A
 from kerml.elements import Element
 from sysmlv2.definitions import PORT_KINDS, ConnectionUsage, PartUsage, PortUsage
 from webapp.core import (
-    err, ok, register_prop_hook, register_summary_hook, route, session, summarize,
+    err, ok, register_mutation_hook, register_prop_hook, register_summary_hook, route, session,
+    summarize,
 )
+
+
+# --- automatic growth never covers a neighbour ---------------------------------
+
+_REPLACES_MODEL = re.compile(r"^/api/(undo|redo|new|load|save|export|validate|plugins)(/|$)")
+
+
+def _settle_growth_hook(method: str, path: str, body: Any) -> Optional[Callable[[int], None]]:
+    """Any edit (from any feature) that makes a block grow pushes the neighbours it would
+    cover (``A.settle_growth``). This module is imported before ``undo`` (alphabetical
+    route loading), so the pushes are part of the same undo step."""
+    if _REPLACES_MODEL.match(path):
+        return None
+    repo = session().repo
+    try:
+        before = A.box_snapshot(repo)
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        return None
+
+    def finish(status: int) -> None:
+        if 200 <= status < 300 and session().repo is repo:
+            try:
+                A.settle_growth(repo, before)
+            except Exception:  # noqa: BLE001 - layout tidying must never fail an edit
+                traceback.print_exc()
+    return finish
+
+
+register_mutation_hook(_settle_growth_hook)
 
 
 # --- helpers ------------------------------------------------------------------
@@ -226,11 +265,14 @@ def api_add_component(req):
 def api_update_component(req, eid):
     b = _body(req)
     c = A.require_component(_find(eid, "component"))
+    merged: list[str] = []
     if "definition" in b:
-        A.set_definition(_repo(), c, _find(b["definition"], "definition", required=False))
+        d = _find(b["definition"], "definition", required=False)
+        merged = [p.name for p, _ in A.merged_ports(c, d)]
+        A.set_definition(_repo(), c, d)
     if b.get("name") is not None:
         A.rename(_repo(), c, b["name"])
-    return ok(_component_json(c))
+    return ok({**_component_json(c), "merged_ports": merged})
 
 
 @arch_route("POST", r"^/api/arch/delete$")
@@ -248,11 +290,11 @@ def api_duplicate(req):
     if not isinstance(ids, list) or not ids:
         raise A.ArchitectureError("ids must be a non-empty list")
     target = _find(b.get("target"), "target", required=False)
-    off = b.get("offset") or [30, 30]
-    if not (isinstance(off, list) and len(off) == 2):
+    off = b.get("offset")              # default: beside the originals, on no other block
+    if off is not None and not (isinstance(off, list) and len(off) == 2):
         raise A.ArchitectureError("offset must be [dx, dy]")
     copies = A.duplicate(_repo(), [_find(i, "component") for i in ids], target,
-                         (A.number(off[0], "dx"), A.number(off[1], "dy")))
+                         None if off is None else (A.number(off[0], "dx"), A.number(off[1], "dy")))
     return ok({"components": [_component_json(c) for c in copies]})
 
 
@@ -365,13 +407,61 @@ def api_update_connector(req, eid):
 
 @arch_route("POST", r"^/api/arch/auto-layout$")
 def api_auto_layout(req):
-    comp = _find(_body(req).get("composition"), "composition")
-    return ok({"positions": A.auto_layout(_repo(), comp)})
+    b = _body(req)
+    comp = _find(b.get("composition"), "composition")
+    return ok({"positions": A.auto_layout(_repo(), comp, b.get("view"))})
 
 
 @arch_route("POST", r"^/api/arch/layout$")
 def api_layout(req):
     return ok({"updated": A.apply_layout(_repo(), _body(req).get("items"))})
+
+
+# --- stereotypes of a multi-selection --------------------------------------------
+
+def _elements(ids: Any) -> list[Element]:
+    if isinstance(ids, str):
+        ids = [i for i in ids.split(",") if i]
+    if not isinstance(ids, list) or not ids:
+        raise A.ArchitectureError("ids must be a non-empty list")
+    out: list[Element] = []
+    for i in ids:
+        e = _find(i, "element")
+        if not any(x is e for x in out):
+            out.append(e)
+    return out
+
+
+@arch_route("GET", r"^/api/arch/stereotypes$")
+def api_common_stereotypes(req):
+    return ok(A.common_stereotypes(_repo(), _elements((req.get("query") or {}).get("ids"))))
+
+
+@arch_route("POST", r"^/api/arch/stereotypes$")
+def api_apply_stereotype(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    report = A.apply_stereotype_to(_repo(), els, b.get("stereotype"))
+    return ok({**A.common_stereotypes(_repo(), els), "report": report})
+
+
+@arch_route("PATCH", r"^/api/arch/stereotypes$")
+def api_set_stereotype_values(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    values = dict(b.get("values") or {})
+    if "property" in b:
+        values[b["property"]] = b.get("value")
+    stored = A.set_stereotype_values(_repo(), els, values)
+    return ok({**A.common_stereotypes(_repo(), els), "stored": stored})
+
+
+@arch_route("DELETE", r"^/api/arch/stereotypes$")
+def api_remove_stereotype(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    n = A.remove_stereotype_from(_repo(), els, b.get("stereotype"))
+    return ok({**A.common_stereotypes(_repo(), els), "removed": n})
 
 
 # --- element JSON: badges, port kind, connector contexts; PATCH validation -------

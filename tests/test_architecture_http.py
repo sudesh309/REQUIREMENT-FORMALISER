@@ -98,6 +98,26 @@ class ComponentHttpTests(_ArchHttp):
         self.call("PATCH", f"/api/arch/component/{c['id']}", {"definition": self.root["id"]},
                   expect=400)                                 # would contain itself
 
+    def test_reference_merges_same_named_ports(self):
+        adc, fms, disp = self.three()
+        self.connect(adc, "airData", fms, "airData")
+        self.connect(fms, "route", disp, "route")
+        fmc = self.call("POST", "/api/element", {"kind": "PartDefinition", "name": "FmcType"})
+        self.port({"id": fmc["id"]}, "airData", "in")
+        self.port({"id": fmc["id"]}, "route", "out")
+        out = self.call("PATCH", f"/api/arch/component/{fms['id']}", {"definition": fmc["id"]})
+        self.assertEqual(out["merged_ports"], ["airData", "route"])
+        self.assertEqual([(p["name"], p["on_definition"]) for p in out["ports"]],
+                         [("airData", True), ("route", True)])
+        conns = self.view()["connectors"]
+        self.assertEqual([k["issues"] for k in conns], [[], []])
+        port_ids = {p["id"] for p in out["ports"]}
+        self.assertTrue(all({k["source"]["port_id"], k["target"]["port_id"]} & port_ids for k in conns))
+        issues = self.call("GET", "/api/validate")["issues"]
+        self.assertFalse([i for i in issues if i["rule"] == "arch.port.unique"])
+        self.call("POST", "/api/undo")                        # one step
+        self.assertEqual([p["on_definition"] for p in self.view()["components"][1]["ports"]], [False, False])
+
     def test_ports_and_port_kind_props(self):
         adc = self.comp("ADC")
         p = self.port(adc, None, "out")
@@ -240,6 +260,22 @@ class EditingHttpTests(_ArchHttp):
         self.assertEqual(self.view(adc)["components"], [])
         self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"]], "target": "missing"}, expect=404)
 
+    def test_pasted_copies_cover_no_block(self):
+        """SU-12f: a paste lands beside the originals, not 30 px off on top of them."""
+        adc, fms, disp = self.three()
+        for _ in range(3):
+            self.call("POST", "/api/arch/duplicate", {"ids": [fms["id"], disp["id"]]})
+        boxes = [(c["name"], c["layout"]) for c in self.view()["components"]]
+        self.assertEqual(len(boxes), 9)
+        for i, (na, a) in enumerate(boxes):
+            for nb, b in boxes[i + 1:]:
+                self.assertFalse(a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+                                 and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"], f"{na} / {nb}")
+        moved = self.call("POST", "/api/arch/duplicate", {"ids": [adc["id"]], "offset": [30, 30]})
+        self.assertEqual(moved["components"][0]["layout"]["x"],
+                         next(b for n, b in boxes if n == "ADC")["x"] + 30)        # an explicit offset wins
+        self.call("POST", "/api/arch/duplicate", {"ids": [adc["id"]], "offset": [1]}, expect=400)
+
     def test_layout_auto_layout_and_tree(self):
         adc, fms, disp = self.three()
         self.connect(fms, "route", disp, "route")
@@ -257,6 +293,56 @@ class EditingHttpTests(_ArchHttp):
         self.call("POST", "/api/arch/layout", {"items": [{"id": adc["id"], "x": "a", "y": 1}]}, expect=400)
         tree = self.call("GET", f"/api/arch/tree/{self.root['id']}")
         self.assertEqual([c["name"] for c in tree["children"]], ["ADC", "FMS", "Display"])
+
+    def test_arrange_packs_a_cyclic_avionics_network_for_the_canvas(self):
+        """PO-1 repro: 30 LRUs, 3 outputs each to other LRUs (new ports), then Arrange."""
+        names = ["ADIRU1", "ADIRU2", "ADIRU3", "FMC1", "FMC2", "DU_CPT", "DU_FO", "DU_EICAS",
+                 "AFDX_SW1", "AFDX_SW2", "CPIOM_A", "CPIOM_B", "CPIOM_C", "RDC1", "RDC2", "GPS1",
+                 "GPS2", "RA1", "RA2", "FCC1", "FCC2", "FCC3", "TCAS", "WXR", "VHF1", "VHF2",
+                 "MCDU1", "MCDU2", "EGPWS", "SATCOM"]
+        comps = [self.comp(n) for n in names]
+        for c in comps:
+            self.port(c, "out", "out")
+        for i, c in enumerate(comps):
+            for k in (7, 11, 19):
+                self.call("POST", "/api/arch/connector", {
+                    "composition": self.root["id"], "source": {"component": c["id"], "port": "out"},
+                    "target": {"component": comps[(i * 3 + k) % 30]["id"], "new_port": True}})
+        body = {"composition": self.root["id"], "view": {"w": 874, "h": 480}}
+        pos = self.call("POST", "/api/arch/auto-layout", body)["positions"]
+        self.assertEqual(self.call("GET", "/api/undo/state")["undo_label"], "Arrange")
+        boxes = list(pos.values())
+        w = max(b["x"] + b["w"] for b in boxes) - min(b["x"] for b in boxes)
+        h = max(b["y"] + b["h"] for b in boxes) - min(b["y"] for b in boxes)
+        self.assertTrue(1 / 3 <= w / h <= 3, (w, h))
+        self.assertLessEqual(len({b["x"] + b["w"] / 2 for b in boxes}), 30 ** 0.5 + 3)
+        self.assertGreaterEqual(A.fit_zoom(w, h, (874, 480)), 0.4)
+        self.assertEqual(self.call("POST", "/api/arch/auto-layout", body)["positions"], pos)
+        self.assertEqual({c["id"]: c["layout"] for c in self.view()["components"]}, pos)
+        body["view"] = {"w": "big"}
+        self.call("POST", "/api/arch/auto-layout", body, expect=400)
+
+    def test_growing_block_pushes_neighbours_in_the_same_undo_step(self):
+        """PO-8: 8 inputs on the upper block, 8 outputs on the one below, then connect."""
+        up = self.comp("DisplayFlightData", layout={"x": 100, "y": 100})
+        down = self.comp("DistributePower", layout={"x": 100, "y": 250})
+        for i in range(8):
+            self.port(up, f"x_in{i}", "in")
+        for i in range(8):
+            self.port(down, f"x_out{i}", "out")
+        boxes = {c["name"]: c["layout"] for c in self.view()["components"]}
+        u, d = boxes["DisplayFlightData"], boxes["DistributePower"]
+        self.assertGreaterEqual(d["y"], u["y"] + u["h"] + A.GROWTH_GAP)          # never covered
+        self.connect(down, "x_out7", up, "x_in7")                                 # the last pair
+        self.call("POST", "/api/undo")                                            # undo the connector
+        self.call("POST", "/api/undo")                                            # undo x_out7 ...
+        self.call("POST", "/api/undo")                                            # ... and x_out6
+        after = {c["name"]: c["layout"] for c in self.view()["components"]}
+        self.assertEqual(after["DistributePower"]["y"], d["y"])                    # pushes kept
+        for _ in range(14):
+            self.call("POST", "/api/undo")
+        self.assertEqual({c["name"]: c["layout"]["y"] for c in self.view()["components"]},
+                         {"DisplayFlightData": 100, "DistributePower": 250})       # undone together
 
     def test_everything_survives_save_and_load(self):
         self.call("POST", "/api/arch/model-type", {"type": "software"})
@@ -282,6 +368,102 @@ class EditingHttpTests(_ArchHttp):
         self.connect(adc, "airData", fms, "airData")
         out = self.call("GET", f"/api/diagram/mermaid?kind=ibd&target={self.root['id']}")
         self.assertIn("-->", out["text"])
+
+
+class StereotypeInspectorHttpTests(_ArchHttp):
+    """PO-4: the Property Inspector applies stereotypes and edits their values for every
+    selected component at once (one undo step), with the profiles' checks."""
+
+    def setUp(self):
+        super().setUp()
+        prof = self.call("POST", "/api/profiles", {"name": "Avionics"})
+        self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "Base", "abstract": True,
+                                                                       "applies_to": "Component"})
+        lru = self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "LRU", "applies_to": "Component"})
+        for body in ({"name": "mass", "type": "double", "unit": "kg", "min": 0},
+                     {"name": "dal", "type": "enumeration", "literals": ["A", "B", "C", "D", "E"]},
+                     {"name": "ata", "type": "string"}, {"name": "ima", "type": "boolean"}):
+            self.call("POST", f"/api/stereotypes/{lru['id']}/properties", body)
+        self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "Sensor", "applies_to": "Component"})
+        self.adc, self.fms, self.disp = self.comp("ADC"), self.comp("FMS"), self.comp("Display")
+        self.ids = [self.adc["id"], self.fms["id"], self.disp["id"]]
+
+    def common(self, ids=None):
+        return self.call("GET", "/api/arch/stereotypes?ids=" + ",".join(ids or self.ids))
+
+    def depth(self):
+        return self.call("GET", "/api/undo/state")["undo_depth"]
+
+    def test_apply_edit_and_remove_for_the_selection(self):
+        v = self.common()
+        self.assertEqual(v["applied"], [])
+        self.assertEqual(sorted(s["qualified_name"] for s in v["applicable"]), ["Avionics.LRU", "Avionics.Sensor"])
+        # Applied to one component first, then to the whole selection in one step.
+        self.call("POST", f"/api/elements/{self.adc['id']}/stereotypes", {"stereotype": "Avionics.LRU"})
+        v = self.common()
+        self.assertEqual(v["partial"], [{"id": v["partial"][0]["id"], "qualified_name": "Avionics.LRU",
+                                         "name": "LRU", "count": 1}])
+        self.assertIn("Avionics.LRU", [s["qualified_name"] for s in v["applicable"]])
+        d = self.depth()
+        v = self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.assertEqual(len(v["report"]["applied"]), 2)
+        self.assertEqual([a["qualified_name"] for a in v["applied"]], ["Avionics.LRU"])
+        self.assertNotIn("Avionics.LRU", [s["qualified_name"] for s in v["applicable"]])
+        self.assertEqual(self.depth(), d + 1)
+        # Values: differing ones are 'mixed'; one PATCH sets all three (one undo step), with units.
+        self.call("PATCH", f"/api/elements/{self.adc['id']}/stereotypes", {"property": "Avionics.LRU.mass", "value": 4})
+        props = {p["name"]: p for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertTrue(props["mass"]["mixed"])
+        self.assertIsNone(props["mass"]["value"])
+        self.assertFalse(props["dal"]["mixed"])
+        d = self.depth()
+        v = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.mass", "value": "2 lb"})
+        mass = v["applied"][0]["groups"][0]["properties"][0]
+        self.assertFalse(mass["mixed"])
+        self.assertAlmostEqual(mass["value"], 0.90718474)
+        self.assertEqual(self.depth(), d + 1)
+        for c in (self.adc, self.fms, self.disp):
+            one = self.call("GET", f"/api/elements/{c['id']}/stereotypes")["applied"][0]["groups"][0]["properties"][0]
+            self.assertAlmostEqual(one["value"], 0.90718474)
+        v = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {
+            "Avionics.LRU.dal": "b", "Avionics.LRU.ata": "34", "Avionics.LRU.ima": True}})
+        props = {p["name"]: p["value"] for p in v["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual((props["dal"], props["ata"], props["ima"]), ("B", "34", True))
+        # Undo takes the whole multi-edit back.
+        self.call("POST", "/api/undo")
+        props = {p["name"]: p for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual(props["ata"]["value"], "")
+        # Remove from all in one step.
+        d = self.depth()
+        v = self.call("DELETE", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.assertEqual((v["removed"], v["applied"], self.depth()), (3, [], d + 1))
+        self.call("DELETE", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"}, expect=404)
+
+    def test_refused_values_change_nothing(self):
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.LRU"})
+        self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.mass", "value": 3})
+        d = self.depth()
+        for value, why in (("-1", "below the minimum"), ("3 W", ""), ("abc", "")):
+            out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {
+                "Avionics.LRU.ata": "21", "Avionics.LRU.mass": value}}, expect=400)
+            self.assertIn(why, out["error"])
+        out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "property": "Avionics.LRU.dal",
+                                                            "value": "Z"}, expect=400)
+        self.assertIn("ADC:", out["error"])                     # names the element it failed on
+        self.assertIn("not one of the literals", out["error"])
+        props = {p["name"]: p["value"] for p in self.common()["applied"][0]["groups"][0]["properties"]}
+        self.assertEqual((props["mass"], props["ata"]), (3.0, ""))
+        self.assertEqual(self.depth(), d)
+        # A component without the stereotype: refused for the whole selection.
+        other = self.comp("RDC")
+        out = self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids + [other["id"]],
+                                                            "property": "Avionics.LRU.mass", "value": 1}, expect=404)
+        self.assertIn("RDC", out["error"])
+        self.call("PATCH", "/api/arch/stereotypes", {"ids": self.ids, "values": {}}, expect=400)
+        self.call("GET", "/api/arch/stereotypes?ids=", expect=400)
+        self.call("GET", "/api/arch/stereotypes?ids=missing", expect=404)
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Avionics.Base"}, expect=400)
+        self.call("POST", "/api/arch/stereotypes", {"ids": self.ids, "stereotype": "Nope"}, expect=404)
 
 
 class UndoHttpTests(_ArchHttp):
@@ -321,6 +503,20 @@ class UndoHttpTests(_ArchHttp):
         self.call("POST", "/api/element", {"kind": "PartDefinition", "name": "Z"})
         self.call("POST", "/api/load", {"text": text})
         self.assertFalse(self.call("GET", "/api/undo/state")["can_undo"])
+
+    def test_unsaved_changes_state(self):
+        """SU-13: the studio warns on New / Load while the project is dirty."""
+        self.assertTrue(self.call("GET", "/api/undo/state")["dirty"])     # architecture created
+        st = self.call("POST", "/api/undo/saved")
+        self.assertFalse(st["dirty"])
+        self.assertEqual(self.call("GET", "/api/undo/state")["undo_label"], st["undo_label"])   # no step
+        self.call("POST", "/api/arch/auto-layout", {"composition": self.root["id"]})   # changes nothing
+        self.call("POST", "/api/arch/component", {"composition": "missing"}, expect=404)
+        self.assertFalse(self.call("GET", "/api/undo/state")["dirty"])
+        self.comp("FMS")
+        self.assertTrue(self.call("GET", "/api/undo/state")["dirty"])
+        self.call("POST", "/api/new", {"name": "Fresh"})
+        self.assertFalse(self.call("GET", "/api/undo/state")["dirty"])
 
     def test_history_is_capped_at_50(self):
         for i in range(55):

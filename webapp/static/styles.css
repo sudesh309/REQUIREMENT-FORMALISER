@@ -4,6 +4,8 @@
 .btn-primary   { background:#2563eb; color:#fff; padding:.4rem .8rem; border-radius:.375rem; font-weight:500; }
 .btn-primary:hover { background:#1d4ed8; }
 .btn-primary[disabled] { opacity:.5; cursor:not-allowed; }
+.btn-primary.btn-danger { background:#dc2626; }
+.btn-primary.btn-danger:hover { background:#b91c1c; }
 
 .btn-secondary { background:#fff; color:#374151; border:1px solid #d1d5db; padding:.4rem .8rem; border-radius:.375rem; }
 .btn-secondary:hover { background:#f3f4f6; }

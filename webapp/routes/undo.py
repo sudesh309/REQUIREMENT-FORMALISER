@@ -7,7 +7,9 @@ export, new and load requests are not recorded; new/load clear the history.
 
     POST /api/undo          -> {ok, ...state}   (ok false when there is nothing to undo)
     POST /api/redo          -> {ok, ...state}
-    GET  /api/undo/state    -> {can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}
+    GET  /api/undo/state    -> {dirty, revision, can_undo, can_redo, undo_label, redo_label, undo_depth,
+                                redo_depth, limit}   (dirty: changed since the last save, new or load)
+    POST /api/undo/saved    -> the same state, after marking the current model as saved
 """
 from __future__ import annotations
 
@@ -92,3 +94,11 @@ def api_redo(_req: dict):
 @route("GET", r"^/api/undo/state$")
 def api_undo_state(_req: dict):
     return ok(history_for(session()).state())
+
+
+@route("POST", r"^/api/undo/saved$")
+def api_undo_saved(_req: dict):
+    """The studio saved the project: it has no unsaved changes any more (``dirty`` False)."""
+    s = session()
+    history_for(s).mark_saved(s.repo)
+    return ok(history_for(s).state())

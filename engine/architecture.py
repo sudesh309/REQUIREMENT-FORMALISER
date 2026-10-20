@@ -34,7 +34,8 @@ import json
 import math
 import re
 import uuid
-from typing import Any, Callable, Iterable, NamedTuple, Optional
+from contextlib import contextmanager
+from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
@@ -386,12 +387,28 @@ def rename(repo, element: Element, name: str) -> Element:
     return element
 
 
+def merged_ports(component: Element, definition: Optional[Element]) -> list[tuple[PortUsage, PortUsage]]:
+    """The component's own ports that `definition` already has (same name), each paired
+    with that definition port: making the component a reference to `definition` merges
+    them (see ``set_definition``)."""
+    if not isinstance(definition, PartDefinition):
+        return []
+    by_name = {q.name: q for q in ports_of(definition) if q.name}
+    return [(p, by_name[p.name]) for p in component.owned_elements
+            if isinstance(p, PortUsage) and p.name in by_name]
+
+
 def set_definition(repo, component: Element, definition: Optional[Element]) -> PartUsage:
     """Retype a component: make it a reference to `definition`, or clear the typing (None).
 
-    Connectors that reached the old definition's ports through this component are
-    re-attached to the new definition's ports of the same name; the others stay
-    and show up as broken (validator / view ``issues``), as in System Composer.
+    As System Composer's reference components, the component then shows the
+    definition's ports: its own ports with a name the definition already has are merged
+    into those (their connectors, inside and outside, are re-attached to the
+    definition's port and the duplicate is deleted), so reusing an LRU type for a
+    second channel keeps every connection. Own ports with other names stay as
+    usage-only ports. Connectors that reached the old definition's ports through this
+    component are re-attached to the new definition's ports of the same name; the
+    others stay and show up as broken (validator / view ``issues``).
     """
     c = require_component(component)
     old = definition_of(c)
@@ -399,11 +416,13 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
         if not isinstance(definition, PartDefinition):
             raise ArchitectureError(f"{definition.qualified_name} is not a PartDefinition")
         _check_no_cycle(c.owner, definition)
+    swap = {id(p): q for p, q in merged_ports(c, definition)}
+    retyped = old is not None and old is not definition
     affected = []
-    if old is not None and old is not definition:
+    if retyped or swap:
         for conn in [x for x in repo.root_package.walk() if isinstance(x, ConnectionUsage)]:
-            ends = connector_ends(conn)
-            if any(ctx is c and p.owner is old for ctx, p in ends):
+            ends = connector_ends(conn)       # contexts resolved before the typing changes
+            if any((retyped and ctx is c and p.owner is old) or id(p) in swap for ctx, p in ends):
                 affected.append((conn, ends))
     c.feature_typings = []
     c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
@@ -412,11 +431,15 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
     for conn, ends in affected:
         new_ends = []
         for ctx, p in ends:
-            if ctx is c and p.owner is old and definition is not None:
+            if id(p) in swap:
+                p = swap[id(p)]
+            elif retyped and ctx is c and p.owner is old and definition is not None:
                 p = next((q for q in ports_of(definition) if q.name == p.name), p)
             new_ends.append((ctx, p))
         conn.ends = [p for _, p in new_ends]
         conn.end_contexts = tuple(ctx for ctx, _ in new_ends)
+    for p in [x for x in c.owned_elements if id(x) in swap]:
+        repo.remove(p)                       # no connector ends on it any more
     return c
 
 
@@ -1083,11 +1106,42 @@ def _finish_copies(repo, copies: list[Element], apps: list) -> None:
         repo.registry.register_tree(c)
 
 
+def _has_position(c: Element) -> bool:
+    lay = c.tool_data.get("layout")
+    return isinstance(lay, dict) and isinstance(lay.get("x"), (int, float)) and isinstance(lay.get("y"), (int, float))
+
+
+def _paste_offset(boxes: list[dict], taken: list[dict], same_place_ok: bool) -> tuple[float, float]:
+    """Where pasted blocks (`boxes`, as copied) go: where they are when that is free (paste
+    into another composition), else beside the copied group (right, below, diagonal, then
+    further away) at the first place that covers no block in `taken`."""
+    x0, y0 = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
+    bw = max(b["x"] + b["w"] for b in boxes) - x0
+    bh = max(b["y"] + b["h"] for b in boxes) - y0
+
+    def free(dx: float, dy: float) -> bool:
+        return not any(_overlap({**b, "x": b["x"] + dx, "y": b["y"] + dy}, t, GROWTH_GAP)
+                       for b in boxes for t in taken)
+    sx, sy = bw + 2 * GROWTH_GAP + 20, bh + 2 * GROWTH_GAP + 20
+    candidates = [(0, 0)] if same_place_ok else []
+    for k in range(1, 25):
+        candidates += [(k * sx, 0), (0, k * sy), (k * sx, k * sy)]
+    for dx, dy in candidates:
+        if free(dx, dy):
+            return dx, dy
+    right = max([t["x"] + t["w"] for t in taken] or [x0 + bw])
+    return right + 60 - x0, 0
+
+
 def duplicate(repo, components: list[Element], target: Optional[Element] = None,
-              offset: tuple[float, float] = (30, 30)) -> list[PartUsage]:
+              offset: Optional[tuple[float, float]] = None) -> list[PartUsage]:
     """Deep-copy components (ports, sub-components, internal connectors, stereotypes,
     tool_data) into `target` (default: their own composition) with fresh names.
-    Connectors between the copied components are copied too (copy-paste)."""
+    Connectors between the copied components are copied too (copy-paste).
+
+    The copies keep their arrangement and are placed by ``offset`` (dx, dy) from the
+    originals; by default where they cover no block: beside the originals in the same
+    composition, in place in another one when that is free."""
     comps = [require_component(c) for c in components]
     if not comps:
         raise ArchitectureError("select at least one component to duplicate")
@@ -1097,16 +1151,28 @@ def duplicate(repo, components: list[Element], target: Optional[Element] = None,
     dest = require_composition(target) if target is not None else src_owner
     for c in comps:
         _check_no_cycle(dest, c)      # a copy may not contain (a reference to) its new container
+    # Blocks still on the automatic grid would move when the copies join it: keep them where
+    # they are shown (the copies are placed relative to them).
+    for comp in {id(src_owner): src_owner, id(dest): dest}.values():
+        defaults = _default_boxes(comp)
+        for c in components_of(comp):
+            if not _has_position(c):
+                b = effective_box(c, comp, defaults)
+                c.tool_data["layout"] = {**(c.tool_data.get("layout") or {}), "x": b["x"], "y": b["y"]}
+    boxes = [effective_box(c, src_owner) for c in comps]
+    if offset is None:
+        taken_boxes = [effective_box(c, dest) for c in components_of(dest)]
+        offset = _paste_offset(boxes, taken_boxes, dest is not src_owner)
     copies, mapping, apps = clone_forest(comps)
     owner = edit_owner(dest)
     taken = member_names(dest)
-    dx, dy = (offset or (30, 30))
-    for orig, cp in zip(comps, copies):
+    dx, dy = offset
+    for orig, cp, box in zip(comps, copies, boxes):
         cp.name = unique_name(orig.name or "Component", taken)
         taken.add(cp.name)
         lay = cp.tool_data.get("layout")
-        if isinstance(lay, dict) and "x" in lay and "y" in lay:
-            cp.tool_data["layout"] = {**lay, "x": lay["x"] + dx, "y": lay["y"] + dy}
+        cp.tool_data["layout"] = {**(lay if isinstance(lay, dict) else {}),
+                                  "x": box["x"] + dx, "y": box["y"] + dy}
         owner.own(cp)
     # Connectors between selected components, copied into the destination.
     selected = {id(c) for c in comps}
@@ -1471,13 +1537,16 @@ def port_layouts(owner: Element) -> dict[int, dict]:
     return out
 
 
-NAME_CHAR_W, PORT_CHAR_W, MAX_AUTO_W = 7.4, 5.8, 320
+# Approximate text widths per character on the canvas (render.js): block names, port labels
+# (11.5 px) and the `: Definition` line of a reference component.
+NAME_CHAR_W, PORT_CHAR_W, DEF_CHAR_W, MAX_AUTO_W = 7.4, 6.3, 6.0, 320
 
 
 def default_size(c: Element) -> tuple[int, int]:
     """Automatic block size: tall enough for the ports on the left/right, wide enough for
-    the ports on the top/bottom and for the name between the left and right port labels
-    (up to MAX_AUTO_W; the canvas truncates beyond)."""
+    the ports on the top/bottom and for the name (or the definition name of a reference
+    component) between the left and right port labels (up to MAX_AUTO_W; beyond, the
+    canvas wraps the name to two lines)."""
     counts = {s: 0 for s in SIDES}
     label = {s: 0 for s in SIDES}
     layouts = port_layouts(c)
@@ -1486,7 +1555,9 @@ def default_size(c: Element) -> tuple[int, int]:
         counts[side] += 1
         label[side] = max(label[side], len(p.name or ""))
     h = max(DEFAULT_H, 30 + PORT_PITCH * max(counts["left"], counts["right"]))
-    name_w = len(c.name or "") * NAME_CHAR_W + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
+    d = definition_of(c)
+    text_w = max(len(c.name or "") * NAME_CHAR_W, len(d.name or "") * DEF_CHAR_W if d is not None else 0)
+    name_w = text_w + 2 * max(label["left"], label["right"]) * PORT_CHAR_W + 52
     w = max(DEFAULT_W, 40 + PORT_PITCH * max(counts["top"], counts["bottom"]), min(MAX_AUTO_W, name_w))
     return int(-(-w // 10) * 10), h
 
@@ -1577,13 +1648,21 @@ def _spread_ports(owner: Element) -> None:
             p.tool_data["port_layout"] = {"side": side, "offset": round((i + 1) / (len(ps) + 1), 4)}
 
 
-def auto_layout(repo, composition: Element) -> dict:
-    """Left-to-right layered layout ordered by connector direction (System Composer 'Arrange')."""
-    comp = require_composition(composition)
-    comps = components_of(comp)
+def current_size(c: Element) -> tuple:
+    """A size the user set by resizing, else the automatic one (which follows the ports)."""
+    w, h = default_size(c)
+    lay = c.tool_data.get("layout")
+    if isinstance(lay, dict):
+        w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
+        h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
+    return w, h
+
+
+def _flow_graph(comp: Element, comps: list) -> tuple[list[list[int]], list[list[int]]]:
+    """Successor / predecessor lists of the components (by index) along the connectors."""
     idx = {id(c): i for i, c in enumerate(comps)}
-    succ: dict[int, list[int]] = {i: [] for i in range(len(comps))}
-    pred: dict[int, list[int]] = {i: [] for i in range(len(comps))}
+    succ: list[list[int]] = [[] for _ in comps]
+    pred: list[list[int]] = [[] for _ in comps]
     for conn in connectors_of(comp):
         ends = connector_ends(conn, comp)
         if len(ends) != 2:
@@ -1595,75 +1674,312 @@ def auto_layout(repo, composition: Element) -> dict:
         if ib not in succ[ia]:
             succ[ia].append(ib)
             pred[ib].append(ia)
-    # Depth-first topological order; back edges (cycles) are ignored.
-    state = [0] * len(comps)
-    order: list[int] = []
-    back: set[tuple[int, int]] = set()
+    return succ, pred
 
-    def visit(i: int) -> None:
-        stack = [(i, iter(succ[i]))]
-        state[i] = 1
-        while stack:
-            node, it = stack[-1]
-            nxt = next(it, None)
-            if nxt is None:
-                state[node] = 2
-                order.append(node)
-                stack.pop()
-            elif state[nxt] == 1:
-                back.add((node, nxt))
-            elif state[nxt] == 0:
-                state[nxt] = 1
-                stack.append((nxt, iter(succ[nxt])))
-    roots = [i for i in range(len(comps)) if not pred[i]] + list(range(len(comps)))
-    for i in roots:
-        if state[i] == 0:
-            visit(i)
-    order.reverse()
-    layer = [0] * len(comps)
+
+def _flow_order(succ: list[list[int]], pred: list[list[int]]) -> list[int]:
+    """A linear order with few backward edges (Eades-Lin-Smyth greedy feedback arc set):
+    sinks go to the end, sources to the front, otherwise the node with the largest
+    out-degree minus in-degree goes next. Ties take the lowest index (deterministic)."""
+    n = len(succ)
+    outd = [len(s) for s in succ]
+    ind = [len(p) for p in pred]
+    alive = [True] * n
+    head: list[int] = []
+    tail: list[int] = []
+    left = n
+
+    def drop(i: int) -> None:
+        nonlocal left
+        alive[i] = False
+        left -= 1
+        for j in succ[i]:
+            ind[j] -= 1
+        for j in pred[i]:
+            outd[j] -= 1
+    while left:
+        moved = True
+        while moved:
+            moved = False
+            for i in range(n):
+                if alive[i] and outd[i] == 0:
+                    drop(i)
+                    tail.append(i)
+                    moved = True
+            for i in range(n):
+                if alive[i] and ind[i] == 0:
+                    drop(i)
+                    head.append(i)
+                    moved = True
+        if left:
+            best = max((i for i in range(n) if alive[i]), key=lambda i: (outd[i] - ind[i], -i))
+            drop(best)
+            head.append(best)
+    return head + tail[::-1]
+
+
+def _flow_layers(succ: list[list[int]], pred: list[list[int]]) -> list[list[int]]:
+    """Longest-path layers along the forward edges of the flow order, each ordered by a
+    few barycenter sweeps (fewer crossings)."""
+    n = len(succ)
+    order = _flow_order(succ, pred)
+    pos = {v: k for k, v in enumerate(order)}
+    layer = [0] * n
     for i in order:
         for j in succ[i]:
-            if (i, j) not in back:
+            if pos[j] > pos[i]:
                 layer[j] = max(layer[j], layer[i] + 1)
-    layers: dict[int, list[int]] = {}
-    for i in range(len(comps)):
-        layers.setdefault(layer[i], []).append(i)
+    layers: list[list[int]] = [[] for _ in range(max(layer, default=-1) + 1)]
+    for i in order:
+        layers[layer[i]].append(i)
+    rank = {i: k / max(1, len(lay)) for lay in layers for k, i in enumerate(lay)}
+
+    def sweep(seq: list[list[int]], neighbours: list[list[int]]) -> None:
+        for lay in seq:
+            keyed = []
+            for k, i in enumerate(lay):
+                ns = [rank[j] for j in neighbours[i] if layer[j] != layer[i]]
+                keyed.append((sum(ns) / len(ns) if ns else rank[i], k, i))
+            keyed.sort()
+            lay[:] = [i for _, _, i in keyed]
+            for k, i in enumerate(lay):
+                rank[i] = k / max(1, len(lay))
+    for _ in range(3):
+        sweep(layers, pred)
+        sweep(layers[::-1], succ)
+    return layers
+
+
+# Reference canvas area (screen px) when the client does not send its own: the canvas of a
+# 1400 x 900 window with the Property Inspector open.
+ARRANGE_VIEW = (870, 480)
+ARRANGE_GOOD_ZOOM = 0.5          # a layout this readable is good enough: prefer the plainest one
+_FRAME_PAD, _FRAME_HEAD = 70, 28
+
+
+def fit_zoom(w: float, h: float, view: tuple = ARRANGE_VIEW) -> float:
+    """The zoom at which the canvas's Fit shows components spanning w x h (model units)
+    in a view of view[0] x view[1] screen pixels (frame, title band and the boundary port
+    labels around it included; see geometry.js frameFor / editor.js fit)."""
+    fw = max(520, w + 2 * _FRAME_PAD)
+    fh = max(320, h + 2 * _FRAME_PAD + _FRAME_HEAD / 2)
+    return min((view[0] - 24) / (fw + 160), (view[1] - 42) / (fh + 48))
+
+
+class _Packing(NamedTuple):
+    bands: list            # [[column, ...], ...]; a column is a list of component indexes
+    slot_w: list           # width of each column slot (shared by every band)
+    band_h: list
+    gaps: tuple            # (between columns, between blocks of a column, between bands)
+    w: float
+    h: float
+
+
+_WRAP_GAPS = (80, 40, 70)        # compact gaps of a packed layout: columns, blocks, bands
+
+
+def _split(layers: list[list[int]], sizes: list, budget: float) -> list[list[int]]:
+    """Each layer cut into columns no taller than `budget` (at least one block each)."""
+    gy = _WRAP_GAPS[1]
+    columns = []
+    for lay in layers:
+        col, h = [], 0.0
+        for i in lay:
+            add = sizes[i][1] + (gy if col else 0)
+            if col and h + add > budget:
+                columns.append(col)
+                col, h = [], 0.0
+                add = sizes[i][1]
+            col.append(i)
+            h += add
+        columns.append(col)
+    return columns
+
+
+def _pack(layers: list[list[int]], columns: list[list[int]], sizes: list, cols: int) -> _Packing:
+    """Columns wrapped into bands of at most `cols` columns (left to right, then the next
+    band below, like lines of text)."""
+    bands = [columns[s:s + cols] for s in range(0, len(columns), cols)]
+    plain = len(bands) == 1 and len(columns) == len(layers)
+    gx, gy, gb = (_GAP_X, _GAP_Y, 0) if plain else _WRAP_GAPS
+    width = max(len(b) for b in bands)
+    slot_w = [0] * width
+    band_h = []
+    for band in bands:
+        tallest = 0
+        for s, col in enumerate(band):
+            slot_w[s] = max(slot_w[s], max(sizes[i][0] for i in col))
+            tallest = max(tallest, sum(sizes[i][1] for i in col) + gy * (len(col) - 1))
+        band_h.append(tallest)
+    return _Packing(bands, slot_w, band_h, (gx, gy, gb),
+                    sum(slot_w) + gx * (width - 1), sum(band_h) + gb * (len(bands) - 1))
+
+
+def arrange_plan(layers: list[list[int]], sizes: list, view: tuple = ARRANGE_VIEW) -> _Packing:
+    """Choose how to pack the layers so the whole composition reads well in `view`:
+
+    - at most ceil(sqrt(n)) + 2 columns per band (cycles never make a column per block);
+    - the packing whose Fit zoom is highest wins; once packings reach ARRANGE_GOOD_ZOOM,
+      a plain left-to-right row of whole layers is preferred (small diagrams read like
+      the signal flow), then a frame aspect ratio within 1:3..3:1, then the fewest bands
+      and split layers, then the higher zoom, then the first candidate."""
+    n = sum(len(lay) for lay in layers)
+    cap = math.ceil(math.sqrt(n)) + 2
+    gy = _WRAP_GAPS[1]
+    lo = max(h for _, h in sizes)
+    hi = max(sum(sizes[i][1] for i in lay) + gy * (len(lay) - 1) for lay in layers)
+    # Column height budgets from one block per column up to whole layers.
+    budgets = sorted({round(lo + (hi - lo) * k / 60) for k in range(61)})
+    best, best_key, seen = None, None, set()
+    for budget in budgets:
+        columns = _split(layers, sizes, budget)
+        sig = tuple(len(c) for c in columns)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        for cols in range(1, min(cap, len(columns)) + 1):
+            p = _pack(layers, columns, sizes, cols)
+            zoom = fit_zoom(p.w, p.h, view)
+            fw, fh = max(520, p.w + 2 * _FRAME_PAD), max(320, p.h + 2 * _FRAME_PAD + _FRAME_HEAD / 2)
+            plain = len(p.bands) == 1 and len(columns) == len(layers)
+            key = (round(min(zoom, ARRANGE_GOOD_ZOOM), 3), plain, 1 / 3 <= fw / fh <= 3,
+                   -len(p.bands), -len(columns), round(zoom, 3))
+            if best_key is None or key > best_key:
+                best, best_key = p, key
+    return best
+
+
+def auto_layout(repo, composition: Element, view: Optional[tuple] = None) -> dict:
+    """System Composer 'Arrange': components in left-to-right layers along the connectors
+    (cycles broken with few backward connectors), packed into a compact near-viewport
+    shaped grid for big or cyclic networks (see ``arrange_plan``). ``view`` is the canvas
+    size in screen pixels (default ``ARRANGE_VIEW``). Deterministic."""
+    comp = require_composition(composition)
+    comps = components_of(comp)
     for c in comps:
         _spread_ports(c)
     _spread_ports(comp)
-
-    def size(c: Element) -> tuple:
-        """A size the user set by resizing, else the automatic one (which follows the ports)."""
-        w, h = default_size(c)
-        lay = c.tool_data.get("layout")
-        if isinstance(lay, dict):
-            w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
-            h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
-        return w, h
-    sizes = [size(c) for c in comps]
-    col_w = max([w for w, _ in sizes] or [DEFAULT_W])
-    pos_rank: dict[int, float] = {}
-    positions: dict[str, dict] = {}
-    heights = {k: sum(sizes[i][1] for i in v) + _GAP_Y * (len(v) - 1) for k, v in layers.items()}
-    tallest = max(heights.values() or [0])
-    for k in sorted(layers):
-        members = layers[k]
-        members.sort(key=lambda i: (sum(pos_rank.get(p, 0) for p in pred[i]) / len(pred[i])
-                                    if pred[i] else pos_rank.get(i, i), i))
-        y = _GRID_Y0 + (tallest - heights[k]) / 2
-        for rank, i in enumerate(members):
-            w, h = sizes[i]
-            box = {"x": _GRID_X0 + k * (col_w + _GAP_X), "y": round(y), "w": w, "h": h}
-            old = comps[i].tool_data.get("layout")
-            # Only positions are stored: a size stays automatic unless the user resized it.
-            comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
-                k2: old[k2] for k2 in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k2), (int, float))}}
-            positions[comps[i].element_id] = box
-            pos_rank[i] = rank
-            y += h + _GAP_Y
     for conn in connectors_of(comp):
         conn.tool_data.pop("points", None)
+    if not comps:
+        return {}
+    view = _clean_view(view)
+    succ, pred = _flow_graph(comp, comps)
+    sizes = [current_size(c) for c in comps]
+    plan = arrange_plan(_flow_layers(succ, pred), sizes, view)
+    gx, gy, gb = plan.gaps
+    positions: dict[str, dict] = {}
+    y0 = _GRID_Y0
+    for band, band_h in zip(plan.bands, plan.band_h):
+        x = _GRID_X0
+        for s, col in enumerate(band):
+            col_h = sum(sizes[i][1] for i in col) + gy * (len(col) - 1)
+            y = y0 + (band_h - col_h) / 2
+            for i in col:
+                w, h = sizes[i]
+                box = {"x": round(x + (plan.slot_w[s] - w) / 2), "y": round(y), "w": w, "h": h}
+                old = comps[i].tool_data.get("layout")
+                # Only positions are stored: a size stays automatic unless the user resized it.
+                comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
+                    k: old[k] for k in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k), (int, float))}}
+                positions[comps[i].element_id] = box
+                y += h + gy
+            x += plan.slot_w[s] + gx
+        y0 += band_h + gb
     return positions
+
+
+GROWTH_GAP = 20      # free space kept between a block that grew and the neighbours it pushes
+
+
+def _layout_groups(repo) -> list[tuple[Element, list[PartUsage]]]:
+    """Every architecture, definition or inline component with the components it owns."""
+    out = []
+    for e in repo.root_package.walk():
+        if isinstance(e, (PartDefinition, PartUsage)) and not isinstance(e, PortUsage):
+            owned = [c for c in components_of(e) if c.owner is e]
+            if owned:
+                out.append((e, owned))
+    return out
+
+
+def box_snapshot(repo) -> dict[int, dict]:
+    """``id(component) -> box`` (stored or default position, current size) of every
+    component; give it to ``settle_growth`` after an edit."""
+    out: dict[int, dict] = {}
+    for owner, comps in _layout_groups(repo):
+        defaults = _default_boxes(owner)
+        for c in comps:
+            out[id(c)] = effective_box(c, owner, defaults)
+    return out
+
+
+def _overlap(a: dict, b: dict, margin: float = 0) -> bool:
+    return (a["x"] - margin < b["x"] + b["w"] and b["x"] < a["x"] + a["w"] + margin
+            and a["y"] - margin < b["y"] + b["h"] and b["y"] < a["y"] + a["h"] + margin)
+
+
+def settle_growth(repo, before: dict[int, dict]) -> list[Element]:
+    """Keep automatically growing blocks off their neighbours (System Composer never lets a
+    block grow over another): a component that got bigger since `before` (more ports, a
+    longer name; see ``box_snapshot``) pushes every sibling it now covers but did not cover
+    before: one below it moves down, one to its right moves right, by just enough to keep
+    GROWTH_GAP free. Pushed blocks push the blocks they land on in turn. Blocks the user had
+    already placed on top of each other are left alone. Returns the moved components (their
+    new positions are stored; sizes are kept)."""
+    moved: list[Element] = []
+    for owner, comps in _layout_groups(repo):
+        defaults = _default_boxes(owner)
+        now = {id(c): effective_box(c, owner, defaults) for c in comps}
+        queue = [(c, before[id(c)]) for c in comps if id(c) in before
+                 and (now[id(c)]["w"] > before[id(c)]["w"] or now[id(c)]["h"] > before[id(c)]["h"])]
+        budget = 20 * len(comps) * len(comps)
+        while queue and budget > 0:
+            g, old = queue.pop(0)
+            gb = now[id(g)]
+            for n in comps:
+                budget -= 1
+                nb = now[id(n)]
+                if n is g or not _overlap(gb, nb, GROWTH_GAP) or _overlap(old, nb):
+                    continue
+                down = gb["y"] + gb["h"] + GROWTH_GAP - nb["y"]
+                right = gb["x"] + gb["w"] + GROWTH_GAP - nb["x"]
+                below, beside = nb["y"] >= old["y"] + old["h"], nb["x"] >= old["x"] + old["w"]
+                if below and (not beside or down <= right):
+                    new = {**nb, "y": nb["y"] + down}
+                elif beside:
+                    new = {**nb, "x": nb["x"] + right}
+                else:
+                    new = {**nb, "y": nb["y"] + down} if down <= right else {**nb, "x": nb["x"] + right}
+                now[id(n)] = new
+                lay = n.tool_data.get("layout")
+                n.tool_data["layout"] = {"x": new["x"], "y": new["y"], **{
+                    k: lay[k] for k in ("w", "h") if isinstance(lay, dict) and isinstance(lay.get(k), (int, float))}}
+                if not any(m is n for m in moved):
+                    moved.append(n)
+                queue.append((n, nb))
+    return moved
+
+
+@contextmanager
+def growth_settled(repo) -> Iterator[None]:
+    """Run an edit, then push neighbours away from the blocks it made grow."""
+    before = box_snapshot(repo)
+    yield
+    settle_growth(repo, before)
+
+
+def _clean_view(view: Any) -> tuple:
+    if view is None:
+        return ARRANGE_VIEW
+    if isinstance(view, dict):
+        view = (view.get("w"), view.get("h"))
+    if not isinstance(view, (list, tuple)) or len(view) != 2:
+        raise ArchitectureError("view must be {w, h} (canvas size in pixels)")
+    w, h = number(view[0], "view w"), number(view[1], "view h")
+    if w < 100 or h < 100:
+        return ARRANGE_VIEW          # a hidden or collapsed canvas: arrange for the usual one
+    return (min(w, 10000), min(h, 10000))
 
 
 # ---------------------------------------------------------------------------
@@ -1876,6 +2192,134 @@ def architecture_roots(repo) -> list[PartDefinition]:
 
 def part_definitions(repo) -> list[PartDefinition]:
     return [e for e in repo.root_package.walk() if isinstance(e, PartDefinition)]
+
+
+# ---------------------------------------------------------------------------
+# Stereotypes of a multi-selection (Property Inspector)
+# ---------------------------------------------------------------------------
+# The Property Inspector edits the stereotypes of every selected component at once, as
+# System Composer does. engine.profiles stays the authority (lookup, type and range checks,
+# unit conversion); these functions only spread one edit over several elements, checking
+# all of them before changing any.
+
+def _profiles():
+    from engine import profiles as P      # imported late: profiles is an optional feature
+    return P
+
+
+def _stereo_error(ex: Exception, element: Optional[Element] = None, many: bool = False) -> ArchitectureError:
+    msg = str(ex)
+    if many and element is not None:
+        msg = f"{element.name}: {msg}"
+    return ArchitectureError(msg, getattr(ex, "status", 400))
+
+
+def _brief(e: Element) -> dict:
+    return {"id": e.element_id, "name": e.name, "kind": e.kind, "qualified_name": e.qualified_name}
+
+
+def common_stereotypes(repo, elements: list[Element]) -> dict:
+    """The stereotypes of ``elements`` as one Property Inspector edits them together.
+
+    ``applied``: stereotypes on every element, shaped like ``profiles.element_stereotypes``;
+    a property whose values differ has ``mixed: true`` and value None. ``partial``:
+    stereotypes on some of them (``count``). ``applicable``: non-abstract stereotypes that can
+    be applied to every element and are not on all of them yet."""
+    P = _profiles()
+    els = list(elements)
+    if not els:
+        raise ArchitectureError("select at least one element")
+    views = [{a["id"]: a for a in P.element_stereotypes(e)} for e in els]
+    applied = []
+    for app in P.element_stereotypes(els[0]):
+        if not all(app["id"] in v for v in views):
+            continue
+        groups = []
+        for gi, g in enumerate(app["groups"]):
+            props = []
+            for pi, p in enumerate(g["properties"]):
+                same = [v[app["id"]]["groups"][gi]["properties"][pi] for v in views]
+                if all(s["value"] == p["value"] for s in same):
+                    bad = next((s for s in same if s.get("valid") is False), None)
+                    props.append({**p, "mixed": False, "valid": bad is None,
+                                  **({"problem": bad.get("problem")} if bad else {})})
+                else:
+                    props.append({**{k: v for k, v in p.items() if k != "problem"},
+                                  "value": None, "display": "", "valid": True, "mixed": True})
+            groups.append({**g, "properties": props})
+        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups})
+    on_all = {a["id"] for a in applied}
+    counts: dict[str, list] = {}
+    for v in views:
+        for sid, a in v.items():
+            if sid not in on_all:
+                counts.setdefault(sid, [a, 0])[1] += 1
+    partial = [{"id": sid, "qualified_name": a["qualified_name"], "name": a["name"], "count": n}
+               for sid, (a, n) in counts.items()]
+    offered: dict[str, Any] = {}
+    possible = []
+    for e in els:
+        mine = {s.element_id: s for s in P.applicable_stereotypes(repo, e)}
+        possible.append(set(mine) | {a.stereotype.element_id for a in stereotypes_on(e)})
+        for sid, s in mine.items():
+            offered.setdefault(sid, s)
+    applicable = [{"id": s.element_id, "qualified_name": s.full_name, "name": s.name,
+                   "profile": s.profile.name if s.profile else None,
+                   "applies_to": s.effective_category(), "description": s.description}
+                  for sid, s in offered.items() if all(sid in p for p in possible)]
+    return {"elements": [_brief(e) for e in els], "applied": applied, "partial": partial,
+            "applicable": applicable}
+
+
+def apply_stereotype_to(repo, elements: list[Element], stereotype: Any) -> dict:
+    """Apply a stereotype to every element that does not have it yet (one undo step on the
+    web). Returns ``{applied: [ids], skipped: [...]}`` as ``profiles.batch_apply``."""
+    P = _profiles()
+    els = list(elements)
+    try:
+        st = P.find_stereotype(repo, stereotype)
+        return P.batch_apply(repo, st, scope="selection", elements=[e.element_id for e in els])
+    except (P.StereotypeError, ValueError) as ex:
+        raise _stereo_error(ex) from None
+
+
+def remove_stereotype_from(repo, elements: list[Element], stereotype: Any) -> int:
+    """Remove a stereotype (and its values) from every element that has it."""
+    P = _profiles()
+    try:
+        st = P.find_stereotype(repo, stereotype)
+    except (P.StereotypeError, ValueError) as ex:
+        raise _stereo_error(ex) from None
+    having = [e for e in elements if P.application_of(e, st) is not None]
+    if not having:
+        raise ArchitectureError(f"«{st.full_name}» is not applied to the selection", 404)
+    for e in having:
+        P.remove_stereotype(repo, e, st)
+    return len(having)
+
+
+def set_stereotype_values(repo, elements: list[Element], values: dict) -> dict:
+    """Set ``{"Profile.Stereotype.property": value}`` on every element, all or nothing: each
+    value is checked (and converted) for each element before any is stored."""
+    P = _profiles()
+    els = list(elements)
+    if not isinstance(values, dict) or not values:
+        raise ArchitectureError("send {values: {'Profile.Stereotype.property': value}} or {property, value}")
+    many = len(els) > 1
+    for e in els:
+        for path, value in values.items():
+            try:
+                a, tag = P.resolve_value_path(e, path)
+                tag.coerce(value, f"{a.stereotype.full_name}.{tag.name}")
+            except (P.StereotypeError, ValueError) as ex:
+                raise _stereo_error(ex, e, many) from None
+    stored = {}
+    for e in els:
+        try:
+            stored[e.element_id] = P.set_property_values(repo, e, values)
+        except (P.StereotypeError, ValueError) as ex:     # checked above: should not happen
+            raise _stereo_error(ex, e, many) from None
+    return stored
 
 
 # ---------------------------------------------------------------------------

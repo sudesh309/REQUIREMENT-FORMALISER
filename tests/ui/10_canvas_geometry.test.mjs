@@ -60,6 +60,84 @@ test("Z routes bend around other blocks", () => {
   assert.equal(G.segmentHits(0, 0, 100, 0, [{ x: 40, y: 20, w: 10, h: 10 }]), false);
 });
 
+// Every segment of a route misses the interior of every block but its two ends; the ends
+// are only touched by the port stubs.
+const clear = (pts, others, ends = []) => !G.routeHits(pts, others, ends);
+
+test("SU-5: a straight run through a block in between goes around it", () => {
+  const adc = { x: 100, y: 100, w: 160, h: 90 }, fms = { x: 400, y: 90, w: 160, h: 110 }, fcc = { x: 700, y: 100, w: 160, h: 90 };
+  const a = G.attachPoint(adc, "right", 0.5), b = G.attachPoint(fcc, "left", 0.5);
+  assert.ok(G.routeHits(G.route(a, b), [fms]), "the plain route runs through FMS");
+  const pts = G.route(a, b, { obstacles: [fms], avoid: [adc, fcc] });
+  assert.ok(orthogonal(pts), JSON.stringify(pts));
+  assert.ok(clear(pts, [fms], [adc, fcc]), JSON.stringify(pts));
+  assert.deepEqual(pts[0], { x: a.x, y: a.y });
+  assert.deepEqual(pts[pts.length - 1], { x: b.x, y: b.y });
+  assert.ok(pts.length <= 6, `few bends: ${JSON.stringify(pts)}`);
+  // the stubs leave and enter the ports straight
+  assert.equal(pts[1].y, a.y);
+  assert.equal(pts[pts.length - 2].y, b.y);
+});
+
+test("SU-5: boundary port to an inner block does not pass under the block in front", () => {
+  const frame = { x: 0, y: 0, w: 900, h: 400 };
+  const law = { x: 200, y: 140, w: 160, h: 100 }, monitor = { x: 520, y: 150, w: 160, h: 90 };
+  const a = G.attachPoint(frame, "left", 0.5, true), b = G.attachPoint(monitor, "left", 0.5);
+  const pts = G.route(a, b, { obstacles: [law], avoid: [monitor] });
+  assert.ok(clear(pts, [law], [monitor]), JSON.stringify(pts));
+  assert.ok(orthogonal(pts));
+});
+
+test("SU-5: backward and wrapped routes avoid every block", () => {
+  // A 3 x 3 grid of blocks; connect the right edge of the last block of row 1 to the left
+  // edge of the first block of row 3 (a wrapped band), and backwards inside a row.
+  const boxes = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) boxes.push({ x: 100 + c * 260, y: 100 + r * 180, w: 160, h: 100 });
+  const pairs = [[2, 6], [8, 0], [5, 3], [1, 7], [6, 2]];
+  for (const [s, t] of pairs) {
+    const a = G.attachPoint(boxes[s], "right", 0.5), b = G.attachPoint(boxes[t], "left", 0.5);
+    const others = boxes.filter((_, i) => i !== s && i !== t);
+    const pts = G.route(a, b, { obstacles: others, avoid: [boxes[s], boxes[t]] });
+    assert.ok(orthogonal(pts), `${s}->${t} ${JSON.stringify(pts)}`);
+    assert.ok(clear(pts, others, [boxes[s], boxes[t]]), `${s}->${t} crosses a block: ${JSON.stringify(pts)}`);
+  }
+});
+
+test("SU-5: avoidance stays fast on a 60-block network", () => {
+  const boxes = [];
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 10; c++) boxes.push({ x: 100 + c * 250, y: 100 + r * 170, w: 160, h: 100 });
+  let seed = 3;
+  const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const t0 = performance.now();
+  let crossing = 0;
+  for (let k = 0; k < 200; k++) {
+    const s = rnd(60), t = (s + 1 + rnd(59)) % 60;
+    const a = G.attachPoint(boxes[s], "right", 0.3 + rnd(5) / 10), b = G.attachPoint(boxes[t], "left", 0.3 + rnd(5) / 10);
+    const others = boxes.filter((_, i) => i !== s && i !== t);
+    if (!clear(G.route(a, b, { obstacles: others, avoid: [boxes[s], boxes[t]] }), others)) crossing++;
+  }
+  const ms = performance.now() - t0;
+  assert.equal(crossing, 0);
+  assert.ok(ms < 1500, `200 routes took ${ms.toFixed(0)} ms`);
+});
+
+test("SU-5: avoidPath finds no way into a walled-off target", () => {
+  const wall = [{ x: 0, y: 0, w: 300, h: 20 }, { x: 0, y: 180, w: 300, h: 20 }, { x: 0, y: 0, w: 20, h: 200 }, { x: 280, y: 0, w: 20, h: 200 }];
+  assert.equal(G.avoidPath({ x: 150, y: 100 }, { x: 500, y: 100 }, 0, 0, wall), null);
+  const p = G.avoidPath({ x: 400, y: 100 }, { x: 600, y: 300 }, 0, 0, []);
+  assert.ok(p && orthogonal(p) && p.length <= 4, JSON.stringify(p));      // two bends at most
+  assert.deepEqual([p[0], p[p.length - 1]], [{ x: 400, y: 100 }, { x: 600, y: 300 }]);
+});
+
+test("SU-5: fan-out trunk labels sit near the source and labels avoid each other", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 16, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 150 }, { x: 400, y: 150 }];
+  const trunk = G.labelPlacement(pts, "AirDataWord", [], { fromStart: true });
+  assert.ok(trunk.x < 200, JSON.stringify(trunk));
+  const first = G.labelPlacement(pts, "AirDataWord", []);
+  const second = G.labelPlacement(pts, "AirDataWord", [first.box]);
+  assert.ok(!G.intersects(first.box, second.box), JSON.stringify([first, second]));
+});
+
 test("mixed and vertical sides stay orthogonal", () => {
   for (const [an, bn] of [[[1, 0], [0, -1]], [[0, 1], [-1, 0]], [[0, 1], [0, -1]], [[0, -1], [0, -1]], [[1, 0], [1, 0]]]) {
     const pts = G.route({ x: 0, y: 0, nx: an[0], ny: an[1] }, { x: 200, y: 150, nx: bn[0], ny: bn[1] });
@@ -143,9 +221,35 @@ test("text fitting, snapping and colours", () => {
   assert.notEqual(G.hashColor("AirData"), G.hashColor("Power28V"));
 });
 
+test("block names wrap at word boundaries instead of being cut (SU-12c)", () => {
+  assert.deepEqual(G.nameLines("SensorSuite", 200), ["SensorSuite"]);
+  assert.deepEqual(G.nameLines("FlightControlComputer", 120), ["FlightControl", "Computer"]);
+  assert.deepEqual(G.nameLines("Air Data Unit", 60), ["Air Data", "Unit"]);
+  assert.deepEqual(G.nameLines("FCC_LEFT_CHANNEL", 80), ["FCC_LEFT_", "CHANNEL"]);
+  assert.deepEqual(G.nameLines("ADIRUFMSXX", 40), ["ADIRU", "FMSXX"]);        // no boundary: the middle
+});
+
+test("block title layout keeps clear of port labels (SU-12c)", async () => {
+  const R = await import("../../webapp/static/plugins/canvas/render.js");
+  const port = (name, side, y, w = 160) => ({ p: { name, side }, local: { x: 0, y }, labelWidth: Math.max(28, w / 2 - 16) });
+  const c = { name: "DisplayFlightDataAndWarnings", definition: null };
+  // A short name with short labels: centred on one line.
+  const small = R.nameLayout({ name: "ADC", definition: null }, false, 160, 90, [port("airData", "right", 45)]);
+  assert.deepEqual(small.lines, ["ADC"]);
+  assert.ok(Math.abs(small.top + 7 - 45) < 1);
+  // A long name level with long labels: moved above them, whole.
+  const ports = [port("primaryFlightDisplayData", "left", 45, 320), port("warnings", "right", 45, 320)];
+  const lay = R.nameLayout(c, false, 320, 90, ports);
+  assert.equal(lay.lines.join(""), c.name);
+  assert.ok(lay.top + 14 < 45 - 7, "above the port labels");
+  // Ports on the top edge: the title stays centred (wrapped) rather than covering them.
+  const top = R.nameLayout(c, false, 320, 90, [...ports, port("pwr", "top", 0, 320)]);
+  assert.ok(top.top > 6);
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
-  try { fn(); console.log(`ok   ${name}`); }
+  try { await fn(); console.log(`ok   ${name}`); }
   catch (e) { failed++; console.log(`FAIL ${name}\n${e.stack}`); }
 }
 process.exit(failed ? 1 : 0);

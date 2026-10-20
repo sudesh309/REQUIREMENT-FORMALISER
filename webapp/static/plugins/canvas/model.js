@@ -24,7 +24,8 @@ export function installModel(studio) {
   }
   studio.on("model-changed", refreshType);
 
-  function newModel() {
+  async function newModel() {
+    const why = await studio.unsavedReason?.();
     openForm(studio, "New architecture model", `
       <label class="block text-sm">Model name
         <input class="input" name="name" value="AvionicsSystem" required /></label>
@@ -37,10 +38,12 @@ export function installModel(studio) {
       </fieldset>
       <label class="block text-sm">Root architecture
         <input class="input" name="arch" value="System" placeholder="leave empty for none" /></label>
-      <p class="text-xs text-slate-500">The current project is replaced (save it first).</p>
+      ${why ? studio.unsavedHtml(why, "The new model replaces the current project.")
+        : `<p class="text-xs text-slate-500">The current project is replaced.</p>`}
     `, async (v) => {
       const name = (v.name || "").trim() || "UntitledProject";
       await studio.api("POST", "/api/new", { name, type: v.type || "system" });
+      studio.emit("project-changed", { reason: "new" });
       let arch = null;
       if ((v.arch || "").trim()) arch = await studio.api("POST", "/api/arch/architecture", { name: v.arch.trim() });
       studio.log(`New ${v.type || "system"} model ${name}`, "ok");

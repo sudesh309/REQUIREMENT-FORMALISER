@@ -218,7 +218,12 @@ $("#props-form").addEventListener("submit", async (ev) => {
 
 $$(".btn-add").forEach(btn => btn.addEventListener("click", async () => {
   const kind = btn.dataset.kind;
-  const name = prompt(`Name for the new ${kind}?`, kind.replace("Definition", "").replace("Usage", ""));
+  const where = state.selectedId ? state.selected?.qualified_name : null;
+  const v = await dialog(`Add ${btn.textContent.trim()}`, `
+    <label class="block text-sm">Name
+      <input class="input" name="name" value="${escapeHtml(kind.replace("Definition", "").replace("Usage", ""))}" autocomplete="off" /></label>
+    <p class="text-xs text-slate-500">New ${escapeHtml(kind)} inside ${escapeHtml(where || "the project root")}.</p>`, { ok: "Add" });
+  const name = v?.name?.trim();
   if (!name) return;
   const parent = state.selectedId || null;
   const elem = await api("POST", "/api/element", { kind, name, parent });
@@ -233,21 +238,35 @@ document.addEventListener("click", async (e) => {
   const cmd = e.target.dataset?.cmd;
   if (!cmd) return;
   if (cmd === "new") {
-    const name = prompt("Project name?", "UntitledProject"); if (!name) return;
+    const why = await unsavedReason();
+    const v = await dialog("New project", `
+      <label class="block text-sm">Project name
+        <input class="input" name="name" value="UntitledProject" autocomplete="off" /></label>
+      ${unsavedHtml(why, "A new project replaces it.")}`, { ok: why ? "Discard changes and create" : "Create", danger: !!why });
+    const name = v?.name?.trim(); if (!name) return;
     await api("POST", "/api/new", { name });
     state.selectedId = null;
+    emit("project-changed", { reason: "new" });
     await refreshTree(); log(`New project ${name}`, "ok");
   }
   else if (cmd === "save") {
     const r = await api("GET", "/api/save");
     download("project.json", r.text);
+    await markSaved();
     log("Saved project.json", "ok");
   }
-  else if (cmd === "load")          openFile("application/json", async (t) => {
-    await api("POST", "/api/load", { text: t });
-    state.selectedId = null; await refreshTree();
-    log("Loaded project", "ok");
-  });
+  else if (cmd === "load") {
+    const why = await unsavedReason();
+    if (why && !(await dialog("Load project", unsavedHtml(why, "Loading a project replaces it."),
+                              { ok: "Discard changes and load…", danger: true }))) return;
+    openFile("application/json", async (t) => {
+      await api("POST", "/api/load", { text: t });
+      state.selectedId = null;
+      emit("project-changed", { reason: "load" });
+      await refreshTree();
+      log("Loaded project", "ok");
+    });
+  }
   else if (cmd === "import-sysml")  openFile(".sysml,.kerml,text/plain", async (t) => {
     await api("POST", "/api/parse", { source: t });
     await refreshTree(); log("Imported .sysml", "ok");
@@ -257,7 +276,9 @@ document.addEventListener("click", async (e) => {
   else if (cmd === "clear-log")     $("#log").textContent = "";
   else if (cmd === "delete-element") {
     if (!state.selectedId) return;
-    if (!confirm("Delete this element and its descendants?")) return;
+    const what = state.selected?.id === state.selectedId ? state.selected.qualified_name : "this element";
+    if (!(await dialog("Delete element", `<p class="text-sm">Delete <b>${escapeHtml(what)}</b> and everything
+        it contains? You can undo with Ctrl+Z.</p>`, { ok: "Delete", danger: true }))) return;
     await api("DELETE", `/api/element/${state.selectedId}`);
     state.selectedId = null; await refreshTree(); log("Deleted", "warning");
     $("#props-form").classList.add("hidden");
@@ -398,6 +419,53 @@ function modal(title, bodyHtml, onSubmit) {
     try { await onSubmit(obj); close(); }
     catch (e) { log(String(e), "error"); }
   };
+}
+
+// Styled replacement for window.prompt / window.confirm: resolves with the form's values,
+// or null when cancelled (Cancel or Escape). Enter in a field submits.
+function dialog(title, bodyHtml, { ok = "OK", danger = false } = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    // Resolve after modal() has closed this dialog, so the caller may open the next one.
+    modal(escapeHtml(title), bodyHtml, async (values) => { setTimeout(() => done(values), 0); });
+    const root = $("#modal-root");
+    const submit = root.querySelector("[data-modal-submit]");
+    const cancel = root.querySelector("[data-modal-cancel]");
+    submit.textContent = ok;
+    submit.type = cancel.type = "button";
+    if (danger) submit.classList.add("btn-danger");
+    cancel.addEventListener("click", () => done(null));
+    root.querySelector("#modal-form").addEventListener("submit", (e) => { e.preventDefault(); submit.click(); });
+    root.querySelector(".modal").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); cancel.click(); }
+    });
+    const first = root.querySelector("#modal-form input, #modal-form select, #modal-form textarea");
+    (first || submit).focus();
+    first?.select?.();
+  });
+}
+
+/* ---------- unsaved changes ---------- */
+// Plugins report unsaved changes (e.g. the undo history): {check: async () => reason | null,
+// saved: async () => {}}. New and Load warn before discarding them; Save JSON calls saved().
+const unsavedChecks = [];
+function registerUnsavedCheck(spec) { unsavedChecks.push(spec); }
+async function unsavedReason() {
+  for (const u of unsavedChecks) {
+    try { const why = await u.check(); if (why) return why; } catch (e) { console.warn(e); }
+  }
+  return null;
+}
+async function markSaved() {
+  for (const u of unsavedChecks) {
+    try { await u.saved?.(); } catch (e) { console.warn(e); }
+  }
+  emit("project-saved", null);
+}
+function unsavedHtml(why, consequence) {
+  return why ? `<p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2" data-unsaved-warning>
+    ${escapeHtml(why)}. ${escapeHtml(consequence)} Use <b>Save JSON</b> first to keep them.</p>` : "";
 }
 
 async function openLinkDialog() {
@@ -622,7 +690,9 @@ const studio = {
   // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id)
   on, emit,
   // UI helpers
-  log, setStatus, escapeHtml, modal, download, openFile,
+  log, setStatus, escapeHtml, modal, dialog, download, openFile,
+  // unsaved changes: plugins report them; New / Load warn
+  registerUnsavedCheck, unsavedReason, unsavedHtml, markSaved,
   // registries
   registerTab, registerToolbarButton, registerInspectorSection, registerTreeBadge, registerShortcut,
 };

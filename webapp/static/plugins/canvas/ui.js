@@ -99,12 +99,13 @@ export function createInlineEditor(host) {
 
   function finish(commit) {
     if (!current) return;
-    const { onCommit, initial } = current;
+    const { onCommit, onCancel, initial, always } = current;
     current = null;
     const value = input.value.trim();
     input.hidden = true;
     host.focus({ preventScroll: true });
-    if (commit && value && value !== initial) onCommit(value);
+    if (commit && value && (always || value !== initial)) onCommit(value);
+    else if (!commit || !value) onCancel?.();
   }
 
   input.addEventListener("keydown", (e) => {
@@ -114,7 +115,9 @@ export function createInlineEditor(host) {
   });
   input.addEventListener("blur", () => finish(true));
 
-  function edit(target, initial, onCommit, { minWidth = 110 } = {}) {
+  // `always`: commit even an unchanged name (naming something not created yet);
+  // `onCancel`: Escape, or an empty name.
+  function edit(target, initial, onCommit, { minWidth = 110, always = false, onCancel = null } = {}) {
     finish(false);
     const hr = host.getBoundingClientRect();
     const r = target.getBoundingClientRect();
@@ -124,7 +127,7 @@ export function createInlineEditor(host) {
     input.style.top = `${Math.max(2, r.top - hr.top + r.height / 2 - 13)}px`;
     input.value = initial;
     input.hidden = false;
-    current = { onCommit, initial };
+    current = { onCommit, onCancel, initial, always };
     input.focus();
     input.select();
   }

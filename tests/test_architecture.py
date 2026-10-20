@@ -1,5 +1,7 @@
 """Engine tests for System Composer-style architecture modeling (engine/architecture.py)."""
+import math
 import re
+import time
 import unittest
 
 from engine import Repository, Validator, from_json, parse, to_json
@@ -36,6 +38,49 @@ def _ep(component, port_name):
 def _issues(repo, prefix="arch."):
     A.install()
     return [(i.rule, i.message) for i in Validator().validate(repo) if i.rule.startswith(prefix)]
+
+
+LRU_NAMES = ["ADIRU1", "ADIRU2", "ADIRU3", "FMC1", "FMC2", "DU_CPT_PFD", "DU_CPT_ND", "DU_FO_PFD",
+             "DU_FO_ND", "DU_EICAS", "AFDX_SW1", "AFDX_SW2", "CPIOM_A", "CPIOM_B", "CPIOM_C",
+             "RDC1", "RDC2", "GPS1", "GPS2", "RA1", "RA2", "FCC1", "FCC2", "FCC3", "TCAS",
+             "WXR", "VHF1", "VHF2", "MCDU1", "MCDU2"]
+
+
+def _avionics_network(n=30, seed=11):
+    """The PO-1 scale fixture: n LRUs with one output each, wired to 3 random other LRUs
+    (new input ports), so the network has many cycles, like bidirectional A429 / AFDX links."""
+    repo = Repository("Scale")
+    root = A.create_architecture(repo, "Aircraft")
+    names = (LRU_NAMES + [f"LRU{i}" for i in range(n)])[:n]
+    comps = []
+    for name in names:
+        c = A.add_component(repo, root, name)
+        A.add_port(repo, c, "out", "out")
+        comps.append(c)
+    state = seed
+    for c in comps:
+        for _ in range(3):
+            while True:      # small LCG: the same fixture on every Python version
+                state = (state * 1103515245 + 12345) % 2147483648
+                t = comps[state % n]
+                if t is not c:
+                    break
+            A.connect_new_port(repo, root, {"component": c, "port": "out"}, t)
+    return repo, root
+
+
+def _frame(positions):
+    """(width, height) of the bounding box of arranged component boxes."""
+    boxes = list(positions.values())
+    return (max(b["x"] + b["w"] for b in boxes) - min(b["x"] for b in boxes),
+            max(b["y"] + b["h"] for b in boxes) - min(b["y"] for b in boxes))
+
+
+def _overlaps(positions):
+    boxes = list(positions.values())
+    return [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:]
+            if a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+            and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"]]
 
 
 class ModelTypeTests(unittest.TestCase):
@@ -156,6 +201,56 @@ class ComponentTests(unittest.TestCase):
         self.assertIs(c1.ends[0], new_air)
         self.assertEqual(A.connector_problems(c1), [])
         self.assertEqual(A.connector_problems(c2)[0][0], "arch.connector.scope")   # shown as broken
+
+    def test_reference_merges_same_named_ports_and_keeps_connectors(self):
+        """SU-2: FCC-R (inline, connected) set to Reference = FlightControlComputer, which
+        was saved from FCC-L and has ports of the same names."""
+        repo = Repository("IMA")
+        root = A.create_architecture(repo, "Aircraft")
+        adc, iru, srv = (A.add_component(repo, root, n) for n in ("ADC", "IRU", "Servo"))
+        A.add_port(repo, adc, "airData", "out")
+        A.add_port(repo, iru, "inertial", "out")
+        A.add_port(repo, srv, "cmdL", "in")
+        A.add_port(repo, srv, "cmdR", "in")
+        fccs = []
+        for name, cmd in (("FCC-L", "cmdL"), ("FCC-R", "cmdR")):
+            f = A.add_component(repo, root, name)
+            A.add_port(repo, f, "airData", "in")
+            A.add_port(repo, f, "inertial", "in")
+            A.add_port(repo, f, "surfaceCmd", "out")
+            A.add_port(repo, f, "maint", "inout")
+            A.connect(repo, root, _ep(adc, "airData"), _ep(f, "airData"))
+            A.connect(repo, root, _ep(iru, "inertial"), _ep(f, "inertial"))
+            A.connect(repo, root, _ep(f, "surfaceCmd"), _ep(srv, cmd))
+            fccs.append(f)
+        left, right = fccs
+        law = A.add_component(repo, right, "ControlLaw")     # inside FCC-R: boundary connector
+        A.add_port(repo, law, "air", "in")
+        inner = A.connect(repo, right, {"port": "airData"}, _ep(law, "air"))
+        Fcc = A.save_as_reference(repo, left, "FlightControlComputer")
+        debug = A.add_port(repo, right, "debug", "inout")       # FCC-R only: stays usage-only
+        self.assertEqual([p.name for p, _ in A.merged_ports(right, Fcc)],
+                         ["airData", "inertial", "surfaceCmd", "maint"])
+        A.set_definition(repo, right, Fcc)
+        names = sorted(p.name for p in ports_of(right))
+        self.assertEqual(names, ["airData", "debug", "inertial", "maint", "surfaceCmd"])
+        self.assertEqual([p for p in ports_of(right) if p.owner is right], [debug])
+        # Every connector of FCC-R now ends on the definition's ports, through FCC-R.
+        for conn in connectors_of(root):
+            for ctx, p in connector_ends(conn):
+                if ctx is right:
+                    self.assertIs(p.owner, Fcc)
+        self.assertEqual(len(connectors_of(root)), 6)
+        self.assertEqual(connector_ends(inner, right)[0], (None, A.resolve_port(Fcc, "airData")))
+        self.assertEqual(_issues(repo), [])                      # no arch.port.unique
+        view = A.view(repo, root)
+        fcc_r = [c for c in view["components"] if c["name"] == "FCC-R"][0]
+        self.assertEqual(len(fcc_r["ports"]), 5)
+        self.assertEqual(sorted(p["name"] for p in fcc_r["ports"] if not p["on_definition"]), ["debug"])
+        self.assertTrue(all(not k["issues"] for k in view["connectors"]))
+        # Saved and loaded unchanged.
+        loaded = from_json(to_json(repo))
+        self.assertEqual(_issues(loaded), [])
 
     def test_generic_creation_keeps_names_unique(self):
         repo, root, adc, *_ = _arch()
@@ -374,7 +469,16 @@ class EditingOperationTests(unittest.TestCase):
         copies = A.duplicate(repo, [fms, disp])
         f2, d2 = copies
         self.assertEqual((f2.name, d2.name), ("FMS1", "Display1"))
-        self.assertEqual(f2.tool_data["layout"]["x"], 130)
+        # SU-12f: the copies keep their arrangement and cover no block (not 30 px off).
+        defaults = A._default_boxes(root)
+        boxes = {c.name: A.effective_box(c, root, defaults) for c in components_of(root)}
+        for copy in ("FMS1", "Display1"):
+            others = {k: v for k, v in boxes.items() if k != copy}
+            self.assertEqual([b for b in others.values() if _overlaps({"c": boxes[copy], "o": b})], [], copy)
+        self.assertEqual(boxes["Display1"]["x"] - boxes["FMS1"]["x"], boxes["Display"]["x"] - boxes["FMS"]["x"])
+        self.assertEqual(f2.tool_data["layout"]["w"], 160)                  # a user-set size is copied
+        (f4,) = A.duplicate(repo, [fms], offset=(30, 30))                    # an explicit offset wins
+        self.assertEqual((f4.tool_data["layout"]["x"], f4.tool_data["layout"]["y"]), (130, 80))
         self.assertEqual([a.values["dal"] for a in stereotypes_on(f2)], ["A"])
         core2 = components_of(f2)[0]
         self.assertIsNot(core2, core)
@@ -509,6 +613,16 @@ class LayoutAndViewTests(unittest.TestCase):
         pos = A.auto_layout(repo, root)
         self.assertEqual(len({p["x"] for p in pos.values()}), 3)
 
+    def test_auto_layout_honours_the_canvas_size(self):
+        repo, root = _avionics_network(30)
+        wide = A.auto_layout(repo, root, {"w": 1800, "h": 500})
+        tall = A.auto_layout(repo, root, {"w": 700, "h": 1100})
+        aspect = [_frame(p)[0] / _frame(p)[1] for p in (wide, tall)]
+        self.assertGreater(aspect[0], aspect[1])          # the layout follows the window's shape
+        with self.assertRaises(A.ArchitectureError):
+            A.auto_layout(repo, root, {"w": "wide", "h": 3})
+        self.assertEqual(A.auto_layout(repo, root, {"w": 0, "h": 0}), A.auto_layout(repo, root))
+
     def test_apply_layout_validates_atomically(self):
         repo, root, adc, fms, disp = _arch()
         p = ports_of(adc)[0]
@@ -591,6 +705,128 @@ class LayoutAndViewTests(unittest.TestCase):
         self.assertEqual([r.name for r in A.architecture_roots(repo)], ["AircraftSystem"])
 
 
+class GrowthTests(unittest.TestCase):
+    """PO-8 / SU-12a: blocks that grow with their ports or names never cover a neighbour."""
+
+    def grid(self):
+        repo = Repository("P")
+        root = A.create_architecture(repo, "R")
+        cs = {}
+        for name, x, y in (("TL", 100, 100), ("TR", 360, 100), ("BL", 100, 260), ("BR", 360, 260)):
+            cs[name] = A.add_component(repo, root, name, layout={"x": x, "y": y})
+        return repo, root, cs
+
+    def boxes(self, root):
+        defaults = A._default_boxes(root)
+        return {c.name: A.effective_box(c, root, defaults) for c in components_of(root)}
+
+    def test_ports_push_the_block_below_down(self):
+        repo, root, cs = self.grid()
+        before = A.box_snapshot(repo)
+        for i in range(10):
+            A.add_port(repo, cs["TL"], f"in{i}", "in")
+        moved = A.settle_growth(repo, before)
+        self.assertEqual([c.name for c in moved], ["BL"])
+        b = self.boxes(root)
+        self.assertEqual(_overlaps(b), [])
+        self.assertEqual(b["BL"]["y"], b["TL"]["y"] + b["TL"]["h"] + A.GROWTH_GAP)
+        self.assertEqual((b["BL"]["x"], b["TR"], b["BR"]["x"]), (100, b["TR"], 360))
+
+    def test_wider_names_push_right_and_pushes_cascade(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BR"].element_id, "x": 360, "y": 420}])
+        before = A.box_snapshot(repo)
+        A.rename(repo, cs["TL"], "IntegratedModularAvionicsCabinetLeft")
+        for i in range(12):
+            A.add_port(repo, cs["TL"], f"discreteSignal{i}", "in")
+            A.add_port(repo, cs["TL"], f"arinc429Out{i}", "out")
+        A.settle_growth(repo, before)
+        b = self.boxes(root)
+        self.assertEqual(_overlaps(b), [])
+        self.assertGreater(b["TR"]["x"], 360)                     # pushed right
+        self.assertGreater(b["BL"]["y"], 260)                     # pushed down
+
+    def test_user_overlaps_are_left_alone(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BL"].element_id, "x": 120, "y": 150}])   # placed on TL
+        before = A.box_snapshot(repo)
+        A.add_port(repo, cs["TL"], "a", "in")
+        self.assertEqual(A.settle_growth(repo, before), [])
+
+    def test_growth_settled_context_and_sizes_stay_automatic(self):
+        repo, root, cs = self.grid()
+        A.apply_layout(repo, [{"id": cs["BL"].element_id, "x": 100, "y": 260, "w": 200, "h": 120}])
+        with A.growth_settled(repo):
+            for i in range(8):
+                A.add_port(repo, cs["TL"], f"p{i}", "in")
+        self.assertEqual(cs["BL"].tool_data["layout"]["w"], 200)            # a user-set size is kept
+        self.assertGreater(cs["BL"].tool_data["layout"]["y"], 260)
+        self.assertNotIn("w", cs["TL"].tool_data["layout"])
+        self.assertEqual(_overlaps(self.boxes(root)), [])
+
+
+class ArrangeScaleTests(unittest.TestCase):
+    """PO-1 / SU-12b: Arrange on realistic, cyclic avionics networks stays compact and readable."""
+
+    def assert_readable(self, positions, n, min_zoom=0.40):
+        cap = math.ceil(math.sqrt(n)) + 2
+        columns = {b["x"] + b["w"] / 2 for b in positions.values()}
+        self.assertLessEqual(len(columns), cap, "at most ceil(sqrt(n)) + 2 layers side by side")
+        w, h = _frame(positions)
+        self.assertTrue(1 / 3 <= w / h <= 3, f"aspect ratio {w}x{h}")
+        self.assertEqual(_overlaps(positions), [])
+        # Fit zoom in the canvas of a 1400 x 900 window (Property Inspector open).
+        self.assertGreaterEqual(A.fit_zoom(w, h), min_zoom)
+
+    def test_thirty_lrus_with_ninety_cyclic_connectors(self):
+        repo, root = _avionics_network(30)
+        self.assertEqual(len(connectors_of(root)), 90)
+        t = time.perf_counter()
+        pos = A.auto_layout(repo, root)
+        self.assertLess(time.perf_counter() - t, 1.0)
+        self.assertEqual(len(pos), 30)
+        self.assert_readable(pos, 30)
+        # Deterministic: again on the same model, and on an identical model built afresh.
+        self.assertEqual(A.auto_layout(repo, root), pos)
+        repo2, root2 = _avionics_network(30)
+        names = {c.element_id: c.name for c in components_of(root)}
+        names2 = {c.element_id: c.name for c in components_of(root2)}
+        again = {names2[k]: v for k, v in A.auto_layout(repo2, root2).items()}
+        self.assertEqual(again, {names[k]: v for k, v in pos.items()})
+
+    def test_forty_eight_lrus_and_unconnected_blocks_wrap(self):
+        # 48 LRUs with ~190 ports need about 35% to fit (it was a 15% strip before).
+        repo, root = _avionics_network(48)
+        self.assert_readable(A.auto_layout(repo, root), 48, min_zoom=0.32)
+        repo = Repository("P")
+        root = A.create_architecture(repo, "R")
+        for i in range(48):
+            A.add_component(repo, root, f"C{i}")
+        self.assert_readable(A.auto_layout(repo, root), 48)
+
+    def test_small_chains_keep_the_signal_flow_left_to_right(self):
+        repo, root, adc, fms, disp = _arch()
+        A.connect(repo, root, _ep(adc, "airData"), _ep(fms, "airData"))
+        A.connect(repo, root, _ep(fms, "route"), _ep(disp, "route"))
+        pos = A.auto_layout(repo, root)
+        self.assertEqual(len({pos[c.element_id]["y"] for c in (adc, fms, disp)}), 1)    # one row
+        xs = [pos[c.element_id]["x"] for c in (adc, fms, disp)]
+        self.assertEqual(xs, sorted(xs))
+
+    def test_cycles_do_not_make_a_layer_per_block(self):
+        repo = Repository("P")
+        root = A.create_architecture(repo, "Ring")
+        ring = []
+        for i in range(12):
+            c = A.add_component(repo, root, f"N{i}")
+            A.add_port(repo, c, "i", "in")
+            A.add_port(repo, c, "o", "out")
+            ring.append(c)
+        for a, b in zip(ring, ring[1:] + ring[:1]):
+            A.connect(repo, root, _ep(a, "o"), _ep(b, "i"))
+        self.assert_readable(A.auto_layout(repo, root), 12)
+
+
 class UndoHistoryTests(unittest.TestCase):
 
     class _Session:
@@ -624,6 +860,28 @@ class UndoHistoryTests(unittest.TestCase):
             A.add_component(s.repo, s.repo.resolve("AircraftSystem"))
             h.commit(s.repo, before, f"step{i}")
         self.assertEqual(h.state()["undo_depth"], 3)
+
+    def test_dirty_until_saved(self):
+        """SU-13: New / Load warn about changes made since the last save."""
+        repo, root, *_ = _arch()
+        s = self._Session(repo)
+        self.assertFalse(history_for(s).state()["dirty"])           # a new or loaded project
+        with tracked(s, "noop"):
+            pass
+        self.assertFalse(history_for(s).state()["dirty"])           # nothing changed
+        with tracked(s, "add"):
+            A.add_component(repo, root, "New")
+        self.assertTrue(history_for(s).state()["dirty"])
+        history_for(s).mark_saved(s.repo)
+        self.assertFalse(history_for(s).state()["dirty"])
+        self.assertTrue(undo(s))                                    # differs from the saved file
+        self.assertTrue(history_for(s).state()["dirty"])
+        history_for(s).mark_saved(s.repo)
+        A.add_component(s.repo, s.repo.resolve("AircraftSystem"), "Untracked")
+        history_for(s).mark_saved(s.repo)                           # catches the change up first
+        self.assertFalse(history_for(s).state()["dirty"])
+        self.assertTrue(undo(s))
+        self.assertIsNone(s.repo.resolve("AircraftSystem::Untracked"))
 
     def test_untracked_change_becomes_its_own_step(self):
         repo, root, *_ = _arch()

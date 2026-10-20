@@ -176,7 +176,10 @@ export default async function install(studio) {
       : el.kind === "StereotypeTag" ? { kind: "stereotype", id: el.owner_id } : null;
     if (target && editor.index?.has(target.id)) editor.select(target.kind, target.id);
   });
-  studio.profiles = { editor, openBatchDialog: () => openBatchDialog(studio) };
+  // `ui`: the typed value editors of the Stereotypes section, reused by the canvas's Property
+  // Inspector so both look, check and report errors the same way.
+  studio.profiles = { editor, openBatchDialog: () => openBatchDialog(studio),
+                      ui: { propertyEditor, showStored, findValue, errorText, once } };
 }
 
 /* ------------------------------------------------------------------ helpers */
