@@ -188,6 +188,12 @@ class CanvasEditor {
       this.fillOpenList();
       this.refreshing = this.refresh();
     });
+    // An edit saved elsewhere without a tree refresh (Properties tab, tables): redraw the
+    // blocks, badges and the Property Inspector from the current model.
+    s.on("element-changed", p => {
+      if (p?.selected && this.external?.id === p.selected.id) this.external = p.selected;
+      this.refreshing = this.refresh();
+    });
     s.on("tab-shown", id => { this.visible = id === "architecture"; if (this.visible) this.shown(); });
     s.on("select", el => this.onStudioSelect(el));
     s.on("selection-changed", ids => this.onStudioSelection(ids));

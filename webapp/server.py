@@ -114,6 +114,7 @@ def api_state(_req: dict) -> Body:
     return _ok({
         "name": SESSION.repo.name,
         "element_count": len(list(SESSION.repo.all_elements())),
+        "revision": SESSION.revision,
     })
 
 
@@ -511,6 +512,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            # Lets the studio notice any model change, whichever request made it.
+            self.send_header("X-Model-Revision", str(SESSION.revision))
             self.end_headers()
             self.wfile.write(data)
             return

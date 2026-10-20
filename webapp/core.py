@@ -88,17 +88,25 @@ class Session:
         self.runners: dict[str, StateMachineRunner] = {}
         # Free-form per-session state for plugins (e.g. undo stacks), keyed by plugin name.
         self.plugin_state: dict[str, Any] = {}
+        # Model revision: changes whenever a request changed the model (sent to the
+        # browser as the X-Model-Revision header so every view can tell it is stale).
+        self.revision = 0
 
     def find(self, ref: str) -> Optional[Element]:
         if not ref:
             return None
         return self.repo.by_id(ref) or self.repo.resolve(ref)
 
+    def touch(self) -> None:
+        """Record that the model changed (see ``revision``)."""
+        self.revision += 1
+
     def set_repo(self, repo: Repository) -> None:
         """Switch projects, dropping runtime state tied to the old one."""
         self.repo = repo
         self.runners.clear()
         self.plugin_state.clear()
+        self.touch()
 
 
 SESSION = Session()

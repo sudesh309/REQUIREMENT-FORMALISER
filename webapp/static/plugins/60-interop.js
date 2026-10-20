@@ -1427,6 +1427,18 @@ export default async function install(studio) {
     }
   });
 
+  // Edits saved in place elsewhere (no tree refresh, e.g. a stereotype value in the
+  // Properties tab) leave an open table alone but make the views and Model Check stale.
+  studio.on("element-changed", () => {
+    IO.tablesStale = true;
+    IO.sysml = null;
+    if (CHK.result) { CHK.stale = true; tabBadge(); renderChecks(); }
+    if (studio.state.tab === "checks") {
+      clearTimeout(checkTimer);
+      checkTimer = setTimeout(() => runChecks().catch(() => {}), 300);
+    }
+  });
+
   // The studio's Validate (button or F5) also refreshes the Model Check results and badge.
   const afterValidate = () => setTimeout(() => runChecks().catch(() => {}), 0);
   document.addEventListener("click", (e) => { if (e.target?.closest?.('[data-cmd="validate"]')) afterValidate(); }, true);

@@ -173,10 +173,31 @@ features react with `engine.register_created_hook(fn(element, repo))`
 | `canvas-filter` | `{ids, label?}` or `null` | canvas shows only these components (views) |
 | `selection-changed` | `[ids]` | multi-selection changed; read with `studio.getSelection()` |
 | `drop-on-element` | `{dragged_id, target_id}` | an element was dragged (HTML5, see below) onto a canvas block, port or connector (`target_id` = its element id; dropped on the canvas background: the composition's id); handled by the dragged element's feature |
+| `element-changed` | `{revision, selected}` | the model changed but nobody refreshed the tree (see below); `selected` is the fresh summary of the selected element, if any |
 | `select` / `model-changed` / `tab-shown` | see above | core events |
 
 `studio.setSelection(ids)` sets the multi-selection (canvas rubber band,
 table rows); `studio.getSelection()` falls back to the selected element.
+
+**Model changes reach every view** (the rule): every successful request that
+changes the model results in `model-changed` or `element-changed`, whichever
+feature sent it. The server stamps each API response with an
+`X-Model-Revision` header (`Session.revision`, moved by `Session.touch()`: the
+undo hook calls it whenever a request changed the model, and `set_repo` on
+new / load / undo / redo). `studio.api` watches the header. A feature that
+calls `studio.refreshTree()` after its edit gets `model-changed` (as before);
+an editor that saves in place and keeps its focus (the Stereotypes section of
+the Properties tab, table cells) need not do anything: once its request has
+returned and the tree was not refreshed, the studio emits `element-changed`
+and updates `studio.selected` without re-rendering the Properties tab. So:
+
+- Displays that mirror the model (canvas blocks, badges and Property Inspector,
+  undo / redo buttons, Model Check results) listen to **both** events.
+- Editors with keyboard focus (Profile Editor, requirement and interface
+  tables) reload on `model-changed` only, or just mark themselves stale on
+  `element-changed`, so typing is never interrupted.
+- A route that changes the model outside a tracked request (rare) calls
+  `session().touch()` itself.
 
 **Dragging elements** (HTML5 drag and drop): a drag source puts the element id
 in `dataTransfer` under the type `application/x-sysml-element` (and may set

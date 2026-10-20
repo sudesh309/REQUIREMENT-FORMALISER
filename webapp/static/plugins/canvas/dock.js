@@ -13,7 +13,9 @@ function interfaceOptions(studio, selectedId) {
 function stereoRows(stereotypes) {
   if (!stereotypes?.length) return `<div class="arch-dock-muted">None</div>`;
   return stereotypes.map(s => {
-    const vals = Object.entries(s.values || {}).map(([k, v]) => `<div class="arch-kv"><span>${esc(k)}</span><b>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</b></div>`).join("");
+    // `display` (profiles feature) carries the value with its unit, e.g. "7 kg".
+    const shown = (k, v) => s.display?.[k] ?? (v !== null && typeof v === "object" ? JSON.stringify(v) : v);
+    const vals = Object.entries(s.values || {}).map(([k, v]) => `<div class="arch-kv" data-stereo-value="${esc(k)}"><span>${esc(k)}</span><b>${esc(shown(k, v))}</b></div>`).join("");
     return `<div class="arch-stereo-row">«${esc(s.name)}»${vals}</div>`;
   }).join("");
 }

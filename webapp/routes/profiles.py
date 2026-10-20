@@ -47,7 +47,8 @@ from engine import profiles as P
 from engine import units
 from kerml.elements import Element
 from kerml.stereotypes import (
-    Profile, Stereotype, StereotypeError, StereotypeTag, categories_of, stereotypes_on,
+    Profile, Stereotype, StereotypeError, StereotypeTag, categories_of, format_value,
+    stereotypes_on,
 )
 from webapp.core import err, ok, register_kind, register_prop_hook, register_summary_hook, \
     route, session, summarize
@@ -334,9 +335,13 @@ def _summary(e: Element, d: dict) -> None:
     d.setdefault("style", {}).update(style)
     for entry, app in zip(d.get("stereotypes") or [], stereotypes_on(e)):
         st = app.stereotype
+        values = entry.get("values") or {}
         entry.update(id=st.element_id, qualified_name=st.full_name,
                      profile=st.profile.name if st.profile else None,
-                     style=st.effective_style())
+                     style=st.effective_style(),
+                     # Values as shown to users, with units ("7 kg"), keyed like `values`.
+                     display={t.name: format_value(values.get(t.name), t.unit)
+                              for t in st.all_tags() if t.name in values})
     if isinstance(e, StereotypeTag):
         d["stereotype_property"] = e.describe()
     elif isinstance(e, Stereotype):

@@ -43,5 +43,6 @@ export function installUndo(studio) {
   studio.registerShortcut({ key: "z", ctrl: true, shift: true, handler: () => step("redo") });
   studio.registerShortcut({ key: "y", ctrl: true, handler: () => step("redo") });
   studio.on("model-changed", refreshState);
+  studio.on("element-changed", refreshState);     // edits saved in place (no tree refresh)
   return { undo: () => step("undo"), redo: () => step("redo"), refreshState };
 }

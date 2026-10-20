@@ -41,6 +41,7 @@ async function api(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await resp.text();
+  noteRevision(resp.headers.get("X-Model-Revision"));
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
   if (!resp.ok) {
@@ -48,6 +49,49 @@ async function api(method, path, body) {
     throw new Error(data?.error || text);
   }
   return data;
+}
+
+/* ---------- model revision: every view hears about every model change ---------- */
+//
+// The server stamps each API response with X-Model-Revision, which moves whenever a
+// request changed the model, whichever feature sent it. A tree refresh emits
+// "model-changed"; when the model moved and nobody refreshed the tree (an editor that
+// saved in place, keeping its focus), the studio emits "element-changed" instead once
+// the request's caller is done, so the canvas, its Property Inspector and the undo
+// buttons are never stale. studio.selected follows silently (no re-render).
+
+const rev = { seen: null, tree: null, notified: null, refreshing: 0, timer: 0 };
+
+function noteRevision(header) {
+  if (header === null || header === undefined) return;
+  if (rev.seen === null) { rev.seen = rev.tree = rev.notified = header; return; }
+  if (header === rev.seen) return;
+  rev.seen = header;
+  scheduleSettle();
+}
+
+function scheduleSettle() {
+  clearTimeout(rev.timer);
+  // After the caller's continuation: a caller that refreshes the tree right after its
+  // edit gets model-changed only.
+  rev.timer = setTimeout(settle, 0);
+}
+
+async function settle() {
+  if (rev.refreshing || rev.seen === rev.tree || rev.seen === rev.notified) return;
+  const revision = rev.notified = rev.seen;
+  let selected = null;
+  if (state.selectedId) {
+    try {
+      // Plain fetch: an element deleted meanwhile is not an error worth logging.
+      const r = await fetch(`/api/element/${encodeURIComponent(state.selectedId)}`);
+      if (r.ok) {
+        const el = await r.json();
+        if (el?.id === state.selectedId) state.selected = selected = el;
+      }
+    } catch { /* offline: the next refresh catches up */ }
+  }
+  emit("element-changed", { revision, selected });
 }
 
 /* ---------- log + status ---------- */
@@ -66,13 +110,21 @@ function setStatus(text) { $("#status").textContent = text; }
 /* ---------- tree ---------- */
 
 async function refreshTree() {
-  const tree = await api("GET", "/api/tree");
-  const state_info = await api("GET", "/api/state");
-  $("#project-name").textContent = `${state_info.name}  ·  ${state_info.element_count} elements`;
-  state.treeIndex.clear();
-  $("#tree").innerHTML = "";
-  $("#tree").appendChild(renderTreeNode(tree, 0));
-  emit("model-changed", tree);
+  rev.refreshing++;
+  try {
+    const tree = await api("GET", "/api/tree");
+    const treeRevision = rev.seen;      // the revision this tree shows
+    const state_info = await api("GET", "/api/state");
+    $("#project-name").textContent = `${state_info.name}  ·  ${state_info.element_count} elements`;
+    state.treeIndex.clear();
+    $("#tree").innerHTML = "";
+    $("#tree").appendChild(renderTreeNode(tree, 0));
+    rev.tree = treeRevision;
+    emit("model-changed", tree);
+  } finally {
+    rev.refreshing--;
+    if (rev.seen !== rev.tree) scheduleSettle();   // changed while the tree was loading
+  }
 }
 
 function renderTreeNode(node, depth) {
@@ -619,7 +671,8 @@ const studio = {
   get selected() { return state.selected; },
   getSelection, setSelection,
   refreshTree, selectElement, switchTab, refreshDiagram,
-  // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id)
+  // events: "select" (element summary), "model-changed" (tree), "tab-shown" (tab id),
+  //         "element-changed" ({revision, selected}: the model changed without a tree refresh)
   on, emit,
   // UI helpers
   log, setStatus, escapeHtml, modal, download, openFile,

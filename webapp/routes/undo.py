@@ -63,7 +63,8 @@ def _before_mutation(method: str, path: str, body: Any) -> Optional[Callable[[in
     def finish(status: int) -> None:
         # A handler that switched projects clears the history; recording the old
         # snapshot in the fresh one makes that switch undoable too.
-        history_for(s).commit(s.repo, before, label)
+        if history_for(s).commit(s.repo, before, label):
+            s.touch()            # every view in the browser learns the model moved
     return finish
 
 

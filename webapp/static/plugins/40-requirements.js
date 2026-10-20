@@ -1611,6 +1611,11 @@ export default async function install(studio) {
       if (S.visible.tm) run(loadTraceability)();
     }, 40);
   });
+  // An edit saved in place elsewhere (no tree refresh): hidden views reload when shown.
+  studio.on("element-changed", () => {
+    if (!S.visible.req && !dockVisible()) S.dirty.req = true;
+    if (!S.visible.tm) S.dirty.tm = true;
+  });
   studio.on("select", (el) => {
     updateSelectionNote();
     if (el?.traceable && el.id !== S.tm.element) {
