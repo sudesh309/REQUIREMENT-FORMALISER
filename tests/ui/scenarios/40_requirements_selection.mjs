@@ -91,4 +91,19 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await page.click(`[data-rq="detail-links"] [data-act="nav"][data-id="${irs.id}"]`);
   await noteIs(editorNote, "Selection: IRS (PartUsage)");
   expect((await selection()).join() === irs.id, "navigate replaces the canvas multi-selection");
+
+  // --- a tree click still scrolls a zoomed canvas to the block it selects ------------------
+  await page.click('.tab[data-tab="architecture"]');
+  for (let i = 0; i < 4; i++) await page.click('[data-canvas-act="zoom-in"]');
+  for (const [name, el] of [["FMS", fms], ["ADC", adc], ["IRS", irs]]) {
+    await treeClick(el.id);
+    await page.waitForFunction((n) => document.querySelector(`.arch-block[data-name="${n}"]`)?.classList.contains("sel"), name);
+    const r = await page.evaluate((n) => {
+      const b = document.querySelector(`.arch-block[data-name="${n}"] .arch-body`).getBoundingClientRect();
+      const s = document.querySelector(".arch-svg").getBoundingClientRect();
+      return { b: [b.left, b.top, b.right, b.bottom], s: [s.left, s.top, s.right, s.bottom] };
+    }, name);
+    expect(r.b[0] >= r.s[0] - 1 && r.b[1] >= r.s[1] - 1 && r.b[2] <= r.s[2] + 1 && r.b[3] <= r.s[3] + 1,
+           `${name} scrolled into sight: ${JSON.stringify(r)}`);
+  }
 }

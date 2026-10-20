@@ -260,11 +260,12 @@ async function selectElement(id) {
 // latest selection, wherever it was made: Link to Selection must never use a stale pick.
 // selectElement alone keeps the multi-selection (the canvas publishes its picks with
 // setSelection and then selects the primary one; editors re-select after a reload).
-function selectSingle(id) {
+// getSelection() is [id] at once; selection-changed follows "select", so views that follow
+// "select" (the canvas scrolls to the element) see it first.
+async function selectSingle(id) {
   state.selection = [];
-  const done = selectElement(id);           // sets selectedId at once
-  emit("selection-changed", getSelection());
-  return done;
+  try { await selectElement(id); }
+  finally { emit("selection-changed", getSelection()); }
 }
 
 function renderInspectorSections(el) {
