@@ -164,7 +164,7 @@ class TablesRoundTripFidelityTests(unittest.TestCase):
 
 
 class StudioRoundTripHttpTests(WebAppTestCase):
-    """SU-4 through the studio's HTTP API."""
+    """SU-4 and PO-12 through the studio's HTTP API."""
 
     def setUp(self):
         A.install()
@@ -187,6 +187,48 @@ class StudioRoundTripHttpTests(WebAppTestCase):
         self.assertEqual((f2l["source_architecture"]["name"], f2l["target_architecture"]["name"],
                           f2l["scenarios"][0]["allocation_count"]),
                          ("AvionicsFunctions", "AircraftAvionics", 4))
+
+    def test_load_json_sets_the_baseline(self):
+        self.call("POST", "/api/new", {"name": "Blank"})
+        self.assertEqual(self.call("GET", "/api/interop/snapshot"), {"exists": False})
+        self.call("POST", "/api/load", {"text": self.text})
+        snap = self.call("GET", "/api/interop/snapshot")
+        self.assertEqual(snap["label"], "Last saved (loaded file)")
+        self.assertTrue(self.compare_saved()["identical"])
+        self.assertTrue(self.compare_saved(include_layout=True)["identical"])
+        # An edit shows up; undo keeps the baseline (the same project) and is clean again.
+        fcc = next(e for e in core.session().repo.root_package.walk() if e.name == "FCC-R")
+        self.call("PATCH", f"/api/element/{fcc.element_id}", {"props": {"name": "FCC-R2"}})
+        self.assertEqual(self.compare_saved()["summary"]["modified"], 1)
+        self.call("POST", "/api/undo")
+        self.assertTrue(self.compare_saved()["identical"])
+        self.call("POST", "/api/redo")
+        self.assertEqual(self.compare_saved()["summary"]["modified"], 1)
+        # New clears it.
+        self.call("POST", "/api/new", {"name": "Other"})
+        self.assertEqual(self.call("GET", "/api/interop/snapshot"), {"exists": False})
+
+    def test_imports_as_a_new_project_set_the_baseline(self):
+        from tests.test_interop_fixtures import XMI_FIXTURE
+        self.call("POST", "/api/load", {"text": self.text})
+        x = self.call("GET", "/api/interop/tables?format=xlsx")
+        self.call("POST", "/api/new", {"name": "Blank"})
+        self.call("POST", "/api/interop/tables/import",
+                  {"base64": x["base64"], "filename": x["filename"], "mode": "new"})
+        self.assertEqual(self.call("GET", "/api/interop/snapshot")["label"],
+                         f"Imported {x['filename']}")
+        self.assertTrue(self.compare_saved()["identical"])
+        self.call("POST", "/api/new", {"name": "Blank"})
+        self.call("POST", "/api/interop/xmi/import",
+                  {"text": XMI_FIXTURE.read_text(encoding="utf-8"), "mode": "new"})
+        self.assertTrue(self.compare_saved()["identical"])
+        self.call("POST", "/api/new", {"name": "Blank"})
+        self.call("POST", "/api/interop/sysml/import",
+                  {"text": "package P { part def A; }", "mode": "new"})
+        self.assertTrue(self.compare_saved()["identical"])
+        # Merging into the current project does not move the baseline.
+        self.call("POST", "/api/interop/sysml/import", {"text": "package Q { part def B; }"})
+        self.assertEqual(self.compare_saved()["summary"]["added"], 2)
 
 
 class ReportOnStudioModelTests(unittest.TestCase):

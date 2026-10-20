@@ -208,9 +208,12 @@ Open **Compare** (or use the **Compare** group of the Import / Export tab):
 
 - **With File…**: a project JSON (`.json`), a tables workbook (`.xlsx`) or a ZIP of CSV
   files is compared (old) with the current project (new).
-- **With Last Saved**: every **Save JSON** in the header remembers the saved project;
-  **Set Baseline** remembers the current state on demand. (The snapshot is cleared when
-  another project is opened.)
+- **With Last Saved**: every **Save JSON** in the header remembers the saved project, and
+  opening a project sets the baseline too: **Load JSON** (the file is the last saved
+  version, as System Composer compares with the file on disk) and importing tables, XMI or
+  SysML text **as a new project** (a merge into the current project does not move it).
+  **Set Baseline** remembers the current state on demand. Undo / redo keep the baseline;
+  **New** clears it.
 - **Refresh** repeats the last comparison; **layout** also compares UI layout data.
 
 The summary shows `+added`, `−removed`, `~modified` counts, or **No differences**. The
@@ -458,7 +461,9 @@ saves are identical across processes, and order follows containment, not creatio
   download / import, CSV export), `60_interop_profiles.mjs` (a real profile's stereotype:
   `Avionics.LRU.*` grid columns, a value typed in another unit, a unit change in the
   Profiles sheet, XLSX round trip into a new project, Compare "No differences" then a
-  `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value).
+  `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value),
+  `60_interop_baseline.mjs` (Save JSON, New, Load JSON of the same file through the file
+  chooser, Compare with Last Saved: No differences; an edit shows up, Undo is clean again).
 
 ## System Composer parity
 
@@ -520,9 +525,10 @@ Deferred:
   component's ports and its sub-components) are grouped table by table; order within each
   table is kept. The tables have no column for cross-table sibling order. Compare ignores
   order and reports no differences.
-- "With Last Saved" knows saves made with the studio's **Save JSON** (or **Set Baseline**)
-  in this session; the snapshot is cleared when another project is opened. MCP clients
-  compare with the file they saved (`other_path`).
+- "With Last Saved" knows the project as saved with the studio's **Save JSON**, loaded
+  with **Load JSON** or imported as a new project (or a **Set Baseline**) in this session;
+  it does not watch the file on disk. A three-way merge result starts without a baseline.
+  MCP clients compare with the file they saved (`other_path`).
 - The report's embedded-Mermaid download is about 3 MB; untick *embed diagrams library*
   for a small file that renders diagrams when opened next to a running studio.
 - The tables do not carry a profile's provenance (the `.profile.json` file it was imported
