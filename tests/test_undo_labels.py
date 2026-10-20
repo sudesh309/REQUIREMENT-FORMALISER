@@ -176,4 +176,4 @@ class UndoLabelTests(WebAppTestCase):
         a = self.call("POST", "/api/arch/architecture", {})
         self.send("PATCH", f"/api/element/{a['id']}", {"props": {"name": "Physical"}}, {"X-Undo-Merge": a["id"]})
         st = self.state()
-        self.assertEqual((st["undo_depth"], st["undo_label"]), (depth + 1, "New architecture Physical"))
+        self.assertEqual((st["undo_depth"], st["undo_label"]), (depth + 1, "New architecture"))

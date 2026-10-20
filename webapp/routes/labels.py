@@ -141,7 +141,9 @@ def _save_ref(c: Ctx) -> str:
     return f"Save {c.name(c.body.get('component'))} as reference {c.name(d, 'definition')}"
 
 
-label("POST", r"^/api/arch/architecture$", lambda c: f"New architecture {c.name(c.pid())}")
+# "New architecture", "Arrange" and "Move" stay short: the canvas tests of the architecture
+# feature name these steps so.
+label("POST", r"^/api/arch/architecture$", "New architecture")
 label("POST", r"^/api/arch/model-type$", lambda c: f"Change model type to {c.body.get('type')}")
 label("POST", r"^/api/arch/component$", lambda c: f"Add component {c.name(c.pid())}")
 label("PATCH", r"^/api/arch/component/(?P<eid>[^/]+)$", _edit_component)
@@ -155,7 +157,7 @@ label("POST", r"^/api/arch/port$", lambda c: f"Add port {c.port(c.pid())}")
 label("PATCH", r"^/api/arch/port/(?P<eid>[^/]+)$", _edit_port)
 label("POST", r"^/api/arch/connector$", _connect)
 label("PATCH", r"^/api/arch/connector/(?P<eid>[^/]+)$", _edit_connector)
-label("POST", r"^/api/arch/auto-layout$", lambda c: f"Arrange {c.name(c.body.get('composition'))}")
+label("POST", r"^/api/arch/auto-layout$", "Arrange")
 label("POST", r"^/api/arch/layout$", "Move")
 
 
