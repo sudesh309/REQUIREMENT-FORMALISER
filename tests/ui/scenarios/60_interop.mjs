@@ -101,10 +101,10 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   expect(issue.qn.endsWith("maintenance"), `unconnected port reported: ${issue.qn}`);
   // Back to all rules; search narrows the table; keyboard Enter navigates as well.
   await page.selectOption('#tab-checks select[data-k="rule"]', "");
-  await page.fill('#tab-checks input[data-k="search"]', "navBus");
+  await page.fill('#tab-checks input[data-k="search"]', "maintenance");
   await page.waitForFunction(() => {
     const rows = [...document.querySelectorAll("#tab-checks tr.io-issue")];
-    return rows.length && rows.every((r) => r.textContent.includes("navBus"));
+    return rows.length && rows.every((r) => r.textContent.includes("maintenance"));
   });
   const kbIssue = await page.$eval("#tab-checks tr.io-issue", (tr) => tr.dataset.id);
   await page.focus("#tab-checks tr.io-issue");

@@ -63,7 +63,9 @@ CORE_RULES: dict[str, dict] = {
     "name.unique": {"title": "Unique member names", "severity": "error",
                     "description": "Members of a namespace must have distinct names."},
     "feature.typed": {"title": "Typed feature", "severity": "warning",
-                      "description": "A feature should be typed."},
+                      "description": "A plain KerML feature should be typed (it defaults to "
+                                     "Anything); SysML usages such as components, ports and "
+                                     "connectors default to their library definition."},
     "multiplicity.lower": {"title": "Multiplicity lower bound", "severity": "error",
                            "description": "Lower bound must be >= 0."},
     "multiplicity.upper": {"title": "Multiplicity upper bound", "severity": "error",

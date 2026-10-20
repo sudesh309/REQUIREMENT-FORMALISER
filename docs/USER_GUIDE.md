@@ -677,6 +677,12 @@ flowchart LR
     ISS -->|severity| LOG[INFO · WARNING · ERROR]
 ```
 
+Every message names its element (`Port 'airData' has no interface ...`). `feature.typed`
+only reports plain KerML features: a SysML usage without a definition (an inline
+component, a connector, an inline function, a port without an interface) is implicitly
+typed by its library definition, as in System Composer, so it is not a modelling gap.
+Ports without an interface are reported once, by `port.typed`.
+
 ```bash
 python -m engine.cli examples/vehicle.sysml          # validates by default
 ```
