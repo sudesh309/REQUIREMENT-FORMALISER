@@ -167,7 +167,11 @@ preview frame:
 1. title page (title, model, author, date, contents),
 2. model summary (counts, elements by kind),
 3. architecture diagrams (Mermaid, one per root architecture, rendered with the vendored
-   `/static/vendor/mermaid-*.min.js`) and the traceability diagram,
+   `/static/vendor/mermaid-*.min.js`) and the traceability diagram. Every connector is drawn
+   to the component usage it reaches (its end context), so two reference components of one
+   definition (`FCC-L`, `FCC-R : FlightControlComputer`) each get their own edges; edges
+   carry the canvas connector label (interface names, `name : Interface` for a named
+   connector),
 4. component hierarchy,
 5. per component: documentation, reference definition, stereotype property values (as the
    profiles feature displays them, with units, inherited properties first), ports
