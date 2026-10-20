@@ -204,6 +204,13 @@ a filter, *Link to Selection*, *Link from Selection* and the row context menu. D
 canvas or the tree to create Implement links; double-click (or Enter) opens a row in the editor.
 It hides itself while the Requirements tab is active and remembers whether it was open.
 
+The dock takes its height from the view above it instead of covering it: the canvas gets
+shorter, a fitted canvas is fitted again to the room left (a zoomed one keeps its zoom and the
+selected block in sight), its status bar stays under the drawing, and *Fit* uses the remaining
+height. Drag the splitter between the canvas and the dock to share the height (↑ / ↓ with the
+splitter focused, Shift for bigger steps, double-click for the default); the view above keeps at
+least 280 px and the dock's height is remembered.
+
 ### Links view and suspect links
 
 The **Links** view lists every link of the shown set (or of all sets): type, source,

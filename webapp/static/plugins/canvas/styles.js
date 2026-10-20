@@ -48,9 +48,12 @@ export function injectCanvasStyles() {
   .arch-banner label { display:inline-flex; gap:3px; align-items:center; }
   /* main */
   .arch-main { flex:1; display:flex; min-height:0; }
-  .arch-host { position:relative; flex:1; min-width:0; overflow:hidden; outline:none; background:#fbfcfe; }
+  /* The drawing area takes the host's height minus the status bar under it, so a view
+     fitted to it is never covered by the status line (or by a pane docked below). */
+  .arch-host { position:relative; flex:1; min-width:0; overflow:hidden; outline:none; background:#fbfcfe;
+               display:flex; flex-direction:column; }
   .arch-host:focus-visible { box-shadow:inset 0 0 0 2px #93c5fd; }
-  .arch-svg { width:100%; height:100%; display:block; user-select:none; -webkit-user-select:none; touch-action:none;
+  .arch-svg { flex:1 1 0; min-height:0; width:100%; display:block; user-select:none; -webkit-user-select:none; touch-action:none;
               font-family:ui-sans-serif, system-ui, sans-serif; }
   .arch-svg.is-empty { visibility:hidden; }
   .arch-host.space, .arch-host.mode-pan { cursor:grab; }
@@ -135,8 +138,8 @@ export function injectCanvasStyles() {
   .arch-empty-card { background:#fff; border:1px dashed #94a3b8; border-radius:10px; padding:22px 26px; max-width:380px; text-align:center;
                      color:#475569; font-size:13px; display:flex; flex-direction:column; gap:10px; align-items:center; }
   .arch-empty-title { font-size:15px; font-weight:600; color:#0f172a; }
-  .arch-status { position:absolute; left:8px; bottom:6px; right:8px; font-size:11px; color:#64748b; pointer-events:none;
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .arch-status { flex:none; height:20px; line-height:19px; padding:0 8px; font-size:11px; color:#64748b; pointer-events:none;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:#fff; border-top:1px solid #e2e8f0; }
   .arch-toasts { position:absolute; left:50%; bottom:28px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px;
                  align-items:center; z-index:20; max-width:min(560px, 90%); }
   .arch-toast { background:#1e293b; color:#f8fafc; padding:7px 12px; border-radius:6px; font-size:12.5px; cursor:pointer;
