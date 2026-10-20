@@ -129,7 +129,7 @@ opens the architecture you last viewed (else the first one with components).
 | Copy / paste / duplicate | **Copy** (Ctrl+C), **Paste** (Ctrl+V, into the composition being viewed; context menu *Paste inside* targets a block), **Duplicate** (Ctrl+D). Copies are deep (ports, internals, stereotypes) with fresh names |
 | Delete | **Delete** / Backspace, the toolstrip or the context menu (no confirmation: undo with Ctrl+Z) |
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
-| Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view |
+| Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view. Cycles (bidirectional A429 / AFDX links) are broken with as few backward connectors as possible, so they never create one layer per block; big networks wrap their layers into bands (like lines of text, at most ⌈√n⌉ + 2 layers side by side) shaped for the canvas, so 30 LRUs with 90 connectors fit a 1400 × 900 window at about 40 % zoom. Small diagrams keep one row |
 | Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool |
 | Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface (SysML definitions and the interface dictionary's interfaces and value types), side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. *Properties tab ↗* opens the full studio inspector |
 | Context menu | Right-click anything, or **Shift+F10** / the Menu key for the selection; arrow keys move in the menu |
@@ -244,7 +244,7 @@ with 400 (invalid), 404 (unknown element) or 409 (conflict).
 | POST | `/api/arch/expand` | `{component}` | `{components}` (moved ids) |
 | POST | `/api/arch/save-as-reference` | `{component, name?, package?}` | `{definition, component}` |
 | POST | `/api/arch/inline` | `{component}` | component view |
-| POST | `/api/arch/auto-layout` | `{composition}` | `{positions: {id: {x, y, w, h}}}` (only positions are stored; user-set sizes are kept) |
+| POST | `/api/arch/auto-layout` | `{composition, view?: {w, h}}` (`view` = canvas size in screen px; default 870 × 480) | `{positions: {id: {x, y, w, h}}}` (only positions are stored; user-set sizes are kept; deterministic) |
 | POST | `/api/arch/layout` | `{items: [{id, x, y, w?, h?} \| {id, side, offset} \| {id, points}]}` | `{updated}` (validated before anything is written; a move keeps a size set earlier, `w`/`h` null return to the automatic size) |
 | POST | `/api/undo`, `/api/redo` | | `{ok, reason?, can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth, limit}` |
 | GET | `/api/undo/state` | | the same state |
@@ -435,7 +435,7 @@ package Avionics {
 | create-component-from-selection | closed | Group (Ctrl+G) with boundary ports per crossing connector; Expand as the inverse |
 | reference-components | closed | save as reference / inline; reference marker and `: Definition` on the block |
 | copy-paste | closed | Ctrl+C / Ctrl+V / Ctrl+D, paste inside a component; deep copies with fresh names |
-| auto-layout | closed | Arrange: layered left to right by connector direction, cycle-safe, then fit |
+| auto-layout | closed | Arrange: layered left to right by connector direction (greedy feedback-arc ordering for cycles, barycenter ordering in each layer), packed into bands shaped for the canvas for big or cyclic networks, then fit |
 | layout-persistence | closed | `tool_data.layout` (components; sizes only when resized), `tool_data.port_layout`, `tool_data.points`; survives save / load and page reloads |
 | undo-redo | closed | every web mutation (any feature), 50 steps, cleared on new/load; MCP tools too; canvas toolstrip and Ctrl+Z / Ctrl+Y |
 | highlight / view filter hooks | closed | `highlight` glow and `canvas-filter` dim/hide with banners (the requirements, interfaces and allocation features emit `highlight`; `canvas-filter` is ready for architecture views) |

@@ -258,6 +258,34 @@ class EditingHttpTests(_ArchHttp):
         tree = self.call("GET", f"/api/arch/tree/{self.root['id']}")
         self.assertEqual([c["name"] for c in tree["children"]], ["ADC", "FMS", "Display"])
 
+    def test_arrange_packs_a_cyclic_avionics_network_for_the_canvas(self):
+        """PO-1 repro: 30 LRUs, 3 outputs each to other LRUs (new ports), then Arrange."""
+        names = ["ADIRU1", "ADIRU2", "ADIRU3", "FMC1", "FMC2", "DU_CPT", "DU_FO", "DU_EICAS",
+                 "AFDX_SW1", "AFDX_SW2", "CPIOM_A", "CPIOM_B", "CPIOM_C", "RDC1", "RDC2", "GPS1",
+                 "GPS2", "RA1", "RA2", "FCC1", "FCC2", "FCC3", "TCAS", "WXR", "VHF1", "VHF2",
+                 "MCDU1", "MCDU2", "EGPWS", "SATCOM"]
+        comps = [self.comp(n) for n in names]
+        for c in comps:
+            self.port(c, "out", "out")
+        for i, c in enumerate(comps):
+            for k in (7, 11, 19):
+                self.call("POST", "/api/arch/connector", {
+                    "composition": self.root["id"], "source": {"component": c["id"], "port": "out"},
+                    "target": {"component": comps[(i * 3 + k) % 30]["id"], "new_port": True}})
+        body = {"composition": self.root["id"], "view": {"w": 874, "h": 480}}
+        pos = self.call("POST", "/api/arch/auto-layout", body)["positions"]
+        self.assertEqual(self.call("GET", "/api/undo/state")["undo_label"], "Arrange")
+        boxes = list(pos.values())
+        w = max(b["x"] + b["w"] for b in boxes) - min(b["x"] for b in boxes)
+        h = max(b["y"] + b["h"] for b in boxes) - min(b["y"] for b in boxes)
+        self.assertTrue(1 / 3 <= w / h <= 3, (w, h))
+        self.assertLessEqual(len({b["x"] + b["w"] / 2 for b in boxes}), 30 ** 0.5 + 3)
+        self.assertGreaterEqual(A.fit_zoom(w, h, (874, 480)), 0.4)
+        self.assertEqual(self.call("POST", "/api/arch/auto-layout", body)["positions"], pos)
+        self.assertEqual({c["id"]: c["layout"] for c in self.view()["components"]}, pos)
+        body["view"] = {"w": "big"}
+        self.call("POST", "/api/arch/auto-layout", body, expect=400)
+
     def test_everything_survives_save_and_load(self):
         self.call("POST", "/api/arch/model-type", {"type": "software"})
         adc, fms, disp = self.three()

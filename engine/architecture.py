@@ -1577,13 +1577,21 @@ def _spread_ports(owner: Element) -> None:
             p.tool_data["port_layout"] = {"side": side, "offset": round((i + 1) / (len(ps) + 1), 4)}
 
 
-def auto_layout(repo, composition: Element) -> dict:
-    """Left-to-right layered layout ordered by connector direction (System Composer 'Arrange')."""
-    comp = require_composition(composition)
-    comps = components_of(comp)
+def current_size(c: Element) -> tuple:
+    """A size the user set by resizing, else the automatic one (which follows the ports)."""
+    w, h = default_size(c)
+    lay = c.tool_data.get("layout")
+    if isinstance(lay, dict):
+        w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
+        h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
+    return w, h
+
+
+def _flow_graph(comp: Element, comps: list) -> tuple[list[list[int]], list[list[int]]]:
+    """Successor / predecessor lists of the components (by index) along the connectors."""
     idx = {id(c): i for i, c in enumerate(comps)}
-    succ: dict[int, list[int]] = {i: [] for i in range(len(comps))}
-    pred: dict[int, list[int]] = {i: [] for i in range(len(comps))}
+    succ: list[list[int]] = [[] for _ in comps]
+    pred: list[list[int]] = [[] for _ in comps]
     for conn in connectors_of(comp):
         ends = connector_ends(conn, comp)
         if len(ends) != 2:
@@ -1595,75 +1603,232 @@ def auto_layout(repo, composition: Element) -> dict:
         if ib not in succ[ia]:
             succ[ia].append(ib)
             pred[ib].append(ia)
-    # Depth-first topological order; back edges (cycles) are ignored.
-    state = [0] * len(comps)
-    order: list[int] = []
-    back: set[tuple[int, int]] = set()
+    return succ, pred
 
-    def visit(i: int) -> None:
-        stack = [(i, iter(succ[i]))]
-        state[i] = 1
-        while stack:
-            node, it = stack[-1]
-            nxt = next(it, None)
-            if nxt is None:
-                state[node] = 2
-                order.append(node)
-                stack.pop()
-            elif state[nxt] == 1:
-                back.add((node, nxt))
-            elif state[nxt] == 0:
-                state[nxt] = 1
-                stack.append((nxt, iter(succ[nxt])))
-    roots = [i for i in range(len(comps)) if not pred[i]] + list(range(len(comps)))
-    for i in roots:
-        if state[i] == 0:
-            visit(i)
-    order.reverse()
-    layer = [0] * len(comps)
+
+def _flow_order(succ: list[list[int]], pred: list[list[int]]) -> list[int]:
+    """A linear order with few backward edges (Eades-Lin-Smyth greedy feedback arc set):
+    sinks go to the end, sources to the front, otherwise the node with the largest
+    out-degree minus in-degree goes next. Ties take the lowest index (deterministic)."""
+    n = len(succ)
+    outd = [len(s) for s in succ]
+    ind = [len(p) for p in pred]
+    alive = [True] * n
+    head: list[int] = []
+    tail: list[int] = []
+    left = n
+
+    def drop(i: int) -> None:
+        nonlocal left
+        alive[i] = False
+        left -= 1
+        for j in succ[i]:
+            ind[j] -= 1
+        for j in pred[i]:
+            outd[j] -= 1
+    while left:
+        moved = True
+        while moved:
+            moved = False
+            for i in range(n):
+                if alive[i] and outd[i] == 0:
+                    drop(i)
+                    tail.append(i)
+                    moved = True
+            for i in range(n):
+                if alive[i] and ind[i] == 0:
+                    drop(i)
+                    head.append(i)
+                    moved = True
+        if left:
+            best = max((i for i in range(n) if alive[i]), key=lambda i: (outd[i] - ind[i], -i))
+            drop(best)
+            head.append(best)
+    return head + tail[::-1]
+
+
+def _flow_layers(succ: list[list[int]], pred: list[list[int]]) -> list[list[int]]:
+    """Longest-path layers along the forward edges of the flow order, each ordered by a
+    few barycenter sweeps (fewer crossings)."""
+    n = len(succ)
+    order = _flow_order(succ, pred)
+    pos = {v: k for k, v in enumerate(order)}
+    layer = [0] * n
     for i in order:
         for j in succ[i]:
-            if (i, j) not in back:
+            if pos[j] > pos[i]:
                 layer[j] = max(layer[j], layer[i] + 1)
-    layers: dict[int, list[int]] = {}
-    for i in range(len(comps)):
-        layers.setdefault(layer[i], []).append(i)
+    layers: list[list[int]] = [[] for _ in range(max(layer, default=-1) + 1)]
+    for i in order:
+        layers[layer[i]].append(i)
+    rank = {i: k / max(1, len(lay)) for lay in layers for k, i in enumerate(lay)}
+
+    def sweep(seq: list[list[int]], neighbours: list[list[int]]) -> None:
+        for lay in seq:
+            keyed = []
+            for k, i in enumerate(lay):
+                ns = [rank[j] for j in neighbours[i] if layer[j] != layer[i]]
+                keyed.append((sum(ns) / len(ns) if ns else rank[i], k, i))
+            keyed.sort()
+            lay[:] = [i for _, _, i in keyed]
+            for k, i in enumerate(lay):
+                rank[i] = k / max(1, len(lay))
+    for _ in range(3):
+        sweep(layers, pred)
+        sweep(layers[::-1], succ)
+    return layers
+
+
+# Reference canvas area (screen px) when the client does not send its own: the canvas of a
+# 1400 x 900 window with the Property Inspector open.
+ARRANGE_VIEW = (870, 480)
+ARRANGE_GOOD_ZOOM = 0.5          # a layout this readable is good enough: prefer the plainest one
+_FRAME_PAD, _FRAME_HEAD = 70, 28
+
+
+def fit_zoom(w: float, h: float, view: tuple = ARRANGE_VIEW) -> float:
+    """The zoom at which the canvas's Fit shows components spanning w x h (model units)
+    in a view of view[0] x view[1] screen pixels (frame, title band and the boundary port
+    labels around it included; see geometry.js frameFor / editor.js fit)."""
+    fw = max(520, w + 2 * _FRAME_PAD)
+    fh = max(320, h + 2 * _FRAME_PAD + _FRAME_HEAD / 2)
+    return min((view[0] - 24) / (fw + 160), (view[1] - 42) / (fh + 48))
+
+
+class _Packing(NamedTuple):
+    bands: list            # [[column, ...], ...]; a column is a list of component indexes
+    slot_w: list           # width of each column slot (shared by every band)
+    band_h: list
+    gaps: tuple            # (between columns, between blocks of a column, between bands)
+    w: float
+    h: float
+
+
+_WRAP_GAPS = (80, 40, 70)        # compact gaps of a packed layout: columns, blocks, bands
+
+
+def _split(layers: list[list[int]], sizes: list, budget: float) -> list[list[int]]:
+    """Each layer cut into columns no taller than `budget` (at least one block each)."""
+    gy = _WRAP_GAPS[1]
+    columns = []
+    for lay in layers:
+        col, h = [], 0.0
+        for i in lay:
+            add = sizes[i][1] + (gy if col else 0)
+            if col and h + add > budget:
+                columns.append(col)
+                col, h = [], 0.0
+                add = sizes[i][1]
+            col.append(i)
+            h += add
+        columns.append(col)
+    return columns
+
+
+def _pack(layers: list[list[int]], columns: list[list[int]], sizes: list, cols: int) -> _Packing:
+    """Columns wrapped into bands of at most `cols` columns (left to right, then the next
+    band below, like lines of text)."""
+    bands = [columns[s:s + cols] for s in range(0, len(columns), cols)]
+    plain = len(bands) == 1 and len(columns) == len(layers)
+    gx, gy, gb = (_GAP_X, _GAP_Y, 0) if plain else _WRAP_GAPS
+    width = max(len(b) for b in bands)
+    slot_w = [0] * width
+    band_h = []
+    for band in bands:
+        tallest = 0
+        for s, col in enumerate(band):
+            slot_w[s] = max(slot_w[s], max(sizes[i][0] for i in col))
+            tallest = max(tallest, sum(sizes[i][1] for i in col) + gy * (len(col) - 1))
+        band_h.append(tallest)
+    return _Packing(bands, slot_w, band_h, (gx, gy, gb),
+                    sum(slot_w) + gx * (width - 1), sum(band_h) + gb * (len(bands) - 1))
+
+
+def arrange_plan(layers: list[list[int]], sizes: list, view: tuple = ARRANGE_VIEW) -> _Packing:
+    """Choose how to pack the layers so the whole composition reads well in `view`:
+
+    - at most ceil(sqrt(n)) + 2 columns per band (cycles never make a column per block);
+    - the packing whose Fit zoom is highest wins; once packings reach ARRANGE_GOOD_ZOOM,
+      a plain left-to-right row of whole layers is preferred (small diagrams read like
+      the signal flow), then a frame aspect ratio within 1:3..3:1, then the fewest bands
+      and split layers, then the higher zoom, then the first candidate."""
+    n = sum(len(lay) for lay in layers)
+    cap = math.ceil(math.sqrt(n)) + 2
+    gy = _WRAP_GAPS[1]
+    lo = max(h for _, h in sizes)
+    hi = max(sum(sizes[i][1] for i in lay) + gy * (len(lay) - 1) for lay in layers)
+    # Column height budgets from one block per column up to whole layers.
+    budgets = sorted({round(lo + (hi - lo) * k / 60) for k in range(61)})
+    best, best_key, seen = None, None, set()
+    for budget in budgets:
+        columns = _split(layers, sizes, budget)
+        sig = tuple(len(c) for c in columns)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        for cols in range(1, min(cap, len(columns)) + 1):
+            p = _pack(layers, columns, sizes, cols)
+            zoom = fit_zoom(p.w, p.h, view)
+            fw, fh = max(520, p.w + 2 * _FRAME_PAD), max(320, p.h + 2 * _FRAME_PAD + _FRAME_HEAD / 2)
+            plain = len(p.bands) == 1 and len(columns) == len(layers)
+            key = (round(min(zoom, ARRANGE_GOOD_ZOOM), 3), plain, 1 / 3 <= fw / fh <= 3,
+                   -len(p.bands), -len(columns), round(zoom, 3))
+            if best_key is None or key > best_key:
+                best, best_key = p, key
+    return best
+
+
+def auto_layout(repo, composition: Element, view: Optional[tuple] = None) -> dict:
+    """System Composer 'Arrange': components in left-to-right layers along the connectors
+    (cycles broken with few backward connectors), packed into a compact near-viewport
+    shaped grid for big or cyclic networks (see ``arrange_plan``). ``view`` is the canvas
+    size in screen pixels (default ``ARRANGE_VIEW``). Deterministic."""
+    comp = require_composition(composition)
+    comps = components_of(comp)
     for c in comps:
         _spread_ports(c)
     _spread_ports(comp)
-
-    def size(c: Element) -> tuple:
-        """A size the user set by resizing, else the automatic one (which follows the ports)."""
-        w, h = default_size(c)
-        lay = c.tool_data.get("layout")
-        if isinstance(lay, dict):
-            w = lay["w"] if isinstance(lay.get("w"), (int, float)) and lay["w"] > 0 else w
-            h = lay["h"] if isinstance(lay.get("h"), (int, float)) and lay["h"] > 0 else h
-        return w, h
-    sizes = [size(c) for c in comps]
-    col_w = max([w for w, _ in sizes] or [DEFAULT_W])
-    pos_rank: dict[int, float] = {}
-    positions: dict[str, dict] = {}
-    heights = {k: sum(sizes[i][1] for i in v) + _GAP_Y * (len(v) - 1) for k, v in layers.items()}
-    tallest = max(heights.values() or [0])
-    for k in sorted(layers):
-        members = layers[k]
-        members.sort(key=lambda i: (sum(pos_rank.get(p, 0) for p in pred[i]) / len(pred[i])
-                                    if pred[i] else pos_rank.get(i, i), i))
-        y = _GRID_Y0 + (tallest - heights[k]) / 2
-        for rank, i in enumerate(members):
-            w, h = sizes[i]
-            box = {"x": _GRID_X0 + k * (col_w + _GAP_X), "y": round(y), "w": w, "h": h}
-            old = comps[i].tool_data.get("layout")
-            # Only positions are stored: a size stays automatic unless the user resized it.
-            comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
-                k2: old[k2] for k2 in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k2), (int, float))}}
-            positions[comps[i].element_id] = box
-            pos_rank[i] = rank
-            y += h + _GAP_Y
     for conn in connectors_of(comp):
         conn.tool_data.pop("points", None)
+    if not comps:
+        return {}
+    view = _clean_view(view)
+    succ, pred = _flow_graph(comp, comps)
+    sizes = [current_size(c) for c in comps]
+    plan = arrange_plan(_flow_layers(succ, pred), sizes, view)
+    gx, gy, gb = plan.gaps
+    positions: dict[str, dict] = {}
+    y0 = _GRID_Y0
+    for band, band_h in zip(plan.bands, plan.band_h):
+        x = _GRID_X0
+        for s, col in enumerate(band):
+            col_h = sum(sizes[i][1] for i in col) + gy * (len(col) - 1)
+            y = y0 + (band_h - col_h) / 2
+            for i in col:
+                w, h = sizes[i]
+                box = {"x": round(x + (plan.slot_w[s] - w) / 2), "y": round(y), "w": w, "h": h}
+                old = comps[i].tool_data.get("layout")
+                # Only positions are stored: a size stays automatic unless the user resized it.
+                comps[i].tool_data["layout"] = {"x": box["x"], "y": box["y"], **{
+                    k: old[k] for k in ("w", "h") if isinstance(old, dict) and isinstance(old.get(k), (int, float))}}
+                positions[comps[i].element_id] = box
+                y += h + gy
+            x += plan.slot_w[s] + gx
+        y0 += band_h + gb
     return positions
+
+
+def _clean_view(view: Any) -> tuple:
+    if view is None:
+        return ARRANGE_VIEW
+    if isinstance(view, dict):
+        view = (view.get("w"), view.get("h"))
+    if not isinstance(view, (list, tuple)) or len(view) != 2:
+        raise ArchitectureError("view must be {w, h} (canvas size in pixels)")
+    w, h = number(view[0], "view w"), number(view[1], "view h")
+    if w < 100 or h < 100:
+        return ARRANGE_VIEW          # a hidden or collapsed canvas: arrange for the usual one
+    return (min(w, 10000), min(h, 10000))
 
 
 # ---------------------------------------------------------------------------

@@ -1629,7 +1629,11 @@ class CanvasEditor {
 
   async arrange() {
     if (!this.view) return;
-    const r = await this.run(() => this.studio.api("POST", "/api/arch/auto-layout", { composition: this.compId }),
+    // The server packs big or cyclic networks for this canvas size (Fit stays readable).
+    const s = this.svgRect();
+    const body = { composition: this.compId };
+    if (s.width >= 100 && s.height >= 100) body.view = { w: Math.round(s.width), h: Math.round(s.height) };
+    const r = await this.run(() => this.studio.api("POST", "/api/arch/auto-layout", body),
                              { ok: `Arranged ${this.view.composition.name}` });
     if (r) this.fit();
   }

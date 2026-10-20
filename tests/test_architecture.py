@@ -1,5 +1,7 @@
 """Engine tests for System Composer-style architecture modeling (engine/architecture.py)."""
+import math
 import re
+import time
 import unittest
 
 from engine import Repository, Validator, from_json, parse, to_json
@@ -36,6 +38,49 @@ def _ep(component, port_name):
 def _issues(repo, prefix="arch."):
     A.install()
     return [(i.rule, i.message) for i in Validator().validate(repo) if i.rule.startswith(prefix)]
+
+
+LRU_NAMES = ["ADIRU1", "ADIRU2", "ADIRU3", "FMC1", "FMC2", "DU_CPT_PFD", "DU_CPT_ND", "DU_FO_PFD",
+             "DU_FO_ND", "DU_EICAS", "AFDX_SW1", "AFDX_SW2", "CPIOM_A", "CPIOM_B", "CPIOM_C",
+             "RDC1", "RDC2", "GPS1", "GPS2", "RA1", "RA2", "FCC1", "FCC2", "FCC3", "TCAS",
+             "WXR", "VHF1", "VHF2", "MCDU1", "MCDU2"]
+
+
+def _avionics_network(n=30, seed=11):
+    """The PO-1 scale fixture: n LRUs with one output each, wired to 3 random other LRUs
+    (new input ports), so the network has many cycles, like bidirectional A429 / AFDX links."""
+    repo = Repository("Scale")
+    root = A.create_architecture(repo, "Aircraft")
+    names = (LRU_NAMES + [f"LRU{i}" for i in range(n)])[:n]
+    comps = []
+    for name in names:
+        c = A.add_component(repo, root, name)
+        A.add_port(repo, c, "out", "out")
+        comps.append(c)
+    state = seed
+    for c in comps:
+        for _ in range(3):
+            while True:      # small LCG: the same fixture on every Python version
+                state = (state * 1103515245 + 12345) % 2147483648
+                t = comps[state % n]
+                if t is not c:
+                    break
+            A.connect_new_port(repo, root, {"component": c, "port": "out"}, t)
+    return repo, root
+
+
+def _frame(positions):
+    """(width, height) of the bounding box of arranged component boxes."""
+    boxes = list(positions.values())
+    return (max(b["x"] + b["w"] for b in boxes) - min(b["x"] for b in boxes),
+            max(b["y"] + b["h"] for b in boxes) - min(b["y"] for b in boxes))
+
+
+def _overlaps(positions):
+    boxes = list(positions.values())
+    return [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:]
+            if a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+            and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"]]
 
 
 class ModelTypeTests(unittest.TestCase):
@@ -509,6 +554,16 @@ class LayoutAndViewTests(unittest.TestCase):
         pos = A.auto_layout(repo, root)
         self.assertEqual(len({p["x"] for p in pos.values()}), 3)
 
+    def test_auto_layout_honours_the_canvas_size(self):
+        repo, root = _avionics_network(30)
+        wide = A.auto_layout(repo, root, {"w": 1800, "h": 500})
+        tall = A.auto_layout(repo, root, {"w": 700, "h": 1100})
+        aspect = [_frame(p)[0] / _frame(p)[1] for p in (wide, tall)]
+        self.assertGreater(aspect[0], aspect[1])          # the layout follows the window's shape
+        with self.assertRaises(A.ArchitectureError):
+            A.auto_layout(repo, root, {"w": "wide", "h": 3})
+        self.assertEqual(A.auto_layout(repo, root, {"w": 0, "h": 0}), A.auto_layout(repo, root))
+
     def test_apply_layout_validates_atomically(self):
         repo, root, adc, fms, disp = _arch()
         p = ports_of(adc)[0]
@@ -589,6 +644,68 @@ class LayoutAndViewTests(unittest.TestCase):
         self.assertEqual(aoa["children"][0]["name"], "core")
         self.assertEqual(aoa["children"][0]["path"][0], root.element_id)
         self.assertEqual([r.name for r in A.architecture_roots(repo)], ["AircraftSystem"])
+
+
+class ArrangeScaleTests(unittest.TestCase):
+    """PO-1 / SU-12b: Arrange on realistic, cyclic avionics networks stays compact and readable."""
+
+    def assert_readable(self, positions, n, min_zoom=0.40):
+        cap = math.ceil(math.sqrt(n)) + 2
+        columns = {b["x"] + b["w"] / 2 for b in positions.values()}
+        self.assertLessEqual(len(columns), cap, "at most ceil(sqrt(n)) + 2 layers side by side")
+        w, h = _frame(positions)
+        self.assertTrue(1 / 3 <= w / h <= 3, f"aspect ratio {w}x{h}")
+        self.assertEqual(_overlaps(positions), [])
+        # Fit zoom in the canvas of a 1400 x 900 window (Property Inspector open).
+        self.assertGreaterEqual(A.fit_zoom(w, h), min_zoom)
+
+    def test_thirty_lrus_with_ninety_cyclic_connectors(self):
+        repo, root = _avionics_network(30)
+        self.assertEqual(len(connectors_of(root)), 90)
+        t = time.perf_counter()
+        pos = A.auto_layout(repo, root)
+        self.assertLess(time.perf_counter() - t, 1.0)
+        self.assertEqual(len(pos), 30)
+        self.assert_readable(pos, 30)
+        # Deterministic: again on the same model, and on an identical model built afresh.
+        self.assertEqual(A.auto_layout(repo, root), pos)
+        repo2, root2 = _avionics_network(30)
+        names = {c.element_id: c.name for c in components_of(root)}
+        names2 = {c.element_id: c.name for c in components_of(root2)}
+        again = {names2[k]: v for k, v in A.auto_layout(repo2, root2).items()}
+        self.assertEqual(again, {names[k]: v for k, v in pos.items()})
+
+    def test_forty_eight_lrus_and_unconnected_blocks_wrap(self):
+        # 48 LRUs with ~190 ports need about 35% to fit (it was a 15% strip before).
+        repo, root = _avionics_network(48)
+        self.assert_readable(A.auto_layout(repo, root), 48, min_zoom=0.32)
+        repo = Repository("P")
+        root = A.create_architecture(repo, "R")
+        for i in range(48):
+            A.add_component(repo, root, f"C{i}")
+        self.assert_readable(A.auto_layout(repo, root), 48)
+
+    def test_small_chains_keep_the_signal_flow_left_to_right(self):
+        repo, root, adc, fms, disp = _arch()
+        A.connect(repo, root, _ep(adc, "airData"), _ep(fms, "airData"))
+        A.connect(repo, root, _ep(fms, "route"), _ep(disp, "route"))
+        pos = A.auto_layout(repo, root)
+        self.assertEqual(len({pos[c.element_id]["y"] for c in (adc, fms, disp)}), 1)    # one row
+        xs = [pos[c.element_id]["x"] for c in (adc, fms, disp)]
+        self.assertEqual(xs, sorted(xs))
+
+    def test_cycles_do_not_make_a_layer_per_block(self):
+        repo = Repository("P")
+        root = A.create_architecture(repo, "Ring")
+        ring = []
+        for i in range(12):
+            c = A.add_component(repo, root, f"N{i}")
+            A.add_port(repo, c, "i", "in")
+            A.add_port(repo, c, "o", "out")
+            ring.append(c)
+        for a, b in zip(ring, ring[1:] + ring[:1]):
+            A.connect(repo, root, _ep(a, "o"), _ep(b, "i"))
+        self.assert_readable(A.auto_layout(repo, root), 12)
 
 
 class UndoHistoryTests(unittest.TestCase):

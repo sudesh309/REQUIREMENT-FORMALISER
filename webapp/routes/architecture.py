@@ -29,7 +29,7 @@ Editing
     POST  /api/arch/expand                     {component}
     POST  /api/arch/save-as-reference          {component, name?, package?}
     POST  /api/arch/inline                     {component}
-    POST  /api/arch/auto-layout                {composition}
+    POST  /api/arch/auto-layout                {composition, view?: {w, h} (canvas size in px)}
     POST  /api/arch/layout                     {items: [{id, x, y, w?, h?} | {id, side, offset} | {id, points}]}
 """
 from __future__ import annotations
@@ -365,8 +365,9 @@ def api_update_connector(req, eid):
 
 @arch_route("POST", r"^/api/arch/auto-layout$")
 def api_auto_layout(req):
-    comp = _find(_body(req).get("composition"), "composition")
-    return ok({"positions": A.auto_layout(_repo(), comp)})
+    b = _body(req)
+    comp = _find(b.get("composition"), "composition")
+    return ok({"positions": A.auto_layout(_repo(), comp, b.get("view"))})
 
 
 @arch_route("POST", r"^/api/arch/layout$")
