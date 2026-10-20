@@ -400,6 +400,8 @@ Deferred:
 - [ ] Link sets stored as separate files (`.slmx`): links live in the project JSON.
 - [ ] Clicking nodes inside the Mermaid diagram: navigation uses buttons under the diagram
       (keeps Mermaid in its strict security mode).
-- [ ] Undo / redo of requirement edits: the studio core has no shared undo stack yet.
+- [x] Undo / redo of requirement edits: every edit is one named step of the studio's global
+      undo history ("Edit SYS-3 summary", "Add link FMS implements SYS-3"), Ctrl+Z / Ctrl+Y;
+      adding a requirement and typing its summary is one step.
 - [ ] Requirements Table blocks, requirement-based test generation, DOORS / Polarion
       synchronisation: out of scope for a local prototype.
