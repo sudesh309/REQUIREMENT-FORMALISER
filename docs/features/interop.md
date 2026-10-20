@@ -257,7 +257,7 @@ appear in Validate, `/api/validate` and `sysml_validate`):
 | Rule | Severity | Reports |
 |---|---|---|
 | `advisor.empty-composition` | info | an architecture or inline component without components, ports or connectors |
-| `advisor.unconnected-port` | warning | a component port no connector uses, or an unconnected boundary port |
+| `advisor.unconnected-port` | warning | a component port not wired in the composition that holds the component (wiring inside the component does not count; a reference component is checked per usage and reported on the usage, e.g. `Port FCC-R.surfaceCmd is not connected in AircraftAvionics`), or a port of a composition with components that none of them is wired to |
 | `advisor.duplicate-name` | warning | sibling components / ports whose names differ only by case, or a usage port repeating a port of its definition |
 | `advisor.component-without-ports` | info | a component with sub-components or a reference but no ports |
 | `advisor.missing-documentation` | info | architectures, components, ports and interfaces without documentation |

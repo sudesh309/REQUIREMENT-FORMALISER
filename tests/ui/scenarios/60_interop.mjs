@@ -94,11 +94,13 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   const sevs = await page.$$eval("#tab-checks tr.io-issue", (rows) => rows.map((r) => r.dataset.sev));
   expect(sevs.length && sevs.every((s) => s !== "info"), `info hidden: ${sevs}`);
   await page.selectOption('#tab-checks select[data-k="rule"]', "advisor.unconnected-port");
-  const issue = await page.$eval("#tab-checks tr.io-issue", (tr) => ({ id: tr.dataset.id, qn: tr.querySelector(".io-qn").textContent }));
+  const issue = await page.$eval("#tab-checks tr.io-issue", (tr) => ({ id: tr.dataset.id, qn: tr.querySelector(".io-qn").textContent, text: tr.textContent }));
   await page.click("#tab-checks tr.io-issue");
   await page.waitForFunction((id) => document.querySelector("#tree .tree-node.selected")?.dataset.id === id, issue.id);
   await page.waitForFunction((qn) => document.querySelector("#props-qname")?.textContent === qn, issue.qn);
-  expect(issue.qn.endsWith("maintenance"), `unconnected port reported: ${issue.qn}`);
+  // The port belongs to the GPSReceiver definition: the issue names the usage that leaves it open.
+  expect(issue.qn.endsWith("FlightDeck::gnss") && issue.text.includes("Port gnss.maintenance is not connected in FlightDeck"),
+         `unconnected port reported on its usage: ${issue.qn} ${issue.text}`);
   // Back to all rules; search narrows the table; keyboard Enter navigates as well.
   await page.selectOption('#tab-checks select[data-k="rule"]', "");
   await page.fill('#tab-checks input[data-k="search"]', "maintenance");

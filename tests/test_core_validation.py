@@ -148,6 +148,62 @@ class FeatureTypedTests(unittest.TestCase):
                 self.assertIn(name, messages[rule])
 
 
+class UnconnectedPortTests(unittest.TestCase):
+    """advisor.unconnected-port judges each usage of a reference component (SU-10)."""
+
+    def setUp(self):
+        install_advisor()
+
+    def _unconnected(self, repo):
+        return sorted((i.element.name, i.message) for i in _rules(repo, "advisor.unconnected-port"))
+
+    def test_reference_component_ports_reported_per_usage(self):
+        repo = Repository("Avionics")
+        arch = A.create_architecture(repo, "AircraftAvionics")
+        adiru = A.add_component(repo, arch, "ADIRU")
+        air = A.add_port(repo, adiru, "airData", "out")
+        fcc_l = A.add_component(repo, arch, "FCC-L")
+        A.add_port(repo, fcc_l, "airDataIn", "in")
+        A.add_port(repo, fcc_l, "surfaceCmd", "out")
+        law = A.add_component(repo, fcc_l, "ControlLaw")     # internals wired to both ports
+        A.add_port(repo, law, "air", "in")
+        A.add_port(repo, law, "cmd", "out")
+        A.connect(repo, fcc_l, (None, "airDataIn"), (law, "air"))
+        A.connect(repo, fcc_l, (law, "cmd"), (None, "surfaceCmd"))
+        A.connect(repo, arch, (adiru, air), (fcc_l, "airDataIn"))
+        self.assertEqual(self._unconnected(repo), [
+            ("surfaceCmd", "Port FCC-L.surfaceCmd is not connected in AircraftAvionics")])
+        fcc = A.save_as_reference(repo, fcc_l, "FlightControlComputer")
+        fcc_r = A.add_component(repo, arch, "FCC-R", fcc)
+        A.connect(repo, arch, (adiru, air), (fcc_r, "airDataIn"))
+        # The definition's internals wire surfaceCmd inside, yet neither usage drives anything
+        # in AircraftAvionics: one issue per usage, on the usage (the port is shared).
+        self.assertEqual(self._unconnected(repo), [
+            ("FCC-L", "Port FCC-L.surfaceCmd is not connected in AircraftAvionics"),
+            ("FCC-R", "Port FCC-R.surfaceCmd is not connected in AircraftAvionics")])
+        act = A.add_component(repo, arch, "Actuators")
+        A.add_port(repo, act, "cmdL", "in")
+        A.add_port(repo, act, "cmdR", "in")
+        A.connect(repo, arch, (fcc_l, "surfaceCmd"), (act, "cmdL"))
+        self.assertEqual(sorted(m for _, m in self._unconnected(repo)), [
+            "Port Actuators.cmdR is not connected in AircraftAvionics",
+            "Port FCC-R.surfaceCmd is not connected in AircraftAvionics"])
+        A.connect(repo, arch, (fcc_r, "surfaceCmd"), (act, "cmdR"))
+        self.assertEqual(self._unconnected(repo), [])
+
+    def test_composition_ports_must_reach_a_part_inside(self):
+        repo = Repository("P")
+        arch = A.create_architecture(repo, "Arch")
+        ims = A.add_component(repo, arch, "IMA")
+        A.add_component(repo, ims, "Partition1")
+        A.add_port(repo, ims, "spare", "out")
+        sink = A.add_component(repo, arch, "Sink")
+        A.add_port(repo, sink, "in", "in")
+        A.connect(repo, arch, (ims, "spare"), (sink, "in"))
+        self.assertEqual(self._unconnected(repo), [
+            ("spare", "Boundary port IMA.spare is not connected to any component")])
+
+
 class AvionicsModelTests(unittest.TestCase):
 
     def setUp(self):
