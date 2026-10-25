@@ -73,7 +73,8 @@ export function portSvg(pt, { sel, hl, connect } = {}) {
   const hollow = p.kind === "physical" || p.kind === "server" || (p.kind === "data" && p.direction === "in");
   const fill = hollow ? "#ffffff" : color;
   const title = `${p.name} — ${p.kind === "data" ? p.direction + " " : ""}${p.kind} port`
-    + (p.interface ? ` : ${p.interface.name}` : "") + (connect?.get(key)?.reason ? `\n${connect.get(key).reason}` : "");
+    + `\nInterface: ${p.interface ? p.interface.name + (p.badges?.includes("owned") ? " (owned by this port)" : "") : "none"}`
+    + (connect?.get(key)?.reason ? `\n${connect.get(key).reason}` : "");
   return `<g class="${cls.join(" ")}${hlStyle(p.id, hl)}" data-kind="port" data-key="${esc(key)}" data-id="${esc(p.id)}"
       data-ctx="${esc(ctx || "")}" data-name="${esc(p.name)}" data-dir="${esc(p.direction)}" transform="translate(${r1(x)},${r1(y)})">
     <title>${esc(title)}</title>

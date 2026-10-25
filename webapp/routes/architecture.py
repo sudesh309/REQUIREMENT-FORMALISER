@@ -20,6 +20,7 @@ Editing
     PATCH /api/arch/component/<id>             {name?, definition? (id | null)} -> + merged_ports
     POST  /api/arch/port                       {owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}
     PATCH /api/arch/port/<id>                  {name?, direction?, kind?, interface? (id | null), force?}
+                                               (+ warnings: connectors the edit left with a problem, e.g. incompatible interfaces)
     POST  /api/arch/connector                  {composition, source: {component?, port}, target: {component?, port}, name?}
                                                (one end may be {component?, new_port: true | {name?, side?, offset?}})
     PATCH /api/arch/connector/<id>             {name?, points? ([[x, y], ...] | null)}
@@ -46,11 +47,12 @@ import traceback
 from typing import Any, Callable, Optional
 
 from engine import architecture as A
+from engine.structure import connector_warning_snapshot, new_connector_warnings
 from kerml.elements import Element
 from sysmlv2.definitions import PORT_KINDS, ConnectionUsage, PartUsage, PortUsage
 from webapp.core import (
     err, ok, register_mutation_hook, register_prop_hook, register_summary_hook, route, session,
-    summarize,
+    summarize, warn_user,
 )
 
 
@@ -350,8 +352,11 @@ def api_update_port(req, eid):
     kw = {k: b[k] for k in ("name", "direction", "kind") if b.get(k) is not None}
     if "interface" in b:
         kw["interface"] = _find(b["interface"], "interface", required=False)
+    before = connector_warning_snapshot(_repo(), p)
     A.update_port(_repo(), p, force=bool(b.get("force")), **kw)
-    return ok(_port_json(p))
+    # The edit succeeded; say so when it left a connector with a problem (e.g. an interface
+    # the other end cannot take), naming the connector and the reason.
+    return ok(warn_user(_port_json(p), new_connector_warnings(_repo(), p, before)))
 
 
 # --- connectors -----------------------------------------------------------------

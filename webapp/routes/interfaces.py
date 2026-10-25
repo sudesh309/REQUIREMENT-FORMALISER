@@ -13,6 +13,7 @@ DELETE /api/interfaces/item/<ref>/elements/<el>        delete element
 POST   /api/interfaces/item/<ref>/elements/<el>/move   {delta} or {index}
 GET    /api/interfaces/port/<ref>                      a port's interface, element paths, connectors
 POST   /api/interfaces/assign                          {port, interface: ref | "owned" | null}
+                                                       (+ warnings: connectors the new interface left incompatible)
 POST   /api/interfaces/make-shared                     {port, name?, on_conflict?}
 POST   /api/interfaces/make-owned                      {port}
 POST   /api/interfaces/move-owned                      {on_conflict?}
@@ -38,10 +39,11 @@ from typing import Any, Callable
 
 from engine import interfaces as I
 from engine.interfaces import InterfaceError
+from engine.structure import connector_warning_snapshot, new_connector_warnings
 from kerml.elements import Element
 from sysmlv2 import PortUsage
 from webapp.core import (
-    err, ok, register_kind, register_prop_hook, register_summary_hook, route, session,
+    err, ok, register_kind, register_prop_hook, register_summary_hook, route, session, warn_user,
 )
 
 
@@ -226,9 +228,12 @@ def api_assign(req):
     port = _port(body.get("port"))
     if "interface" not in body:
         raise InterfaceError("give 'interface': a shared interface, \"owned\" or null")
+    before = connector_warning_snapshot(_repo(), port)
     I.assign_interface(_repo(), port, body.get("interface"), resolve=session().find,
                        owned_kind=body.get("owned_kind") or "DataInterface")
-    return ok(I.port_info(_repo(), port))
+    # The assignment succeeds even when it leaves a connector incompatible (System Composer
+    # does the same); the answer names each such connector and the reason.
+    return ok(warn_user(I.port_info(_repo(), port), new_connector_warnings(_repo(), port, before)))
 
 
 @route("POST", r"^/api/interfaces/make-shared$")

@@ -207,6 +207,10 @@ class CanvasEditor {
     s.on("highlight", p => this.setHighlight(p));
     s.on("canvas-filter", p => this.setFilter(p));
     s.on("undo-state", st => { this.undoState = st || {}; this.updateChrome(); });
+    // studio.notify(): a warning for the user, e.g. an edit that left a connector incompatible.
+    s.on("notice", n => {
+      if (this.visible && n?.message) this.toast(n.message, n.severity === "error" ? "error" : "warning", 9000);
+    });
     // New / Load: zoom and pan remembered for the old project's compositions do not apply
     // (a reloaded file has the same ids): fit the next view.
     s.on("project-changed", () => {

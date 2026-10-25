@@ -116,6 +116,7 @@ the filter box to narrow it. The right pane edits the selected item.
 | Service functions | Name, Function prototype (`[y1, y2] = name(u1, u2)`, the name must match), Asynchronous. Click ▸ to edit argument types, dimensions and units. |
 | Enumerations / constants | Literal, value (integer), description, and a **Default** literal; constants have value, type and units. |
 | Assign an interface by drag and drop | Drag a shared interface or value type from the list (or its containment-tree node) and drop it on a port on the **Architecture** canvas. To reach the canvas from this tab, hold the drag over the **Architecture** tab until it opens. The port is selected, takes the interface colour, and the change is one undo step. Dropping on a block, connector or the background only shows a hint; owned interfaces are not draggable (convert them to shared first). |
+| Know when an interface does not fit | Like System Composer, the studio lets you assign any interface to a port; it never refuses, it says so. When an assignment (Properties tab, canvas Property Inspector, drag and drop, Properties form) leaves a connector incompatible, a warning names the connector and the reason (`Connector ADC.airData → FMS.air: Incompatible interfaces AirDataWord → InertialData: element 'altitude' is in …`) as an Output log line and, on the Architecture tab, a toast. The connector stays on the canvas drawn red and dashed with the reasons as its tooltip; Validate reports it as `interfaces.compatibility`. Assignments that keep every connector compatible are silent. |
 | See who uses an interface | Bottom pane **Ports using this interface**: click a port to select it (tree + Properties), **Highlight** emits a `highlight` event for the canvas. Value types / enumerations show the elements typed by them. |
 | Delete | Toolstrip **Edit › Delete** (or Delete in the list) asks for confirmation; ports using it end up with no interface, elements typed by it fall back to `double`. |
 | Export the dictionary | Toolstrip **Dictionary › Export** downloads `Interfaces.json`. |
@@ -144,7 +145,10 @@ the filter box to narrow it. The right pane edits the selected item.
   note for unit conversions (e.g. `ft x 0.3048`).
 * Ports show their interface name as a tree badge (`owned` for owned ones) and
   carry `style.stroke` = the interface colour; incompatible connectors get an
-  `incompatible` badge and a red dashed style.
+  `incompatible` badge and a red dashed style. On the canvas the port tooltip
+  reads `air — in data port` / `Interface: InertialData` (`none` without one), and
+  an incompatible connector is drawn red and dashed with the reasons in its tooltip
+  and in the Property Inspector's *Problems*.
 * **Validate** (F5) reports every incompatible connector
   (`interfaces.compatibility`) together with the other rules below.
 
@@ -211,7 +215,7 @@ references, 409 for name collisions) with a message saying what to do.
 | DELETE | `/api/interfaces/item/<ref>/elements/<name or id>` | | `{interface}` |
 | POST | `/api/interfaces/item/<ref>/elements/<name or id>/move` | `{delta}` or `{index}` | `{index, interface}` |
 | GET | `/api/interfaces/port/<port>` | | port, interface detail, element paths, connectors with compatibility |
-| POST | `/api/interfaces/assign` | `{port, interface: ref | "owned" | null}` | port info |
+| POST | `/api/interfaces/assign` | `{port, interface: ref | "owned" | null}` | port info; `warnings` (and an `X-Studio-Notices` header) name each connector the assignment left incompatible and why. The assignment still succeeds |
 | POST | `/api/interfaces/make-owned` | `{port}` | port info |
 | POST | `/api/interfaces/make-shared` | `{port, name?, on_conflict?: error|keep|replace|rename}` | `{interface, port}` |
 | POST | `/api/interfaces/move-owned` | `{on_conflict?}` | `{moved: [...]}` |
@@ -249,7 +253,7 @@ dashed `style`; on adapters an `Adapter` badge, `style.icon = "adapter"` and
 | `sysml_set_interface_element` | edit, rename (`new_name`), clear the range or move (`move=-1/+1`) an element |
 | `sysml_remove_interface_element` | delete an element |
 | `sysml_create_value_type` | create a value type |
-| `sysml_assign_interface` | set a port's interface (`"owned"`, a shared one, or null) |
+| `sysml_assign_interface` | set a port's interface (`"owned"`, a shared one, or null); the answer's `warnings` name the connectors it left incompatible |
 | `sysml_make_interface_shared` | save a port's owned interface into the dictionary (`on_conflict`) |
 | `sysml_check_compatibility` | check two ports (and selected elements) or a connector |
 | `sysml_connect_ports` | (architecture tool) connect two ports; `source_element` / `target_element` select bus elements |
@@ -343,6 +347,11 @@ nesting cycles) on a copy of the project before anything changes.
   (category *Interface*) and `DataElement`, `PhysicalElement`, `FunctionElement`
   (category *InterfaceElement*); the constants `INTERFACE_KINDS` and
   `INTERFACE_ELEMENT_KINDS` in `engine/interfaces.py` list them.
+* Connector warnings: `engine.interfaces` registers `incompatibility_warnings` with
+  `engine.structure.register_connector_warning_source`, so the architecture canvas
+  (`connector_view().issues`) and the routes that edit ports or create connectors
+  (`webapp.core.warn_user`, docs/EXTENDING.md "Request notices") report incompatible
+  connectors without importing this module.
 * Canvas: read `style.stroke` / badges from summaries, call
   `GET /api/interfaces/compatibility?source=&target=` before drawing a
   connector, and store bus element selections with
@@ -368,6 +377,7 @@ nesting cycles) on a copy of the project before anything changes.
 | `save-to-dictionary-collision` | closed | keep / replace / rename on save-to-dictionary and on import |
 | `dictionary-api` | closed | HTTP, MCP and Python APIs, move all owned interfaces into the dictionary |
 | `assign-interface-to-port` | closed | inspector dropdown, drag an interface from the editor (or tree) onto a canvas port, element preview, badge + `style.stroke` colour |
+| `incompatible-connector-feedback` | closed | assigning an interface that breaks a connector succeeds and warns at once (log line + canvas toast naming the connector and the reason); the port tooltip names the interface |
 | `connector-compatibility` | closed | `check_compatibility`, validator rule over every connector, `GET /api/interfaces/compatibility` |
 | `port-element-connections` | closed | `source_element` / `target_element` on connectors (persisted), element pickers, compatibility uses them; element renames follow |
 | `physical-interfaces` | closed | 13 physical domains; domain mismatch detection |

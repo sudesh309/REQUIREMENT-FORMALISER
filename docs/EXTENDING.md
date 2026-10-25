@@ -93,6 +93,16 @@ folds that edit into the creation step (only if the creation is the latest
 step), so one Ctrl+Z removes the element and the step is labelled with its
 final name ("Group ADIRU, FMS into CPM_Pair").
 
+**Request notices (tell the user now).** A request can succeed and still deserve a
+word: an interface assignment that leaves a connector incompatible. The handler reports it with `warn_user(payload, messages)`
+(`webapp.core`): the messages become `payload["warnings"]` (what scripts and HTTP tests
+read) and notices, which the server sends in the `X-Studio-Notices` header (percent-encoded
+JSON `[{message, severity}]`, at most 6 per request). `studio.api` shows each one through
+`studio.notify(message, severity)` — an Output log line, plus a toast on the architecture
+canvas via the `notice` event — whichever view or feature sent the request, so the callers
+need no code of their own. Use `add_notice(text, severity)` when there is no JSON object to
+put `warnings` in. Messages are readable sentences that name the element and the reason.
+
 Never import `webapp.server` from a plugin: under `python -m webapp.server`
 it is `__main__`, and a second import would create a second session. Use
 `session().plugin_state["<feature>"]` for runtime state; it is cleared when
@@ -128,6 +138,7 @@ export default async function install(studio) {
                                             // no HTTP method, route or ids)
   await studio.api("PATCH", url, body, { undoMerge: newId });   // see "Create, then name"
   studio.log("done", "ok");                 // severities: info, ok, warning, error
+  studio.notify("Connector A → B: …", "warning");   // log line + canvas toast (see "Request notices")
   studio.modal(title, formHtml, async values => { ... });
   const v = await studio.dialog(title, formHtml, { ok: "Add" });  // values or null (no window.prompt/confirm)
   studio.registerUnsavedCheck({ check: async () => reason || null, saved: async () => {} });  // New / Load warn
@@ -207,6 +218,16 @@ connector is a `ConnectionUsage` owned by the composition it wires, with
 `components_of`, `ports_of`, `connectors_of`, `component_tree`,
 `definition_of` instead of walking `owned_elements` yourself.
 
+**Connector warnings** (`engine/structure.py`): a connector can be valid for the
+architecture rules and still worth a warning. A feature supplies readable findings with
+`register_connector_warning_source(fn(connector) -> list[str])` (the interfaces feature: the
+interfaces of the two ports are incompatible). `connector_warnings(conn)` gathers them; the canvas
+view puts them after the structural problems in the connector's `issues` (red, dashed line, ⚠ on
+the label, tooltip, *Problems* in the Property Inspector), and the routes that edit a port report
+the ones an edit just caused (`connector_warning_snapshot(repo, port)` before,
+`new_connector_warnings(repo, port, before)` after → `warn_user`). They are warnings, never errors:
+the edit still succeeds, as in System Composer.
+
 **Stereotypes** (`engine/profiles.py` is the authority): a stereotype is named
 `Stereotype.full_name` everywhere (`Profile.Stereotype`; a stereotype outside a
 profile, e.g. in a plain package, is just its name), looked up with
@@ -239,6 +260,7 @@ features react with `engine.register_created_hook(fn(element, repo))`
 | `project-changed` | `{reason: "new" \| "load"}` | the project is about to be replaced (emitted before the tree reloads); drop per-project UI state such as zoom |
 | `project-saved` | `null` | *Save JSON* finished (after every `registerUnsavedCheck` `saved()` ran) |
 | `drop-on-element` | `{dragged_id, target_id}` | an element was dragged (HTML5, see below) onto a canvas block, port or connector (`target_id` = its element id; dropped on the canvas background: the composition's id); handled by the dragged element's feature |
+| `notice` | `{message, severity}` | `studio.notify()`: a warning to show now (the canvas toasts it; the log line is already written) |
 | `element-changed` | `{revision, selected}` | the model changed but nobody refreshed the tree (see below); `selected` is the fresh summary of the selected element, if any |
 | `select` / `model-changed` / `tab-shown` | see above | core events |
 
