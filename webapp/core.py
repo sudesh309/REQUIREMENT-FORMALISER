@@ -98,8 +98,14 @@ class Session:
         self.revision = 0
 
     def find(self, ref: str) -> Optional[Element]:
-        if not ref:
+        """By id or qualified name, root-relative or with the project root in front as
+        element JSON gives it (``Repository.resolve``). A percent-encoded name (a URL path
+        segment such as ``Avionics%3A%3AADIRU``) is decoded."""
+        if not ref or not isinstance(ref, str):
             return None
+        if "%" in ref and self.repo.by_id(ref) is None and self.repo.resolve(ref) is None:
+            from urllib.parse import unquote
+            ref = unquote(ref)
         return self.repo.by_id(ref) or self.repo.resolve(ref)
 
     def touch(self) -> None:

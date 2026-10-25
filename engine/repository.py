@@ -142,7 +142,42 @@ class Repository:
         return self.registry.get(element_id)
 
     def resolve(self, qualified_name: str) -> Optional[Element]:
-        return self.root_package.resolve(qualified_name)
+        """Find an element by qualified name, in any form ``Element.qualified_name`` gives.
+
+        Accepts a root-relative name (``Avionics::ADIRU``), the full name with the project
+        root in front (``Project::Avionics::ADIRU``, as element JSON reports it; the root
+        alone names the root package), a library name (``KerML::ScalarValues::Real``) and
+        the ``<1a2b3c4d>`` placeholder of an unnamed element (its id prefix). When a name
+        reads both ways (a top-level package named like the project), root-relative wins.
+        """
+        if not isinstance(qualified_name, str):
+            return None
+        qn = qualified_name.strip()
+        if not qn:
+            return None
+        root = self.root_package
+        hit = root.resolve(qn)
+        if hit is not None:
+            return hit
+        head, sep, rest = qn.partition("::")
+        if root.name and head == root.name:
+            if not sep:
+                return root
+            hit = root.resolve(rest)
+            if hit is not None:
+                return hit
+        if sep:
+            for imp in root.imports:
+                lib = imp.target
+                if isinstance(lib, Namespace) and lib.name == head:
+                    hit = lib.resolve(rest)
+                    if hit is not None:
+                        return hit
+        if len(qn) == 10 and qn[0] == "<" and qn[-1] == ">":
+            matches = [e for e in self.registry if e.element_id.startswith(qn[1:-1])]
+            if len(matches) == 1 and matches[0].name is None:
+                return matches[0]
+        return None
 
     def all_elements(self) -> Iterable[Element]:
         return iter(self.registry)
