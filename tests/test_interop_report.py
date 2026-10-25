@@ -1,6 +1,7 @@
 """HTML system architecture report."""
 import re
 import unittest
+from html import unescape
 
 from engine.interop.report import SECTIONS, generate_report, root_architectures
 from sysmlv2 import PartDefinition
@@ -47,7 +48,9 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(blocks), 2)               # architecture + traceability
         self.assertTrue(blocks[0].startswith("flowchart LR"))
         self.assertIn("gps : GPSReceiver", blocks[0])
-        self.assertIn("navOut to navIn", blocks[0])
+        # Edge labels are what the canvas draws: the connector's name and interface.
+        self.assertIn('|"navBus : A429Word"|', unescape(blocks[0]))
+        self.assertNotIn("navOut to navIn", unescape(blocks[0]))
         self.assertIn('src="/static/vendor/mermaid-10.9.8.min.js"', self.html)
         self.assertEqual([r.name for r in root_architectures(self.repo)], ["FlightDeck"])
 
@@ -79,6 +82,54 @@ class ReportTests(unittest.TestCase):
         self.assertIn("No architecture with components.", html)
         self.assertIn("No requirements.", html)
         self.assertNotIn("<script", html)            # no diagrams, no script
+
+    def test_reference_usages_of_one_definition_get_their_own_edges(self):
+        """SU-3: FCC-L and FCC-R both reference FlightControlComputer; every connector is
+        drawn to the usage it reaches (its end context), labelled like the canvas."""
+        from engine import Repository
+        from kerml.features import FeatureDirection
+        from sysmlv2 import ConnectionUsage, PartUsage, PortDefinition, PortUsage
+
+        def diagram(repo):
+            html = generate_report(repo, sections=["diagrams"], mermaid="none", date="x")
+            return unescape(re.findall(r'<pre class="mermaid-source"[^>]*>(.*?)</pre>',
+                                       html, re.S)[0])
+
+        repo = Repository("IMA")
+        air = repo.add(PortDefinition(name="AirDataWord"))
+        ins = repo.add(PortDefinition(name="InertialData"))
+        fcc = repo.add(PartDefinition(name="FlightControlComputer"))
+        fcc_air = fcc.own(PortUsage(name="airData", typed_by=air, direction=FeatureDirection.IN))
+        fcc_ins = fcc.own(PortUsage(name="inertial", typed_by=ins, direction=FeatureDirection.IN))
+        arch = repo.add(PartDefinition(name="AircraftAvionics"))
+        adc = arch.own(PartUsage(name="ADC"))
+        iru = arch.own(PartUsage(name="IRU"))
+        adc_out = adc.own(PortUsage(name="airData", typed_by=air, direction=FeatureDirection.OUT))
+        iru_out = iru.own(PortUsage(name="inertial", typed_by=ins, direction=FeatureDirection.OUT))
+        left = arch.own(PartUsage(name="FCC-L", typed_by=fcc))
+        right = arch.own(PartUsage(name="FCC-R", typed_by=fcc))
+        for n, (ctx, src, dst) in enumerate([(left, adc_out, fcc_air), (left, iru_out, fcc_ins),
+                                             (right, adc_out, fcc_air), (right, iru_out, fcc_ins)]):
+            arch.own(ConnectionUsage(name=f"Connector{n or ''}", ends=[src, dst],
+                                     end_contexts=(src.owner, ctx)))
+        block = diagram(repo)
+        nodes = dict((name, nid) for nid, name in re.findall(r'(n\d+)\["([^ "]+)', block))
+        edges = re.findall(r'(n\d+) --> ?(?:\|"([^"]*)"\| )?(n\d+)', block)
+        into = {}
+        for a, label, b in edges:
+            into.setdefault(b, []).append((a, label))
+        self.assertEqual(sorted(into[nodes["FCC-L"]]),
+                         sorted([(nodes["ADC"], "AirDataWord"), (nodes["IRU"], "InertialData")]))
+        self.assertEqual(sorted(into[nodes["FCC-R"]]),
+                         sorted([(nodes["ADC"], "AirDataWord"), (nodes["IRU"], "InertialData")]))
+        self.assertEqual(len(edges), 4)
+        self.assertNotIn(" to ", block)             # no "airData to airData" labels
+        # A connector saved without end contexts (older file) still reaches its usage
+        # through ownership, and a named connector shows "name : Interface".
+        aux = iru.own(PortUsage(name="aux", typed_by=air, direction=FeatureDirection.IN))
+        arch.own(ConnectionUsage(name="cross", ends=[adc_out, aux]))
+        block = diagram(repo)
+        self.assertIn(f'{nodes["ADC"]} -->|"cross : AirDataWord"| {nodes["IRU"]}', block)
 
     def test_reference_component_without_architecture_root(self):
         from engine import Repository

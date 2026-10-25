@@ -597,8 +597,10 @@ export default async function install(studio) {
     renderGrid();
   }
 
-  // The Model sheet describes the export; an existing row's ID is its identity.
-  const readOnlyCol = (name, r) => IO.sheet === "Model" || (name === "ID" && !IO.newRows.get(IO.sheet)?.has(r));
+  // The Model sheet describes the export and the Tool Data sheet carries layout (JSON) for
+  // round trips; an existing row's ID is its identity.
+  const READ_ONLY_SHEETS = new Set(["Model", "Tool Data"]);
+  const readOnlyCol = (name, r) => READ_ONLY_SHEETS.has(IO.sheet) || (name === "ID" && !IO.newRows.get(IO.sheet)?.has(r));
 
   function renderGrid() {
     const host = IO.pane.querySelector('[data-io-pane="tables"]');
@@ -641,7 +643,7 @@ export default async function install(studio) {
       `<span class="io-spacer"></span><span>Columns “X ID” hold element ids and win over the name column “X”; editing a name clears its id.</span>`;
     host.parentElement.querySelector('[data-t="apply"]').disabled = !dirty;
     host.parentElement.querySelector('[data-t="revert"]').disabled = !dirty;
-    host.parentElement.querySelector('[data-t="add"]').disabled = IO.sheet === "Model";
+    host.parentElement.querySelector('[data-t="add"]').disabled = READ_ONLY_SHEETS.has(IO.sheet);
   }
 
   function cellTd(r, c) {
@@ -745,7 +747,7 @@ export default async function install(studio) {
   }
 
   function addRow() {
-    if (!IO.work || IO.sheet === "Model") return;
+    if (!IO.work || READ_ONLY_SHEETS.has(IO.sheet)) return;
     const rows = sheetRows();
     const blank = header().map(() => "");
     // Sensible defaults: the kind most rows of this table use.
