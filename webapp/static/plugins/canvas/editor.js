@@ -1157,7 +1157,7 @@ class CanvasEditor {
       if (!t) return;
       if (!t.ok) { this.toast(`Cannot connect: ${t.reason}`, "error"); this.studio.log(`Cannot connect: ${t.reason}`, "warning"); return; }
       await this.run(() => this.studio.api("POST", "/api/arch/connector", { composition, source: src, target: this.endpointOf(h.key) }),
-                     { selectKeys: r => [kk(r.id)], ok: r => `Connected (${r.kind})${r.label ? ` ${r.label}` : ""}` });
+                     { selectKeys: r => [kk(r.id)], ok: r => `Connected (${r.kind})${r.label ? ` ${r.label}` : ""}${r.warnings?.length ? " (see the warning above)" : ""}` });
       return;
     }
     if (h?.kind === "component") {

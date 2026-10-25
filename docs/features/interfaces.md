@@ -116,7 +116,7 @@ the filter box to narrow it. The right pane edits the selected item.
 | Service functions | Name, Function prototype (`[y1, y2] = name(u1, u2)`, the name must match), Asynchronous. Click ▸ to edit argument types, dimensions and units. |
 | Enumerations / constants | Literal, value (integer), description, and a **Default** literal; constants have value, type and units. |
 | Assign an interface by drag and drop | Drag a shared interface or value type from the list (or its containment-tree node) and drop it on a port on the **Architecture** canvas. To reach the canvas from this tab, hold the drag over the **Architecture** tab until it opens. The port is selected, takes the interface colour, and the change is one undo step. Dropping on a block, connector or the background only shows a hint; owned interfaces are not draggable (convert them to shared first). |
-| Know when an interface does not fit | Like System Composer, the studio lets you assign any interface to a port; it never refuses, it says so. When an assignment (Properties tab, canvas Property Inspector, drag and drop, Properties form) leaves a connector incompatible, a warning names the connector and the reason (`Connector ADC.airData → FMS.air: Incompatible interfaces AirDataWord → InertialData: element 'altitude' is in …`) as an Output log line and, on the Architecture tab, a toast. The connector stays on the canvas drawn red and dashed with the reasons as its tooltip; Validate reports it as `interfaces.compatibility`. Assignments that keep every connector compatible are silent. |
+| Know when an interface does not fit | Like System Composer, the studio lets you assign any interface to a port and draw a connector between any two ports; it never refuses, it says so. When an assignment (Properties tab, canvas Property Inspector, drag and drop, Properties form) leaves a connector incompatible, or a connector is drawn between incompatible ports, a warning names the connector and the reason (`Connector ADC.airData → FMS.air: Incompatible interfaces AirDataWord → InertialData: element 'altitude' is in …`) as an Output log line and, on the Architecture tab, a toast. The connector stays on the canvas drawn red, dashed and thicker, with ⚠ on its label and the reasons as its tooltip; Validate reports it as `interfaces.compatibility`. Assignments that keep every connector compatible are silent. |
 | See who uses an interface | Bottom pane **Ports using this interface**: click a port to select it (tree + Properties), **Highlight** emits a `highlight` event for the canvas. Value types / enumerations show the elements typed by them. |
 | Delete | Toolstrip **Edit › Delete** (or Delete in the list) asks for confirmation; ports using it end up with no interface, elements typed by it fall back to `double`. |
 | Export the dictionary | Toolstrip **Dictionary › Export** downloads `Interfaces.json`. |
@@ -147,8 +147,8 @@ the filter box to narrow it. The right pane edits the selected item.
   carry `style.stroke` = the interface colour; incompatible connectors get an
   `incompatible` badge and a red dashed style. On the canvas the port tooltip
   reads `air — in data port` / `Interface: InertialData` (`none` without one), and
-  an incompatible connector is drawn red and dashed with the reasons in its tooltip
-  and in the Property Inspector's *Problems*.
+  an incompatible connector is drawn red, dashed and thicker with ⚠ on its label
+  and the reasons in its tooltip and in the Property Inspector's *Problems*.
 * **Validate** (F5) reports every incompatible connector
   (`interfaces.compatibility`) together with the other rules below.
 
@@ -377,7 +377,7 @@ nesting cycles) on a copy of the project before anything changes.
 | `save-to-dictionary-collision` | closed | keep / replace / rename on save-to-dictionary and on import |
 | `dictionary-api` | closed | HTTP, MCP and Python APIs, move all owned interfaces into the dictionary |
 | `assign-interface-to-port` | closed | inspector dropdown, drag an interface from the editor (or tree) onto a canvas port, element preview, badge + `style.stroke` colour |
-| `incompatible-connector-feedback` | closed | assigning an interface that breaks a connector succeeds and warns at once (log line + canvas toast naming the connector and the reason); the port tooltip names the interface |
+| `incompatible-connector-feedback` | closed | assigning an interface that breaks a connector, or drawing a connector between incompatible ports, succeeds and warns at once (log line + canvas toast naming the connector and the reason); the connector is drawn with a warning style; the port tooltip names the interface |
 | `connector-compatibility` | closed | `check_compatibility`, validator rule over every connector, `GET /api/interfaces/compatibility` |
 | `port-element-connections` | closed | `source_element` / `target_element` on connectors (persisted), element pickers, compatibility uses them; element renames follow |
 | `physical-interfaces` | closed | 13 physical domains; domain mismatch detection |

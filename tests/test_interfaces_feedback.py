@@ -1,4 +1,4 @@
-"""Feedback when interfaces make connectors incompatible (PO-14).
+"""Feedback when interfaces make connectors incompatible (PO-14, SU-9).
 
 System Composer lets the engineer assign any interface to a port and draw a connector
 between any two ports; the studio does the same but must say so at once, naming the
@@ -7,6 +7,7 @@ that the browser turns into a log line and a canvas toast), and the canvas view 
 connector (``issues``).
 
 ``AssignFeedbackTests``: an interface assignment that leaves a connector incompatible (PO-14).
+``ConnectorFeedbackTests``: a connector drawn between incompatible ports (SU-9).
 """
 import json
 import unittest
@@ -198,6 +199,46 @@ class AssignFeedbackTests(_FeedbackBase):
         self.raw("POST", "/api/interfaces/assign", {"port": self.inp["id"], "interface": self.inertial["id"]})
         _payload, headers = self.raw("GET", "/api/tree")
         self.assertEqual(_notices(headers), [])
+
+
+class ConnectorFeedbackTests(_FeedbackBase):
+
+    def test_connector_between_incompatible_ports_is_created_with_a_warning(self):
+        self.call("POST", "/api/interfaces/assign", {"port": self.out["id"], "interface": self.word["id"]})
+        self.call("POST", "/api/interfaces/assign", {"port": self.inp["id"], "interface": self.inertial["id"]})
+        payload, headers = self.raw("POST", "/api/arch/connector", {
+            "composition": self.root["id"],
+            "source": {"component": self.adc["id"], "port": self.out["id"]},
+            "target": {"component": self.fms["id"], "port": self.inp["id"]}})
+        self.assertTrue(payload["id"])                                       # created
+        self.assertEqual(len(payload["issues"]), 1)                          # drawn with a warning
+        self.assertEqual(len(payload["warnings"]), 1)
+        self.assertIn("Connector ADC.airData → FMS.air", payload["warnings"][0])
+        self.assertIn("element 'pitch' is in 'InertialData' but not in 'AirDataWord'", payload["warnings"][0])
+        self.assertEqual([n["message"] for n in _notices(headers)], payload["warnings"])
+        # the same finding is still there when the view is loaded again, and in Validate
+        again = self.call("GET", f"/api/arch/view/{self.root['id']}")["connectors"][0]
+        self.assertEqual(again["issues"], payload["issues"])
+        rules = [i["rule"] for i in self.call("GET", "/api/validate")["issues"]]
+        self.assertIn("interfaces.compatibility", rules)
+        # editing the connector later (rename) does not repeat the warning
+        renamed, headers = self.raw("PATCH", f"/api/arch/connector/{payload['id']}", {"name": "air_link"})
+        self.assertNotIn("warnings", renamed)
+        self.assertEqual(_notices(headers), [])
+
+    def test_compatible_connector_has_no_warning(self):
+        conn = self.wire(self.word, self.word)
+        self.assertNotIn("warnings", conn)
+        self.assertEqual(conn["issues"], [])
+
+    def test_connector_to_a_new_port_copies_the_interface_without_warning(self):
+        self.call("POST", "/api/interfaces/assign", {"port": self.out["id"], "interface": self.word["id"]})
+        r = self.call("POST", "/api/arch/connector", {
+            "composition": self.root["id"],
+            "source": {"component": self.adc["id"], "port": self.out["id"]},
+            "target": {"component": self.fms["id"], "new_port": True}})
+        self.assertNotIn("warnings", r)
+        self.assertEqual(r["issues"], [])
 
 
 if __name__ == "__main__":

@@ -174,7 +174,9 @@ function connClasses(k, base, opts) {
 }
 
 export const LABEL_MAX = 180;
-export const labelText = c => fit(c.label || "", LABEL_MAX, 5.8);      // 10.5 px connector labels
+// 10.5 px connector labels; a connector with a problem (incompatible interfaces, a structural
+// issue) is marked with a warning sign next to its label.
+export const labelText = c => fit(c.label && c.issues?.length ? `⚠ ${c.label}` : (c.label || ""), LABEL_MAX, 5.8);
 
 // The connector line (drawn under the blocks).
 export function connectorSvg(k, opts = {}) {

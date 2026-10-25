@@ -112,7 +112,7 @@ export function injectCanvasStyles() {
   .arch-conn-line { fill:none; stroke-width:1.6; stroke-linejoin:round; }
   .arch-conn.k-physical .arch-conn-line { stroke-width:2.4; }
   .arch-conn.k-client-server .arch-conn-line { stroke-dasharray:7 3; }
-  .arch-conn.bad .arch-conn-line { stroke-dasharray:4 3; }
+  .arch-conn.bad .arch-conn-line { stroke-dasharray:4 3; stroke-width:2.2; }
   .arch-conn:hover .arch-conn-hit { stroke:rgb(147 197 253 / .35); }
   .arch-conn.sel .arch-conn-hit { stroke:rgb(59 130 246 / .35); }
   .arch-conn.sel .arch-conn-line { stroke-width:2.4; }

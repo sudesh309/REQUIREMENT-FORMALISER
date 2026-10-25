@@ -94,7 +94,8 @@ step), so one Ctrl+Z removes the element and the step is labelled with its
 final name ("Group ADIRU, FMS into CPM_Pair").
 
 **Request notices (tell the user now).** A request can succeed and still deserve a
-word: an interface assignment that leaves a connector incompatible. The handler reports it with `warn_user(payload, messages)`
+word: an interface assignment that leaves a connector incompatible, a connector drawn
+between incompatible ports. The handler reports it with `warn_user(payload, messages)`
 (`webapp.core`): the messages become `payload["warnings"]` (what scripts and HTTP tests
 read) and notices, which the server sends in the `X-Studio-Notices` header (percent-encoded
 JSON `[{message, severity}]`, at most 6 per request). `studio.api` shows each one through
@@ -223,8 +224,8 @@ architecture rules and still worth a warning. A feature supplies readable findin
 `register_connector_warning_source(fn(connector) -> list[str])` (the interfaces feature: the
 interfaces of the two ports are incompatible). `connector_warnings(conn)` gathers them; the canvas
 view puts them after the structural problems in the connector's `issues` (red, dashed line, ⚠ on
-the label, tooltip, *Problems* in the Property Inspector), and the routes that edit a port report
-the ones an edit just caused (`connector_warning_snapshot(repo, port)` before,
+the label, tooltip, *Problems* in the Property Inspector), and the routes that create a connector or
+edit a port report the ones an edit just caused (`connector_warning_snapshot(repo, port)` before,
 `new_connector_warnings(repo, port, before)` after → `warn_user`). They are warnings, never errors:
 the edit still succeeds, as in System Composer.
 
