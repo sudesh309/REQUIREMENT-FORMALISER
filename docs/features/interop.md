@@ -469,7 +469,7 @@ saves are identical across processes, and order follows containment, not creatio
   `Avionics.LRU.mass` diff, Model Check reporting and navigating to an invalid value),
   `65_model_check_navigate.mjs` (no `feature.typed` noise for inline components, connectors
   and untyped ports; open ports reported per reference usage; an issue opens the canvas
-  composition with its component or port selected, or Properties for a requirement).
+  composition with its component or port selected, or Properties for a requirement),
   `60_interop_baseline.mjs` (Save JSON, New, Load JSON of the same file through the file
   chooser, Compare with Last Saved: No differences; an edit shows up, Undo is clean again).
 
