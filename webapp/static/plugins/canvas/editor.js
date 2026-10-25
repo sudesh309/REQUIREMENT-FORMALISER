@@ -65,6 +65,8 @@ class CanvasEditor {
     this.vp = { zoom: 1, panX: 0, panY: 0 };
     this.viewports = new Map();
     this.needFit = false;
+    this.fitted = null;          // maxZoom of the fit the view shows, null once zoomed or panned
+    this.viewSize = null;        // last drawing-area size seen by the ResizeObserver
     this.sel = new Set();
     this.primary = null;
     this.mode = "select";
@@ -185,7 +187,7 @@ class CanvasEditor {
     this.host.addEventListener("dragover", e => this.onDragOver(e));
     this.host.addEventListener("dragleave", () => this.clearDropTarget());
     this.host.addEventListener("drop", e => this.onDrop(e));
-    new ResizeObserver(() => { if (this.needFit) this.fit(); }).observe(this.host);
+    new ResizeObserver(() => this.onHostResize()).observe(this.host);
 
     s.on("model-changed", () => {
       this.decorateTree();
@@ -298,7 +300,9 @@ class CanvasEditor {
     if (switched || this.fitNext) {
       this.fitNext = false;
       const saved = this.viewports.get(v.composition.id);
-      if (saved) this.setViewport(saved); else this.fit();
+      if (saved?.fitted) this.fit(saved.fitted);        // fitted when left: fit the room it has now
+      else if (saved) this.setViewport({ zoom: saved.zoom, panX: saved.panX, panY: saved.panY });
+      else this.fit();
     }
     this.fillOpenList();
     store.set({ compId: this.compId, path: this.path });
@@ -306,7 +310,7 @@ class CanvasEditor {
 
   async open(id, path = null) {
     if (!id) return;
-    if (this.view) this.viewports.set(this.compId, { ...this.vp });
+    this.rememberViewport();
     this.cancelInteractions();
     this.compId = id;
     this.path = path || [id];
@@ -583,6 +587,7 @@ class CanvasEditor {
   setViewport(vp) {
     if (this.inline.active) this.inline.el.blur();     // commit an open name edit before the view moves
     this.vp = vp;
+    this.fitted = null;                                // a zoom or pan of its own; fit() sets it again
     this.applyViewport();
     this.updateStatus();
     if (this.compId) this.viewports.set(this.compId, { ...vp });
@@ -598,9 +603,32 @@ class CanvasEditor {
     if (r.width < 40 || r.height < 40) { this.needFit = true; return; }
     this.needFit = false;
     const f = this.scene.frame;
-    this.setViewport(G.fitTransform({ x: f.x - 80, y: f.y - 24, w: f.w + 160, h: f.h + 48 }, r.width, r.height - 18,
+    this.setViewport(G.fitTransform({ x: f.x - 80, y: f.y - 24, w: f.w + 160, h: f.h + 48 }, r.width, r.height,
                                     { pad: 12, maxZoom }));
+    this.fitted = maxZoom;
+    this.rememberViewport();
     this.renderHandles();
+  }
+
+  // Remember how the shown composition is viewed, for when it is opened again.
+  rememberViewport() {
+    if (this.view && this.compId) this.viewports.set(this.compId, { ...this.vp, fitted: this.fitted || null });
+  }
+
+  // The drawing area changed size (the Requirements Perspective docked below opened, closed
+  // or was resized, the output pane, the inspector, the window): a fitted view is fitted
+  // again to the room left; a zoomed or panned one keeps its zoom and the selection in view.
+  onHostResize() {
+    const r = this.svgRect();
+    if (r.width < 40 || r.height < 40) return;           // hidden tab: keep the last real size
+    const size = `${Math.round(r.width)}x${Math.round(r.height)}`;
+    const before = this.viewSize;
+    this.viewSize = size;
+    if (this.needFit) { this.fit(); return; }
+    if (before === size || !this.scene || !this.visible) return;
+    if (this.drag || this.pending || this.connect || this.inline.active) return;   // never move the view under the pointer
+    if (this.fitted) this.fit(this.fitted);
+    else if (this.primary && this.dom.has(this.primary)) this.scrollIntoView(this.primary);
   }
 
   zoomBy(f, cx, cy) {
@@ -648,7 +676,7 @@ class CanvasEditor {
       return pan;
     };
     const panX = shift(b.x, b.x + b.w, r.width, this.vp.panX);
-    const panY = shift(b.y, b.y + b.h, r.height - 22, this.vp.panY);
+    const panY = shift(b.y, b.y + b.h, r.height, this.vp.panY);
     if (panX !== this.vp.panX || panY !== this.vp.panY) this.setViewport({ ...this.vp, panX, panY });
   }
 
@@ -713,7 +741,10 @@ class CanvasEditor {
     if (this.emitting || !this.scene || !Array.isArray(ids)) return;
     const keys = ids.map(id => this.keyFor(id)).filter(Boolean);
     if (!keys.length) {
-      if (!ids.length && this.sel.size) this.setSel([]);
+      // Nothing, or the shown composition itself (selected in the tree), is selected: like a
+      // click on the canvas background, no block stays picked.
+      const composition = ids.length === 1 && ids[0] === this.compId;
+      if ((!ids.length || composition) && this.sel.size) this.setSel([]);
       return;
     }
     const same = keys.length === this.sel.size && keys.every(k => this.sel.has(k));
@@ -730,7 +761,7 @@ class CanvasEditor {
     try { r = await s.api("GET", `/api/arch/locate/${encodeURIComponent(id)}`); } catch { return false; }
     if (!r.composition) return false;
     if (r.composition !== this.compId) {
-      if (this.view) this.viewports.set(this.compId, { ...this.vp });
+      this.rememberViewport();
       this.cancelInteractions();
       this.compId = r.composition;
       this.path = [r.composition];
@@ -1476,7 +1507,7 @@ class CanvasEditor {
     if (this.draft) { this.editDraft(this.draft.name); return; }
     if (this.inline.active) this.inline.el.blur();
     this.cancelInteractions();
-    if (this.view) this.viewports.set(this.compId, { ...this.vp });
+    this.rememberViewport();
     const back = this.view ? { compId: this.compId, path: [...this.path] } : null;
     const name = this.suggestArchitectureName();
     const v = this.view;
