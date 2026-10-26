@@ -20,8 +20,10 @@ Editing
     PATCH /api/arch/component/<id>             {name?, definition? (id | null)} -> + merged_ports
     POST  /api/arch/port                       {owner, name?, direction?, kind?, interface?, usage_only?, side?, offset?}
     PATCH /api/arch/port/<id>                  {name?, direction?, kind?, interface? (id | null), force?}
+                                               (+ warnings: connectors the edit left with a problem, e.g. incompatible interfaces)
     POST  /api/arch/connector                  {composition, source: {component?, port}, target: {component?, port}, name?}
                                                (one end may be {component?, new_port: true | {name?, side?, offset?}})
+                                               (+ warnings when the new connector has a problem: it is still created)
     PATCH /api/arch/connector/<id>             {name?, points? ([[x, y], ...] | null)}
     POST  /api/arch/delete                     {ids}
     POST  /api/arch/duplicate                  {ids, target?, offset?: [dx, dy]}
@@ -46,11 +48,14 @@ import traceback
 from typing import Any, Callable, Optional
 
 from engine import architecture as A
+from engine.structure import (
+    connector_title, connector_warning_snapshot, connector_warnings, new_connector_warnings,
+)
 from kerml.elements import Element
 from sysmlv2.definitions import PORT_KINDS, ConnectionUsage, PartUsage, PortUsage
 from webapp.core import (
     err, ok, register_mutation_hook, register_prop_hook, register_summary_hook, route, session,
-    summarize,
+    summarize, warn_user,
 )
 
 
@@ -350,8 +355,11 @@ def api_update_port(req, eid):
     kw = {k: b[k] for k in ("name", "direction", "kind") if b.get(k) is not None}
     if "interface" in b:
         kw["interface"] = _find(b["interface"], "interface", required=False)
+    before = connector_warning_snapshot(_repo(), p)
     A.update_port(_repo(), p, force=bool(b.get("force")), **kw)
-    return ok(_port_json(p))
+    # The edit succeeded; say so when it left a connector with a problem (e.g. an interface
+    # the other end cannot take), naming the connector and the reason.
+    return ok(warn_user(_port_json(p), new_connector_warnings(_repo(), p, before)))
 
 
 # --- connectors -----------------------------------------------------------------
@@ -371,7 +379,15 @@ def api_connect(req):
         return ok(_connect_new_port(b, comp, fresh[0], "target" if fresh[0] == "source" else "source"))
     conn = A.connect(_repo(), comp, _endpoint(ends["source"], "source"),
                      _endpoint(ends["target"], "target"), b.get("name"))
-    return ok(A.connector_view(conn, comp, _decorate))
+    return ok(_created_connector_json(conn, comp))
+
+
+def _created_connector_json(conn: ConnectionUsage, comp: Element) -> dict:
+    """A new connector's view. System Composer lets the engineer draw a connector whose
+    interfaces do not fit; so do we, but the answer carries a warning that names it."""
+    out = A.connector_view(conn, comp, _decorate)
+    found = connector_warnings(conn)
+    return warn_user(out, [f"Connector {connector_title(conn)}: {w}" for w in found])
 
 
 def _connect_new_port(b: dict, comp: Element, fresh: str, other: str) -> dict:
@@ -385,7 +401,7 @@ def _connect_new_port(b: dict, comp: Element, fresh: str, other: str) -> dict:
         raise A.ArchitectureError("new_port name must be a string")
     port, conn = A.connect_new_port(_repo(), comp, _endpoint(b[other], other), component,
                                     name=b.get("name"), port_name=port_name or None, layout=layout)
-    out = A.connector_view(conn, comp, _decorate)
+    out = _created_connector_json(conn, comp)
     out["created_port"] = _port_json(port, component or comp)
     return out
 

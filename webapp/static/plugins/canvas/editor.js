@@ -207,6 +207,10 @@ class CanvasEditor {
     s.on("highlight", p => this.setHighlight(p));
     s.on("canvas-filter", p => this.setFilter(p));
     s.on("undo-state", st => { this.undoState = st || {}; this.updateChrome(); });
+    // studio.notify(): a warning for the user, e.g. an edit that left a connector incompatible.
+    s.on("notice", n => {
+      if (this.visible && n?.message) this.toast(n.message, n.severity === "error" ? "error" : "warning", 9000);
+    });
     // New / Load: zoom and pan remembered for the old project's compositions do not apply
     // (a reloaded file has the same ids): fit the next view.
     s.on("project-changed", () => {
@@ -1153,7 +1157,7 @@ class CanvasEditor {
       if (!t) return;
       if (!t.ok) { this.toast(`Cannot connect: ${t.reason}`, "error"); this.studio.log(`Cannot connect: ${t.reason}`, "warning"); return; }
       await this.run(() => this.studio.api("POST", "/api/arch/connector", { composition, source: src, target: this.endpointOf(h.key) }),
-                     { selectKeys: r => [kk(r.id)], ok: r => `Connected (${r.kind})${r.label ? ` ${r.label}` : ""}` });
+                     { selectKeys: r => [kk(r.id)], ok: r => `Connected (${r.kind})${r.label ? ` ${r.label}` : ""}${r.warnings?.length ? " (see the warning above)" : ""}` });
       return;
     }
     if (h?.kind === "component") {

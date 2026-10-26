@@ -52,8 +52,8 @@ from engine.hooks import notify_created
 from engine.repository import register_removal_hook
 from engine.serializer import register_codec, register_repo_codec
 from engine.structure import (
-    component_tree, components_of, connector_ends, connectors_of, definition_of,
-    internal_owners, is_component, ports_of,
+    component_tree, components_of, connector_ends, connector_warnings, connectors_of,
+    connectors_touching, definition_of, internal_owners, is_component, ports_of,
 )
 from engine.validator import Severity, ValidationIssue, register_repo_rule
 
@@ -524,11 +524,6 @@ def add_port(repo, owner: Element, name: Optional[str] = None, direction: Option
 
 
 _UNSET: Any = object()
-
-
-def connectors_touching(repo, port: Element) -> list[ConnectionUsage]:
-    return [c for c in repo.root_package.walk()
-            if isinstance(c, ConnectionUsage) and any(x is port for x in c.ends)]
 
 
 def update_port(repo, port: Element, *, name: Optional[str] = None, direction: Optional[str] = None,
@@ -2084,7 +2079,9 @@ def connector_view(conn: ConnectionUsage, composition: Element,
         "interfaces": ifaces,
         "points": pts if isinstance(pts, list) else None,
         "owner_id": conn.owner.element_id if conn.owner else None,
-        "issues": [msg for _rule, msg in connector_problems(conn)],
+        # Structural problems, then warnings other features have about the connector
+        # (e.g. incompatible interfaces): both draw the connector with a warning style.
+        "issues": [msg for _rule, msg in connector_problems(conn)] + connector_warnings(conn),
         **_decor(decorate, conn),
     }
 

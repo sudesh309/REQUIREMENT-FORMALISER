@@ -158,7 +158,7 @@ opens the architecture you last viewed (else the first one with components).
 | Frame | the composition being viewed with its name, stereotypes and kind (architecture, inline component, or `: Definition — shared by n`); its own ports sit on its edges as boundary ports, labels outside |
 | Component | rounded block: «stereotypes» above the bold name, `: Definition` below it for a reference component plus a link marker bottom-left, a hierarchy marker top-right when it has sub-components, other badges (e.g. `SM`, profile badges) as pills; fill / stroke / text colour / dash / short icon from the element summary `style`. The name is never cut while it can be shown whole: it is centred on one line, else wrapped to two lines at a word, `_`, `-` or camelCase boundary, else moved above the port labels to the top of the block (unless ports sit on the top edge); automatic block sizes leave room for the name, the definition name and the port labels (11.5 px) up to 320 px |
 | Port | glyph on the block edge: input = hollow arrow pointing in, output = filled arrow pointing out, inout = double arrow, physical = diamond, client = circle, server = square; coloured by its interface (`style.stroke` from profiles/interfaces, else a stable colour per interface name); name inside the block |
-| Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); invalid stored connectors are red and dashed with the problem as tooltip |
+| Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); a connector with a problem (an invalid stored connector, or ports whose interfaces are incompatible: System Composer lets you draw it, so the studio creates it and warns) is red, dashed and thicker, its label starts with ⚠ and the problems are the tooltip; the Property Inspector lists them under *Problems*. A port's tooltip names its interface (`Interface: AirDataWord`, or `none`) |
 
 ### Working with other features
 
@@ -312,6 +312,12 @@ Element JSON (`GET /api/element/<id>`) gains `badges` (`ref`/`inline`,
                   "interfaces": ["AirData"], "points": null, "issues": []}]
 }
 ```
+
+A connector's `issues` are its structural problems followed by the warnings other features
+register with `engine.structure.register_connector_warning_source` (the interfaces feature adds
+`Incompatible interfaces A → B: reason; …`); `POST /api/arch/connector` also answers `warnings`
+(`Connector ADC.airData → FMS.air: …`) and `PATCH /api/arch/port/<id>` answers `warnings` when the edit left
+a connector with a problem it did not have before; the studio shows them as a toast and an Output line.
 
 A connector's `label` is what System Composer draws on the line: its interface
 name(s), prefixed SysML-style by a name you gave it (`airBus : AirData`);
