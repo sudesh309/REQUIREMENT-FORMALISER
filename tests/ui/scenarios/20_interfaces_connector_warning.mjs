@@ -19,7 +19,14 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await page.waitForSelector('.arch-block[data-name="FMS"]');
 
   const portSel = (comp, name) => `.arch-block[data-name="${comp}"] .arch-port[data-name="${name}"]`;
-  const centre = async (sel) => { const b = await (await page.$(sel)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const centre = async (sel) => {                 // the canvas redraws: look the element up again each time
+    for (let i = 0; i < 30; i++) {
+      const b = await page.locator(sel).first().boundingBox();
+      if (b) return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`${sel} is not on screen`);
+  };
   const drag = async (from, to) => {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();

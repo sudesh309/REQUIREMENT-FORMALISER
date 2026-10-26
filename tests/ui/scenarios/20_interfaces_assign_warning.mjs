@@ -22,18 +22,23 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await page.waitForSelector('.arch-block[data-name="FMS"]');
 
   const portSel = (comp, name) => `.arch-block[data-name="${comp}"] .arch-port[data-name="${name}"]`;
-  const centre = async (sel) => { const b = await (await page.$(sel)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const centre = async (sel) => {                 // the canvas redraws: look the element up again each time
+    for (let i = 0; i < 30; i++) {
+      const b = await page.locator(sel).first().boundingBox();
+      if (b) return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`${sel} is not on screen`);
+  };
   const idle = () => page.waitForFunction(() => !Number(document.body.dataset.ifcPending || 0));
-  const logText = () => page.textContent("#log");
   const clearLog = async () => {
     await page.click('[data-cmd="clear-log"]');
     await page.evaluate(() => document.querySelectorAll(".arch-toast").forEach(t => t.remove()));
   };
   const warningLines = () => page.$$eval("#log .log-warning", (els) => els.map((e) => e.textContent));
-  const conn = () => api("GET", `/api/arch/view/${root.id}`).then(v => v.connectors[0]);
   const CONNECTOR = "ADC.airData → FMS.air";
 
-  // A port with the wrong interface is picked on the canvas and fixed in its Property Inspector.
+  // A port is picked on the canvas and its interface changed in the Property Inspector.
   const dockAssign = async (comp, name, label) => {
     const p = await centre(`${portSel(comp, name)} .arch-port-hit`);
     await page.mouse.click(p.x, p.y);
@@ -41,47 +46,56 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
     await page.selectOption('.arch-dock [data-dock="port-interface"]', { label });
   };
 
-  // 1. The port tooltip names the interface (SVG <title>).
+  // 1. The port tooltip names the interface (SVG <title>); the connector is fine so far.
   const tip = await page.$eval(`${portSel("FMS", "air")} title`, (e) => e.textContent);
   expect(tip.startsWith("air — in data port"), `port tooltip keeps the port facts: ${tip}`);
   expect(/\nInterface: AirDataWord$/.test(tip), `port tooltip names the interface: ${JSON.stringify(tip)}`);
   expect(!(await warningLines()).length, "compatible connector: nothing to warn about");
   expect(!(await page.$(".arch-conn.bad")), "compatible connector is drawn normally");
 
-  // 2. PO-14 on the canvas: fixing the port is silent, breaking it again warns.
+  // 2. Canvas Property Inspector: breaking the connector warns, fixing it is silent.
+  await clearLog();
+  await dockAssign("FMS", "air", "InertialData (DataInterface)");
+  const toast = await page.waitForSelector(".arch-toast.warning");
+  const toastText = await toast.textContent();
+  expect(toastText.includes(CONNECTOR), `toast names the connector after the assignment: ${toastText}`);
+  expect(toastText.includes("element 'altitude' is in 'AirDataWord' but not in 'InertialData'"), `toast gives the reason: ${toastText}`);
+  await page.waitForFunction(() => document.querySelector("#log .log-warning"));
+  const canvasLines = await warningLines();
+  expect(canvasLines.length === 1 && canvasLines[0].includes(CONNECTOR) && canvasLines[0].includes("element 'altitude'"),
+         `Output line names the connector and the reason: ${JSON.stringify(canvasLines)}`);
+  await page.waitForSelector(".arch-conn.bad", { state: "attached" });
+  expect((await api("GET", `/api/interfaces/port/${fmsIn.id}`)).interface.name === "InertialData", "the assignment itself succeeded");
+  await page.waitForFunction((sel) => /\nInterface: InertialData$/.test(document.querySelector(sel)?.textContent || ""),
+                             `${portSel("FMS", "air")} title`);
   await clearLog();
   await dockAssign("FMS", "air", "AirDataWord (DataInterface)");
   await page.waitForFunction(() => !document.querySelector(".arch-conn.bad"));
   expect(!(await warningLines()).length && !(await page.$(".arch-toast.warning")), "an assignment that fixes the connector does not warn");
-  await dockAssign("FMS", "air", "InertialData (DataInterface)");
-  await page.waitForSelector(".arch-toast.warning");
-  expect((await page.textContent(".arch-toast.warning")).includes(CONNECTOR), "toast names the connector after the assignment");
-  await page.waitForFunction(() => document.querySelector("#log .log-warning"));
-  expect((await warningLines())[0].includes("element 'altitude'"), "Output line gives the reason");
-  await page.waitForSelector(".arch-conn.bad", { state: "attached" });
-  // the assignment itself succeeded
-  expect((await api("GET", `/api/interfaces/port/${fmsIn.id}`)).interface.name === "InertialData", "the port took the interface");
 
-  // 4. PO-14 in the Properties tab: Interface dropdown of the port.
+  // 3. Properties tab: the port's Interface dropdown (no canvas there: an Output line).
   await page.click('.tab[data-tab="properties"]');
   const treeRow = (id) => `#tree .tree-node[data-id="${id}"] > .row`;
   await page.click(treeRow(fmsIn.id));
   await page.waitForSelector('[data-ifc="port-interface"]');
   await idle();
   await clearLog();
-  await page.selectOption('[data-ifc="port-interface"]', { label: "AirDataWord" });
-  await idle();
-  await page.waitForFunction(() => document.querySelector("#log").textContent.includes("now uses AirDataWord"));
-  expect(!(await warningLines()).length, "compatible assignment: no warning in the Properties tab");
-  await page.waitForSelector('[data-ifc="port-interface"]');
-  await idle();
   await page.selectOption('[data-ifc="port-interface"]', { label: "InertialData" });
   await page.waitForFunction(() => document.querySelector("#log .log-warning"));
   const propLines = await warningLines();
-  expect(propLines.length === 1 && propLines[0].includes(CONNECTOR) && propLines[0].includes("'altitude'"), `Properties tab warns: ${JSON.stringify(propLines)}`);
+  expect(propLines.length === 1 && propLines[0].includes(CONNECTOR) && propLines[0].includes("'altitude'"),
+         `Properties tab warns: ${JSON.stringify(propLines)}`);
+  await idle();
+  await clearLog();
+  await page.selectOption('[data-ifc="port-interface"]', { label: "AirDataWord" });
+  await page.waitForFunction(() => document.querySelector("#log").textContent.includes("now uses AirDataWord"));
+  expect(!(await warningLines()).length, "compatible assignment: no warning in the Properties tab");
+  await idle();
+  await page.selectOption('[data-ifc="port-interface"]', { label: "InertialData" });     // incompatible again
+  await page.waitForFunction(() => document.querySelector("#log .log-warning"));
   await idle();
 
-  // 5. PO-14 by drag and drop: an interface dropped on a port from the containment tree.
+  // 4. Drag and drop: an interface dragged from the containment tree onto a canvas port.
   await page.click('.tab[data-tab="architecture"]');
   await page.waitForSelector(".arch-conn.bad", { state: "attached" });
   await clearLog();
@@ -93,12 +107,13 @@ export default async function ({ page, fresh, waitReady, expect, api }) {
   await page.dragAndDrop(treeRow(word.id), portSel("FMS", "air"));
   await page.waitForFunction(() => document.querySelector("#log .log-warning"));
   const dropLines = await warningLines();
-  expect(dropLines.length === 1 && dropLines[0].includes(CONNECTOR) && dropLines[0].includes("element 'pitch'"), `drop warns: ${JSON.stringify(dropLines)}`);
+  expect(dropLines.length === 1 && dropLines[0].includes(CONNECTOR) && dropLines[0].includes("element 'pitch'"),
+         `drop warns: ${JSON.stringify(dropLines)}`);
   await page.waitForSelector(".arch-toast.warning");
   await page.waitForSelector(".arch-conn.bad", { state: "attached" });
   await idle();
 
-  // 6. Validate reports the same connector.
+  // 5. Validate reports the same connector.
   await page.click('[data-cmd="validate"]');
   await page.waitForFunction(() => document.querySelector("#log").textContent.includes("interfaces.compatibility"));
 }
