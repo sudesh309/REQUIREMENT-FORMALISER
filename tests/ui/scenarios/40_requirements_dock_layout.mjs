@@ -97,7 +97,10 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await page.keyboard.press("Shift+ArrowUp");
   await settle();
   const kept = await layout();
-  expect(Math.abs(kept.dock.h - 304) <= 1, `Shift+ArrowUp: 64 px more ${show(kept)}`);
+  // 64 px more, but never beyond the largest dock this window allows (measured above): the room
+  // left depends on the toolstrip height, which depends on the fonts of the machine.
+  const wanted = Math.min(304, highest.dock.h);
+  expect(Math.abs(kept.dock.h - wanted) <= 1, `Shift+ArrowUp: 64 px more (or the maximum) ${show(kept)}`);
   fitted(kept, "after keyboard resizing");
 
   // --- Fit uses the room left above the dock ---------------------------------------------
@@ -147,7 +150,7 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await settle();
   const z = await inSight("IRS2");                                   // the selected block stays in sight
   expect(z.zoom === zoom, `the zoom is kept when the dock opens (${zoom}% -> ${z.zoom}%)`);
-  expect(Math.abs(z.dock.h - 304) <= 1, `the dock reopens at its last height (${z.dock.h})`);
+  expect(Math.abs(z.dock.h - kept.dock.h) <= 1, `the dock reopens at its last height (${z.dock.h}, was ${kept.dock.h})`);
 
   // --- the dock height is remembered across sessions ---------------------------------------
   await page.reload();
@@ -155,7 +158,7 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   await page.waitForSelector('[data-rq="dock"]:not(.rq-off)');
   await settle();
   const again = await layout();
-  expect(Math.abs(again.dock.h - 304) <= 1, `dock height remembered (${again.dock.h})`);
+  expect(Math.abs(again.dock.h - kept.dock.h) <= 1, `dock height remembered (${again.dock.h}, was ${kept.dock.h})`);
   stacked(again, "after a reload");
   fitted(again, "after a reload: the first fit uses the room above the dock");
 }
