@@ -76,6 +76,24 @@ class InterfaceToolTests(unittest.TestCase):
         r = call("sysml_make_interface_shared", port=inp, name="GpsPos", on_conflict="rename")
         self.assertEqual(r["result"]["name"], "GpsPos_1")
 
+    def test_assign_that_breaks_a_connector_reports_warnings(self):
+        out, inp = self._ports()
+        call("sysml_create_interface", name="GpsPos")
+        call("sysml_add_interface_element", interface="GpsPos", name="lat", type="double")
+        call("sysml_create_interface", name="Other")
+        call("sysml_add_interface_element", interface="Other", name="speed", type="double")
+        r = call("sysml_assign_interface", port=out, interface="GpsPos")
+        self.assertTrue(r["ok"], r)
+        self.assertNotIn("warnings", r["result"])
+        call("sysml_assign_interface", port=inp, interface="GpsPos")
+        I.connect_ports(SESSION.repo, SESSION.find(out), SESSION.find(inp))
+        r = call("sysml_assign_interface", port=inp, interface="Other")
+        self.assertTrue(r["ok"], r)                                   # the assignment succeeds
+        warnings = r["result"]["warnings"]
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("gps.pos", warnings[0])                         # names the connector
+        self.assertIn("element 'lat' is in 'GpsPos' but not in 'Other'", warnings[0])
+
     def test_errors_are_reported_not_raised(self):
         out, _ = self._ports()
         call("sysml_create_element", kind="ConnectionUsage", name="Bare", parent="Sys")

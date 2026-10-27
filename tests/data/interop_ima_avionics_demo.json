@@ -1,0 +1,3079 @@
+{
+  "elements": [
+    {
+      "class": "kerml.namespaces.Package",
+      "id": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "is_abstract": false,
+      "kind": "Package",
+      "name": "IMA Avionics Demo",
+      "owner": null,
+      "short_name": null
+    },
+    {
+      "class": "sysmlv2.definitions.PartDefinition",
+      "id": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "PartDefinition",
+      "name": "AircraftAvionics",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "a3396181-45a3-4c46-bc58-a234cfd11b24",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "ADC",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "34",
+            "dal": "A",
+            "mass": 4.2,
+            "mtbf": 20000.0,
+            "power": 30.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 160,
+          "y": 100
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "out",
+      "id": "4f6442fc-2460-43c4-9de0-95b0ba41c6c1",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "airData",
+      "owner": "a3396181-45a3-4c46-bc58-a234cfd11b24",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.5,
+          "side": "right"
+        }
+      },
+      "typed_by": [
+        "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "IRU",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "34",
+            "dal": "A",
+            "mass": 9.0,
+            "mtbf": 30000.0,
+            "power": 40.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 160,
+          "y": 260
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "out",
+      "id": "e0ef0898-d507-45e2-a0a7-0a97a383eaa5",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "inertial",
+      "owner": "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.5,
+          "side": "right"
+        }
+      },
+      "typed_by": [
+        "f1f6a8b5-d37a-496c-a914-4a0033069ae7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "dd5e0f6b-34d8-4f5b-b483-fdef65f98571",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "FMS",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "34",
+            "dal": "C",
+            "mass": 3.401942775,
+            "mtbf": 15000.0,
+            "power": 45.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 160,
+          "y": 420
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "ea9244ab-67f9-4b55-aea8-8e69bfeabe9e",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "FCC-L",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "22",
+            "dal": "A",
+            "mass": 5.5,
+            "mtbf": 40000.0,
+            "power": 35.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 480,
+          "y": 60
+        }
+      },
+      "typed_by": [
+        "d0646ff0-5905-4777-8cb3-ec24655f3ff7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "e2a7d5ab-35ee-4080-ad49-6c68d0209d22",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "PFD",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "31",
+            "dal": "A",
+            "mass": 6.0,
+            "mtbf": 25000.0,
+            "power": 60.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "h": 170,
+          "w": 210,
+          "x": 480,
+          "y": 220
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "8e76ffd9-dac9-4937-8138-beb611347492",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "airData",
+      "owner": "e2a7d5ab-35ee-4080-ad49-6c68d0209d22",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.3333,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "83081d94-f7e9-4444-befb-b199413c0af3",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "inertial",
+      "owner": "e2a7d5ab-35ee-4080-ad49-6c68d0209d22",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.6667,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "f1f6a8b5-d37a-496c-a914-4a0033069ae7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "4f6442fc-2460-43c4-9de0-95b0ba41c6c1",
+        "0b1a53f7-e99c-4b41-a087-a339c6e052f2"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "a3396181-45a3-4c46-bc58-a234cfd11b24",
+              "ea9244ab-67f9-4b55-aea8-8e69bfeabe9e"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "affcf1ec-05be-4dd4-b868-5176a1e1f705",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "4f6442fc-2460-43c4-9de0-95b0ba41c6c1",
+        "8e76ffd9-dac9-4937-8138-beb611347492"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "a3396181-45a3-4c46-bc58-a234cfd11b24",
+              "e2a7d5ab-35ee-4080-ad49-6c68d0209d22"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "bad9c1f4-fc58-4ace-9fac-12a2082c4c04",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector2",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "e0ef0898-d507-45e2-a0a7-0a97a383eaa5",
+        "9c68d491-3e0f-48d2-a248-7659f137f6ea"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4",
+              "ea9244ab-67f9-4b55-aea8-8e69bfeabe9e"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "81706f3f-06a4-474d-ac3c-3c6e697347b9",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector3",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "e0ef0898-d507-45e2-a0a7-0a97a383eaa5",
+        "83081d94-f7e9-4444-befb-b199413c0af3"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4",
+              "e2a7d5ab-35ee-4080-ad49-6c68d0209d22"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "e644c96a-4536-4663-bf4f-cc7183df6798",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector5",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "284f5a1c-7b23-4abc-8031-48eb29ae42b0",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "FCC-R",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "22",
+            "dal": "A",
+            "mass": 5.5,
+            "mtbf": 40000.0,
+            "power": 35.0
+          }
+        }
+      ],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 480,
+          "y": 460
+        }
+      },
+      "typed_by": [
+        "d0646ff0-5905-4777-8cb3-ec24655f3ff7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "4f6442fc-2460-43c4-9de0-95b0ba41c6c1",
+        "0b1a53f7-e99c-4b41-a087-a339c6e052f2"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "a3396181-45a3-4c46-bc58-a234cfd11b24",
+              "284f5a1c-7b23-4abc-8031-48eb29ae42b0"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "4eba887e-c9e6-4cb7-b49f-1ba2ad3c4a9b",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector1",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "e0ef0898-d507-45e2-a0a7-0a97a383eaa5",
+        "9c68d491-3e0f-48d2-a248-7659f137f6ea"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4",
+              "284f5a1c-7b23-4abc-8031-48eb29ae42b0"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "6ca67d17-278a-4fb0-8bbc-2e2bc662e79d",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector4",
+      "owner": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "engine.interfaces.InterfaceDictionary",
+      "id": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "is_abstract": false,
+      "kind": "InterfaceDictionary",
+      "name": "Interfaces",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null
+    },
+    {
+      "class": "sysmlv2.definitions.EnumerationDefinition",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "order": [
+              "04ccb9c0-82d8-426c-8b20-1e79320f9d62",
+              "fd8ca6fe-73f5-4dd6-81fc-0df23299cbde",
+              "fb8a9025-4ac8-4484-b6f0-f9705714bbe8",
+              "7ae3982e-8b3c-4960-93c0-737ea66ebc77"
+            ]
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "a0c8f479-7614-490d-8869-163b0868413c",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "EnumerationDefinition",
+      "name": "SSM_BNR",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": [],
+      "tool_data": {
+        "default_literal": "NO"
+      }
+    },
+    {
+      "class": "sysmlv2.definitions.EnumerationUsage",
+      "default_value": 0,
+      "direction": "none",
+      "doc": "Failure warning",
+      "id": "04ccb9c0-82d8-426c-8b20-1e79320f9d62",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "EnumerationUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "FW",
+      "owner": "a0c8f479-7614-490d-8869-163b0868413c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "a0c8f479-7614-490d-8869-163b0868413c"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.EnumerationUsage",
+      "default_value": 1,
+      "direction": "none",
+      "doc": "No computed data",
+      "id": "fd8ca6fe-73f5-4dd6-81fc-0df23299cbde",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "EnumerationUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "NCD",
+      "owner": "a0c8f479-7614-490d-8869-163b0868413c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "a0c8f479-7614-490d-8869-163b0868413c"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.EnumerationUsage",
+      "default_value": 2,
+      "direction": "none",
+      "doc": "Functional test",
+      "id": "fb8a9025-4ac8-4484-b6f0-f9705714bbe8",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "EnumerationUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "FT",
+      "owner": "a0c8f479-7614-490d-8869-163b0868413c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "a0c8f479-7614-490d-8869-163b0868413c"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.EnumerationUsage",
+      "default_value": 3,
+      "direction": "none",
+      "doc": "Normal operation",
+      "id": "7ae3982e-8b3c-4960-93c0-737ea66ebc77",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "EnumerationUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "NO",
+      "owner": "a0c8f479-7614-490d-8869-163b0868413c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "a0c8f479-7614-490d-8869-163b0868413c"
+      ]
+    },
+    {
+      "class": "engine.interfaces.ValueType",
+      "doc": "Pressure altitude, ARINC 429 label 203",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "base_type": "double",
+            "color": "#1f77b4",
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 50000,
+            "minimum": -1000,
+            "units": "ft"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "9133c467-24de-498b-bd6d-f26dd3839c4c",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "ValueType",
+      "name": "Altitude_ft",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.ValueType",
+      "doc": "Calibrated airspeed, label 206",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "base_type": "double",
+            "color": "#ff7f0e",
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 450,
+            "minimum": 0,
+            "units": "kt"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "fad99b08-ed6b-4176-a33c-8e66d2c57a6f",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "ValueType",
+      "name": "Airspeed_kt",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.ValueType",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "base_type": "double",
+            "color": "#2ca02c",
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 180,
+            "minimum": -180,
+            "units": "deg"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "2ee95159-35fd-49f5-a3e5-10d5ee81b78b",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "ValueType",
+      "name": "Angle_deg",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.ValueType",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "base_type": "double",
+            "color": "#d62728",
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 128,
+            "minimum": -128,
+            "units": "deg/s"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "20c69e41-292d-45f9-9644-126fa10c90dc",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "ValueType",
+      "name": "Rate_degps",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.DataInterface",
+      "doc": "ARINC 429 air data words from the ADC (labels 203/206/205, BNR, SSM)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "color": "#9467bd",
+            "order": [
+              "289d014f-2180-4622-a0a0-ae5a45fe3e3c",
+              "fc13583a-7021-4470-abdd-57823cd39ce6",
+              "4b8dd843-89ec-488c-9ad5-476b7085e0ea",
+              "05cbd4aa-dbb8-4c7c-971a-fbb134099f2b"
+            ]
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65",
+      "is_abstract": false,
+      "is_conjugated": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "DataInterface",
+      "name": "AirDataWord",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "289d014f-2180-4622-a0a0-ae5a45fe3e3c",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "altitude",
+      "owner": "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "9133c467-24de-498b-bd6d-f26dd3839c4c"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "fc13583a-7021-4470-abdd-57823cd39ce6",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "calibratedAirspeed",
+      "owner": "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "fad99b08-ed6b-4176-a33c-8e66d2c57a6f"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Mach number (label 205)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 1,
+            "minimum": 0,
+            "primitive_type": "double",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "4b8dd843-89ec-488c-9ad5-476b7085e0ea",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "mach",
+      "owner": "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Real"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "05cbd4aa-dbb8-4c7c-971a-fbb134099f2b",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "ssm",
+      "owner": "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "a0c8f479-7614-490d-8869-163b0868413c"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataInterface",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "color": "#8c564b",
+            "order": [
+              "8a1ce099-e65c-4784-aa45-27da1d568598",
+              "5dda4b22-75cf-453d-b609-bf15b73fe3e6",
+              "df6c5028-bed7-45b7-b915-b49f52b1bcde",
+              "603a46a8-3d0c-47c2-9b6e-185340197949",
+              "d8d66533-6ce4-4456-9851-dca8d4939230",
+              "4d50919c-f0fc-4b6c-957d-dfe1ae2d56e5"
+            ]
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "is_abstract": false,
+      "is_conjugated": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "DataInterface",
+      "name": "InertialData",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "8a1ce099-e65c-4784-aa45-27da1d568598",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "pitch",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "2ee95159-35fd-49f5-a3e5-10d5ee81b78b"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "5dda4b22-75cf-453d-b609-bf15b73fe3e6",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "roll",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "2ee95159-35fd-49f5-a3e5-10d5ee81b78b"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 360,
+            "minimum": 0,
+            "primitive_type": "double",
+            "units": "deg"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "df6c5028-bed7-45b7-b915-b49f52b1bcde",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "heading",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Real"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "603a46a8-3d0c-47c2-9b6e-185340197949",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "pitchRate",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "20c69e41-292d-45f9-9644-126fa10c90dc"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "d8d66533-6ce4-4456-9851-dca8d4939230",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "rollRate",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "20c69e41-292d-45f9-9644-126fa10c90dc"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": null,
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "4d50919c-f0fc-4b6c-957d-dfe1ae2d56e5",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "yawRate",
+      "owner": "f1f6a8b5-d37a-496c-a914-4a0033069ae7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "20c69e41-292d-45f9-9644-126fa10c90dc"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataInterface",
+      "doc": "32-bit ARINC 429 word: label, SDI, data field, SSM and parity.",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "color": "#e377c2",
+            "order": [
+              "814f12a8-d8bc-4421-81ed-f06ea2023713",
+              "9262fc47-25ca-4dff-a73e-758fb44787bb",
+              "7bf9e475-3107-4e36-baa5-a4c768435147",
+              "4a34119a-6a1f-491b-8cd6-a31733910620",
+              "27fb2c61-17e8-431f-a431-0c12ce406b87"
+            ]
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "is_abstract": false,
+      "is_conjugated": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "DataInterface",
+      "name": "A429Word",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Octal label (bits 1-8)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": "uint8",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "814f12a8-d8bc-4421-81ed-f06ea2023713",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "label",
+      "owner": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Source/destination identifier (bits 9-10)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 3,
+            "minimum": 0,
+            "primitive_type": "uint8",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "9262fc47-25ca-4dff-a73e-758fb44787bb",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "sdi",
+      "owner": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Data field (bits 11-29), BNR / BCD / discrete",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 524287,
+            "minimum": 0,
+            "primitive_type": "uint32",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "7bf9e475-3107-4e36-baa5-a4c768435147",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "data",
+      "owner": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Sign/status matrix (bits 30-31)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 3,
+            "minimum": 0,
+            "primitive_type": "uint8",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "4a34119a-6a1f-491b-8cd6-a31733910620",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "ssm",
+      "owner": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Odd parity (bit 32)",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": "boolean",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "27fb2c61-17e8-431f-a431-0c12ce406b87",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "parity",
+      "owner": "ca397b9f-60f1-4674-95df-4c9219dc798d",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Boolean"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataInterface",
+      "doc": "ARINC 664 part 7 virtual-link message.",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "color": "#17becf",
+            "order": [
+              "3cda48a9-4602-437e-b820-96a6bbd3ebdd",
+              "d5fcc0b1-4bb6-4301-81f2-d175791a0bde",
+              "132bf708-24ac-4c80-abf4-6b4724b53ce1",
+              "4f64c9b1-4b97-4e46-88ad-f6928df6fec8",
+              "bff1f694-e7b5-43cf-8ce3-e5dad6c41b8f"
+            ]
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "is_abstract": false,
+      "is_conjugated": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "DataInterface",
+      "name": "AfdxMessage",
+      "owner": "f46093f6-b8af-4e15-92f5-47c6632f6ee8",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Virtual link identifier",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": "uint16",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "3cda48a9-4602-437e-b820-96a6bbd3ebdd",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "vl_id",
+      "owner": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Bandwidth allocation gap",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 128,
+            "minimum": 1,
+            "primitive_type": "double",
+            "units": "ms"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "d5fcc0b1-4bb6-4301-81f2-d175791a0bde",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "bag",
+      "owner": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Real"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Lmax",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": 1518,
+            "minimum": 64,
+            "primitive_type": "uint16",
+            "units": "byte"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "132bf708-24ac-4c80-abf4-6b4724b53ce1",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "max_frame_size",
+      "owner": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Frame sequence number",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": "uint8",
+            "units": ""
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "4f64c9b1-4b97-4e46-88ad-f6928df6fec8",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "sequence_number",
+      "owner": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "engine.interfaces.DataElement",
+      "default_value": null,
+      "direction": "none",
+      "doc": "Application payload",
+      "ext": {
+        "interfaces": {
+          "data": {
+            "complexity": "real",
+            "dimensions": "1471",
+            "maximum": null,
+            "minimum": null,
+            "primitive_type": "uint8",
+            "units": "byte"
+          },
+          "module": "engine.interfaces"
+        }
+      },
+      "id": "bff1f694-e7b5-43cf-8ce3-e5dad6c41b8f",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "DataElement",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "payload",
+      "owner": "6f831cc2-f6b0-4d90-9436-9b8f3d41217c",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": [
+        "lib:KerML::ScalarValues::Natural"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PartDefinition",
+      "id": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "PartDefinition",
+      "name": "FlightControlComputer",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null,
+      "specializes": [],
+      "stereotypes": [
+        {
+          "stereotype": "4c44a04d-db70-49ef-83fa-336191dad106",
+          "values": {
+            "ataChapter": "",
+            "dal": "A",
+            "mass": null,
+            "mtbf": null,
+            "power": null
+          }
+        }
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "0b1a53f7-e99c-4b41-a087-a339c6e052f2",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "airData",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.3333,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "9c68d491-3e0f-48d2-a248-7659f137f6ea",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "inertial",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.6667,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "f1f6a8b5-d37a-496c-a914-4a0033069ae7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "out",
+      "id": "8a804de1-192d-482a-8e4f-4ec1ba1fb2ad",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "surfaceCmd",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.5,
+          "side": "right"
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "b6f55572-70c3-4a64-9183-07c1efec615a",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "ControlLaw",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 160,
+          "y": 60
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "66c6e1ec-13d9-4c95-800b-0d841e1bf29f",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "airData",
+      "owner": "b6f55572-70c3-4a64-9183-07c1efec615a",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.3333,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "130bfd3b-e892-4193-9a3e-c77c91525df0",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "inertial",
+      "owner": "b6f55572-70c3-4a64-9183-07c1efec615a",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.6667,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "f1f6a8b5-d37a-496c-a914-4a0033069ae7"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "out",
+      "id": "7007ee2f-22e7-48ee-8f60-62546bc557fb",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "surfaceCmd",
+      "owner": "b6f55572-70c3-4a64-9183-07c1efec615a",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.5,
+          "side": "right"
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "ee2ee871-b3fb-43f3-ae20-fd66f4d79e58",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "Monitor",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 520,
+          "y": 60
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "a1c7265d-ffc4-4151-86ff-aab13c6e29b0",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "surfaceCmd",
+      "owner": "ee2ee871-b3fb-43f3-ae20-fd66f4d79e58",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.3333,
+          "side": "left"
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PortUsage",
+      "default_value": null,
+      "direction": "in",
+      "id": "b2532dfa-2647-48af-9350-fda3b4cfa09d",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PortUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "airData",
+      "owner": "ee2ee871-b3fb-43f3-ae20-fd66f4d79e58",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "port_layout": {
+          "offset": 0.6667,
+          "side": "left"
+        }
+      },
+      "typed_by": [
+        "a67b012d-1e6f-45ba-b36c-8bd8ba4d5c65"
+      ]
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "0b1a53f7-e99c-4b41-a087-a339c6e052f2",
+        "66c6e1ec-13d9-4c95-800b-0d841e1bf29f"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              null,
+              "b6f55572-70c3-4a64-9183-07c1efec615a"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "d0d6ae23-036d-4491-915d-6fd55647a36a",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "9c68d491-3e0f-48d2-a248-7659f137f6ea",
+        "130bfd3b-e892-4193-9a3e-c77c91525df0"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              null,
+              "b6f55572-70c3-4a64-9183-07c1efec615a"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "a6caf6b3-b795-4c98-8052-0bb09d772a4b",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector1",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "7007ee2f-22e7-48ee-8f60-62546bc557fb",
+        "8a804de1-192d-482a-8e4f-4ec1ba1fb2ad"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "b6f55572-70c3-4a64-9183-07c1efec615a",
+              null
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "ad9e1736-db1e-44ce-821d-57536954fa69",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector2",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "7007ee2f-22e7-48ee-8f60-62546bc557fb",
+        "a1c7265d-ffc4-4151-86ff-aab13c6e29b0"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              "b6f55572-70c3-4a64-9183-07c1efec615a",
+              "ee2ee871-b3fb-43f3-ae20-fd66f4d79e58"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "61d2839e-f7b4-4d14-b649-18c0b3182465",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector3",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.ConnectionUsage",
+      "default_value": null,
+      "direction": "none",
+      "ends": [
+        "0b1a53f7-e99c-4b41-a087-a339c6e052f2",
+        "b2532dfa-2647-48af-9350-fda3b4cfa09d"
+      ],
+      "ext": {
+        "arch.connector": {
+          "data": {
+            "contexts": [
+              null,
+              "ee2ee871-b3fb-43f3-ae20-fd66f4d79e58"
+            ]
+          },
+          "module": "engine.architecture"
+        }
+      },
+      "id": "2c36dbcd-d229-40fd-90d1-472ca62d1217",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "ConnectionUsage",
+      "multiplicity": [
+        0,
+        null
+      ],
+      "name": "Connector4",
+      "owner": "d0646ff0-5905-4777-8cb3-ec24655f3ff7",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "kerml.stereotypes.Profile",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "Avionics LRU / IMA properties for ARP4754A budgets",
+            "root": null,
+            "source": {},
+            "version": "1.0"
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "ec907b8a-8704-4b8c-9d1b-973ebc49601c",
+      "is_abstract": false,
+      "kind": "Profile",
+      "name": "Avionics",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null
+    },
+    {
+      "applies_to": [],
+      "base": null,
+      "class": "kerml.stereotypes.Stereotype",
+      "ext": {
+        "profiles": {
+          "data": {
+            "category": "Component",
+            "defaults": {},
+            "description": "Line Replaceable Unit",
+            "order": [
+              "19eee7ec-fbc1-428d-b47c-9e43ee7f4931",
+              "a8cd2c72-5a8d-4676-aaa2-9279e06af777",
+              "d377b33d-52f6-4370-aa02-b037f34389da",
+              "3b61dd89-c760-436b-8d61-f41c40293ea7",
+              "e9cac972-accc-4f13-85e6-bcbbdf0f1a84"
+            ],
+            "style": {}
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "is_abstract": false,
+      "kind": "Stereotype",
+      "name": "LRU",
+      "owner": "ec907b8a-8704-4b8c-9d1b-973ebc49601c",
+      "short_name": null
+    },
+    {
+      "class": "kerml.stereotypes.StereotypeTag",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "Installed mass",
+            "literals": [],
+            "max": null,
+            "min": 0,
+            "type": "double",
+            "unit": "kg"
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "19eee7ec-fbc1-428d-b47c-9e43ee7f4931",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "kind": "StereotypeTag",
+      "multiplicity": [
+        0,
+        1
+      ],
+      "name": "mass",
+      "owner": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "kerml.stereotypes.StereotypeTag",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "Steady-state power, 28 VDC",
+            "literals": [],
+            "max": null,
+            "min": 0,
+            "type": "double",
+            "unit": "W"
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "a8cd2c72-5a8d-4676-aaa2-9279e06af777",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "kind": "StereotypeTag",
+      "multiplicity": [
+        0,
+        1
+      ],
+      "name": "power",
+      "owner": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "kerml.stereotypes.StereotypeTag",
+      "default_value": "A",
+      "direction": "none",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "Development Assurance Level (ARP4754A)",
+            "literals": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E"
+            ],
+            "max": null,
+            "min": null,
+            "type": "enumeration",
+            "unit": ""
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "d377b33d-52f6-4370-aa02-b037f34389da",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "kind": "StereotypeTag",
+      "multiplicity": [
+        0,
+        1
+      ],
+      "name": "dal",
+      "owner": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "kerml.stereotypes.StereotypeTag",
+      "default_value": "",
+      "direction": "none",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "ATA iSpec 2200 chapter",
+            "literals": [],
+            "max": null,
+            "min": null,
+            "type": "string",
+            "unit": ""
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "3b61dd89-c760-436b-8d61-f41c40293ea7",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "kind": "StereotypeTag",
+      "multiplicity": [
+        0,
+        1
+      ],
+      "name": "ataChapter",
+      "owner": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "kerml.stereotypes.StereotypeTag",
+      "default_value": null,
+      "direction": "none",
+      "ext": {
+        "profiles": {
+          "data": {
+            "description": "Mean time between failures",
+            "literals": [],
+            "max": null,
+            "min": 0,
+            "type": "double",
+            "unit": "h"
+          },
+          "module": "engine.profiles"
+        }
+      },
+      "id": "e9cac972-accc-4f13-85e6-bcbbdf0f1a84",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "kind": "StereotypeTag",
+      "multiplicity": [
+        0,
+        1
+      ],
+      "name": "mtbf",
+      "owner": "4c44a04d-db70-49ef-83fa-336191dad106",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "typed_by": []
+    },
+    {
+      "class": "engine.requirements.RequirementSet",
+      "doc": "Aircraft-level avionics system requirements (ARP4754A)",
+      "ext": {
+        "requirements": {
+          "data": {
+            "order": [
+              "4764c9e7-4559-4187-8690-5fd24343c326",
+              "1206d202-447a-4e35-b2a3-edf7e76ff95f",
+              "fc62ac74-a9c5-46e1-9de4-a056a6b0dd96"
+            ],
+            "prefix": "REQ-"
+          },
+          "module": "engine.requirements"
+        }
+      },
+      "id": "700ce9ac-049f-4b1d-932d-1fb92290f267",
+      "is_abstract": false,
+      "kind": "RequirementSet",
+      "name": "System Requirements",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null
+    },
+    {
+      "class": "sysmlv2.definitions.RequirementDefinition",
+      "ext": {
+        "requirements": {
+          "data": {
+            "priority": "high",
+            "rationale": "Dual FCC architecture needs independent air data.",
+            "req_status": "approved",
+            "req_type": "functional",
+            "verification_method": "test"
+          },
+          "module": "engine.requirements"
+        }
+      },
+      "id": "4764c9e7-4559-4187-8690-5fd24343c326",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "RequirementDefinition",
+      "name": "Air data distribution",
+      "owner": "700ce9ac-049f-4b1d-932d-1fb92290f267",
+      "req_id": "REQ-001",
+      "short_name": null,
+      "specializes": [],
+      "text": "The system shall provide air data to both flight control computers"
+    },
+    {
+      "class": "sysmlv2.definitions.RequirementDefinition",
+      "ext": {
+        "requirements": {
+          "data": {
+            "priority": "high",
+            "rationale": "Control law stability margin.",
+            "req_status": "approved",
+            "req_type": "performance",
+            "verification_method": "analysis"
+          },
+          "module": "engine.requirements"
+        }
+      },
+      "id": "1206d202-447a-4e35-b2a3-edf7e76ff95f",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "RequirementDefinition",
+      "name": "Air data latency",
+      "owner": "700ce9ac-049f-4b1d-932d-1fb92290f267",
+      "req_id": "REQ-002",
+      "short_name": null,
+      "specializes": [],
+      "text": "Air data latency from sensor sampling to FCC input shall not exceed 40 ms"
+    },
+    {
+      "class": "sysmlv2.definitions.RequirementDefinition",
+      "ext": {
+        "requirements": {
+          "data": {
+            "priority": "high",
+            "rationale": "Hazardously misleading attitude is catastrophic (FHA).",
+            "req_status": "approved",
+            "req_type": "safety",
+            "verification_method": "inspection"
+          },
+          "module": "engine.requirements"
+        }
+      },
+      "id": "fc62ac74-a9c5-46e1-9de4-a056a6b0dd96",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "RequirementDefinition",
+      "name": "Attitude display integrity",
+      "owner": "700ce9ac-049f-4b1d-932d-1fb92290f267",
+      "req_id": "REQ-003",
+      "short_name": null,
+      "specializes": [],
+      "text": "The PFD shall display attitude with DAL A integrity"
+    },
+    {
+      "class": "sysmlv2.definitions.PartDefinition",
+      "id": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+      "is_abstract": false,
+      "is_individual": false,
+      "is_variation": false,
+      "kind": "PartDefinition",
+      "name": "AvionicsFunctions",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null,
+      "specializes": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "486ae7d8-66cc-4673-af41-c1ee96bb8e3f",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "Compute Air Data",
+      "owner": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 80,
+          "y": 70
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "297dea9f-30ba-41ee-98f7-cf349ee3d83c",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "Compute Attitude",
+      "owner": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 310,
+          "y": 40
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "8273ac7d-dedc-4a19-900a-abc4cb63dde8",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "Flight Control Laws",
+      "owner": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 550,
+          "y": 40
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "sysmlv2.definitions.PartUsage",
+      "default_value": null,
+      "direction": "none",
+      "id": "5116fa30-eed4-495e-9d57-3ada368bf701",
+      "is_abstract": false,
+      "is_composite": false,
+      "is_derived": false,
+      "is_end": false,
+      "is_readonly": false,
+      "is_reference": false,
+      "is_variant": false,
+      "kind": "PartUsage",
+      "multiplicity": [
+        1,
+        1
+      ],
+      "name": "Display Primary Flight Data",
+      "owner": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+      "portion_kind": "none",
+      "redefines": [],
+      "short_name": null,
+      "specializes": [],
+      "subsets": [],
+      "tool_data": {
+        "layout": {
+          "x": 810,
+          "y": 40
+        }
+      },
+      "typed_by": []
+    },
+    {
+      "class": "kerml.namespaces.Package",
+      "id": "07b7d080-1073-4c8e-8bc6-fa4f3731132f",
+      "is_abstract": false,
+      "kind": "Package",
+      "name": "Allocations",
+      "owner": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.AllocationSet",
+      "doc": "Function to LRU allocation (ARP4754A)",
+      "ext": {
+        "allocation": {
+          "data": {
+            "require_complete_coverage": true,
+            "source": "ed4d2948-ac53-4bf3-8a45-8918b5d102bf",
+            "target": "a19ca134-3c51-41ee-9f58-bd5c8c2bdc83"
+          },
+          "module": "engine.allocation"
+        }
+      },
+      "id": "d6414fca-f586-4d0b-80dc-fb0968f877a6",
+      "is_abstract": false,
+      "kind": "AllocationSet",
+      "name": "F2L",
+      "owner": "07b7d080-1073-4c8e-8bc6-fa4f3731132f",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.AllocationScenario",
+      "id": "0c0dd961-5f11-4d9b-8c2d-aef5219578f7",
+      "is_abstract": false,
+      "kind": "AllocationScenario",
+      "name": "Scenario 1",
+      "owner": "d6414fca-f586-4d0b-80dc-fb0968f877a6",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.ArchitectureAllocation",
+      "ext": {
+        "allocation": {
+          "data": {
+            "source": "486ae7d8-66cc-4673-af41-c1ee96bb8e3f",
+            "target": "a3396181-45a3-4c46-bc58-a234cfd11b24"
+          },
+          "module": "engine.allocation"
+        }
+      },
+      "id": "80fc8622-196d-4c15-886c-2a36374c6acc",
+      "is_abstract": false,
+      "kind": "Allocation",
+      "name": null,
+      "owner": "0c0dd961-5f11-4d9b-8c2d-aef5219578f7",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.ArchitectureAllocation",
+      "ext": {
+        "allocation": {
+          "data": {
+            "source": "297dea9f-30ba-41ee-98f7-cf349ee3d83c",
+            "target": "7ce211fe-a194-4ac0-82ed-d0a914d5fcc4"
+          },
+          "module": "engine.allocation"
+        }
+      },
+      "id": "903632cc-c3de-4995-8169-adbc04aaaf50",
+      "is_abstract": false,
+      "kind": "Allocation",
+      "name": null,
+      "owner": "0c0dd961-5f11-4d9b-8c2d-aef5219578f7",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.ArchitectureAllocation",
+      "ext": {
+        "allocation": {
+          "data": {
+            "source": "8273ac7d-dedc-4a19-900a-abc4cb63dde8",
+            "target": "b6f55572-70c3-4a64-9183-07c1efec615a"
+          },
+          "module": "engine.allocation"
+        }
+      },
+      "id": "c8888807-5282-4be8-be36-532263903a67",
+      "is_abstract": false,
+      "kind": "Allocation",
+      "name": null,
+      "owner": "0c0dd961-5f11-4d9b-8c2d-aef5219578f7",
+      "short_name": null
+    },
+    {
+      "class": "engine.allocation.ArchitectureAllocation",
+      "ext": {
+        "allocation": {
+          "data": {
+            "source": "5116fa30-eed4-495e-9d57-3ada368bf701",
+            "target": "e2a7d5ab-35ee-4080-ad49-6c68d0209d22"
+          },
+          "module": "engine.allocation"
+        }
+      },
+      "id": "b4ed33b9-ded4-4d7e-a894-df9945114007",
+      "is_abstract": false,
+      "kind": "Allocation",
+      "name": null,
+      "owner": "0c0dd961-5f11-4d9b-8c2d-aef5219578f7",
+      "short_name": null
+    }
+  ],
+  "ext": {
+    "requirements-links": {
+      "data": {
+        "5e81f0cc-c149-4380-957c-72f88dadb9ac": {
+          "source": null,
+          "target": "80145a3c5e5d7b09"
+        },
+        "74182c13-b6fd-4603-bc45-5d9c160b87f4": {
+          "source": null,
+          "target": "0a12d57b83c73cae"
+        },
+        "97d2d50d-7935-4cde-9c50-ebf553083868": {
+          "source": null,
+          "target": "0a12d57b83c73cae"
+        },
+        "e04c3857-9aa8-4769-9bad-ac0cc04ac637": {
+          "source": null,
+          "target": "1a63708c0a9f9329"
+        }
+      },
+      "module": "engine.requirements"
+    }
+  },
+  "format": "sysmlv2-core/1",
+  "links": [
+    {
+      "class": "sysmlv2.relationships.Satisfy",
+      "id": "5e81f0cc-c149-4380-957c-72f88dadb9ac",
+      "source": "a3396181-45a3-4c46-bc58-a234cfd11b24",
+      "target": "4764c9e7-4559-4187-8690-5fd24343c326"
+    },
+    {
+      "class": "sysmlv2.relationships.Satisfy",
+      "id": "97d2d50d-7935-4cde-9c50-ebf553083868",
+      "source": "a3396181-45a3-4c46-bc58-a234cfd11b24",
+      "target": "1206d202-447a-4e35-b2a3-edf7e76ff95f"
+    },
+    {
+      "class": "sysmlv2.relationships.Satisfy",
+      "id": "74182c13-b6fd-4603-bc45-5d9c160b87f4",
+      "source": "ea9244ab-67f9-4b55-aea8-8e69bfeabe9e",
+      "target": "1206d202-447a-4e35-b2a3-edf7e76ff95f"
+    },
+    {
+      "class": "sysmlv2.relationships.Satisfy",
+      "id": "e04c3857-9aa8-4769-9bad-ac0cc04ac637",
+      "source": "e2a7d5ab-35ee-4080-ad49-6c68d0209d22",
+      "target": "fc62ac74-a9c5-46e1-9de4-a056a6b0dd96"
+    }
+  ],
+  "name": "IMA Avionics Demo",
+  "root": "2fe1287e-c0ea-4e79-9a45-abb5d7770bd0"
+}

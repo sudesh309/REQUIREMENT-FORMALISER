@@ -133,7 +133,7 @@ opens the architecture you last viewed (else the first one with components).
 | Delete | **Delete** / Backspace, the toolstrip or the context menu (no confirmation: undo with Ctrl+Z) |
 | Undo / redo | **Undo / Redo** in the canvas toolstrip (tooltips name the step) or Ctrl+Z / Ctrl+Y |
 | Arrange | **Arrange**: left-to-right layers following the data flow, then fit to view. Cycles (bidirectional A429 / AFDX links) are broken with as few backward connectors as possible, so they never create one layer per block; big networks wrap their layers into bands (like lines of text, at most ⌈√n⌉ + 2 layers side by side) shaped for the canvas, so 30 LRUs with 90 connectors fit a 1400 × 900 window at about 40 % zoom. Small diagrams keep one row |
-| Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool |
+| Zoom and pan | Mouse wheel (around the pointer), **− / 100% / +**, **Fit** (or tap **Space**); pan by dragging with **Space** held, the middle button or the **Pan** hand tool. When the canvas changes size (the Requirements Perspective docked below opens, closes or is resized, the Inspector, the output pane, the window) a fitted view is fitted again; a zoomed or panned one keeps its zoom and the selected block in sight. The status bar is a strip under the drawing, never over it |
 | Inspect and edit properties | The **Inspector** dock edits the selection: a component's name, reference, ports (name, direction, kind), size; a port's name, direction, kind, interface (SysML definitions and the interface dictionary's interfaces and value types), side; a connector's name, ends, interfaces, problems, route; or, with nothing selected, the composition's summary. Its **Stereotypes** section applies stereotypes (*Add stereotype…* lists the applicable, non-abstract ones), removes them (✕) and edits their values in place with the Properties tab's typed editors and checks: number with unit and expression (`2*1.5`, `3 lb`), enumeration list, checkbox, text; a refused value is marked in red with the reason and not stored. With several components selected it works on all of them: values that differ show as *mixed*, typing a value sets it on every component, *Apply to all* completes a stereotype found on some of them, ✕ removes it from all; each edit is one undo step and a value refused for one component is stored for none. *Properties tab ↗* opens the full studio inspector |
 | Context menu | Right-click anything, or **Shift+F10** / the Menu key for the selection; arrow keys move in the menu |
 
@@ -158,7 +158,7 @@ opens the architecture you last viewed (else the first one with components).
 | Frame | the composition being viewed with its name, stereotypes and kind (architecture, inline component, or `: Definition — shared by n`); its own ports sit on its edges as boundary ports, labels outside |
 | Component | rounded block: «stereotypes» above the bold name, `: Definition` below it for a reference component plus a link marker bottom-left, a hierarchy marker top-right when it has sub-components, other badges (e.g. `SM`, profile badges) as pills; fill / stroke / text colour / dash / short icon from the element summary `style`. The name is never cut while it can be shown whole: it is centred on one line, else wrapped to two lines at a word, `_`, `-` or camelCase boundary, else moved above the port labels to the top of the block (unless ports sit on the top edge); automatic block sizes leave room for the name, the definition name and the port labels (11.5 px) up to 320 px |
 | Port | glyph on the block edge: input = hollow arrow pointing in, output = filled arrow pointing out, inout = double arrow, physical = diamond, client = circle, server = square; coloured by its interface (`style.stroke` from profiles/interfaces, else a stable colour per interface name); name inside the block |
-| Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); invalid stored connectors are red and dashed with the problem as tooltip |
+| Connector | orthogonal elbow line; data with an arrowhead, physical thicker without one, client/server dashed; label = interface name(s), prefixed by a user-given name (`airBus : AirData`); a connector with a problem (an invalid stored connector, or ports whose interfaces are incompatible: System Composer lets you draw it, so the studio creates it and warns) is red, dashed and thicker, its label starts with ⚠ and the problems are the tooltip; the Property Inspector lists them under *Problems*. A port's tooltip names its interface (`Interface: AirDataWord`, or `none`) |
 
 ### Working with other features
 
@@ -312,6 +312,12 @@ Element JSON (`GET /api/element/<id>`) gains `badges` (`ref`/`inline`,
                   "interfaces": ["AirData"], "points": null, "issues": []}]
 }
 ```
+
+A connector's `issues` are its structural problems followed by the warnings other features
+register with `engine.structure.register_connector_warning_source` (the interfaces feature adds
+`Incompatible interfaces A → B: reason; …`); `POST /api/arch/connector` also answers `warnings`
+(`Connector ADC.airData → FMS.air: …`) and `PATCH /api/arch/port/<id>` answers `warnings` when the edit left
+a connector with a problem it did not have before; the studio shows them as a toast and an Output line.
 
 A connector's `label` is what System Composer draws on the line: its interface
 name(s), prefixed SysML-style by a name you gave it (`airBus : AirData`);

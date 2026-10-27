@@ -44,7 +44,9 @@ class ExportTests(unittest.TestCase):
 
     def test_sheets_and_headers(self):
         self.assertEqual(list(self.sheets), ["Model", "Profiles", "Components", "Ports", "Interfaces",
-                                             "Connections", "Requirements", "Elements", "Links"])
+                                             "Connections", "Requirements", "Elements", "Links",
+                                             "Tool Data"])
+        self.assertEqual(self.sheets["Tool Data"][0], ["ID", "Name", "Kind", "Key", "Value"])
         self.assertEqual(self.sheets["Components"][0][:7],
                          ["ID", "Name", "Kind", "Parent ID", "Parent", "Reference ID", "Reference"])
         # Named as engine.profiles names the stereotype: «LRU» lives in a plain package.

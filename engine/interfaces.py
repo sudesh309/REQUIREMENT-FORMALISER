@@ -51,7 +51,10 @@ from .hooks import notify_created, register_created_hook
 from .properties import register_scalar_property
 from .repository import register_removal_hook
 from .serializer import register_codec
-from .structure import components_of, connectors_of, definition_of, owning_component, ports_of
+from .structure import (
+    components_of, connectors_of, definition_of, owning_component, ports_of,
+    register_connector_warning_source,
+)
 from .validator import Severity, ValidationIssue, register_repo_rule
 
 Resolver = Callable[[str], Optional[Element]]
@@ -2551,6 +2554,16 @@ def _on_removed(repo, removed: set[int]) -> None:
                 e.tool_data.pop("default_literal", None)
 
 
+def incompatibility_warnings(conn: Element) -> list[str]:
+    """The canvas / port-edit warning about a connector whose interfaces are incompatible
+    (``Incompatible interfaces AirDataWord → InertialData: element 'x' is missing …``)."""
+    reasons = connector_compatibility(conn)
+    if not reasons:
+        return []
+    names = [getattr(interface_of(p), "name", None) or "(none)" for p in conn.ends[:2]]
+    return [f"Incompatible interfaces {names[0]} → {names[1]}: {'; '.join(reasons)}"]
+
+
 _INSTALLED = False
 
 
@@ -2559,6 +2572,7 @@ def install() -> None:
     global _INSTALLED
     from . import hooks, repository, validator
     register_codec("interfaces", _encode, _decode)          # replaces by name
+    register_connector_warning_source(incompatibility_warnings)   # idempotent
     if validate_repo not in validator._REPO_RULES:
         register_repo_rule(validate_repo)
     if _on_created not in hooks._CREATED_HOOKS:

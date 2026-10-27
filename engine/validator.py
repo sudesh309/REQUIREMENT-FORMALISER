@@ -20,8 +20,6 @@ from sysmlv2.definitions import (
     PortUsage,
     RequirementDefinition,
     RequirementUsage,
-    StateUsage,
-    TransitionUsage,
     Usage,
 )
 
@@ -58,6 +56,16 @@ def register_rule(fn: Callable[[Element], Iterable["ValidationIssue"]]) -> None:
 
 def register_repo_rule(fn: Callable[["Repository"], Iterable["ValidationIssue"]]) -> None:
     _REPO_RULES.append(fn)
+
+
+def element_label(e: Element) -> str:
+    """How an issue message names an element: ``'ADIRU'``, a requirement's id, or the kind
+    and owner of an unnamed element (``unnamed ConnectionUsage in 'FlightDeck'``)."""
+    name = e.name or getattr(e, "req_id", None)
+    if name:
+        return repr(name)
+    owner = e.owner.name if e.owner is not None and e.owner.name else None
+    return f"unnamed {e.kind}" + (f" in {owner!r}" if owner else "")
 
 
 class Validator:
@@ -114,14 +122,19 @@ class Validator:
     def _rule_feature_typed(self, f: Feature) -> list[ValidationIssue]:
         if f.is_abstract or f.feature_typings:
             return []
-        # States, transitions and stereotype tags are legitimately untyped.
-        if isinstance(f, (StateUsage, TransitionUsage, StereotypeTag)):
+        # A SysML usage without a definition is implicitly typed by its library base
+        # (Parts::Part, Ports::Port, Connections::Connection, Actions::Action,
+        # Attributes::AttributeValue, ...), so inline components, connectors, ports without
+        # an interface, inline functions, states and transitions are ordinary models, not
+        # gaps; untyped ports have their own rule (port.typed). Stereotype tags are typed
+        # by their property type. Only a plain KerML feature really defaults to Anything.
+        if isinstance(f, (Usage, StereotypeTag)):
             return []
         if isinstance(f, Type) and f.specializations:
             return []
         return [ValidationIssue(
             Severity.WARNING, "feature.typed",
-            "Feature has no FeatureTyping (will default to Anything)",
+            f"Feature {element_label(f)} has no type (it defaults to Anything)",
             f,
         )]
 
@@ -129,10 +142,11 @@ class Validator:
         m = f.multiplicity
         if m.lower < 0:
             return [ValidationIssue(Severity.ERROR, "multiplicity.lower",
-                                    "Lower bound must be >= 0", f)]
+                                    f"Lower bound of {element_label(f)} must be >= 0", f)]
         if m.upper is not None and m.upper < m.lower:
             return [ValidationIssue(Severity.ERROR, "multiplicity.upper",
-                                    "Upper bound must be >= lower bound", f)]
+                                    f"Upper bound of {element_label(f)} must be >= its lower "
+                                    f"bound ({m.lower})", f)]
         return []
 
     def _rule_redefinition_conformance(self, f: Feature) -> list[ValidationIssue]:
@@ -145,8 +159,8 @@ class Validator:
                 if not any(t.conforms_to(t_red) for t in f.types):
                     issues.append(ValidationIssue(
                         Severity.ERROR, "redefinition.conformance",
-                        f"Redefining feature must be typed by a subtype of "
-                        f"{t_red.qualified_name!r}", f,
+                        f"{element_label(f)} redefines {element_label(redefined)}, so it must be "
+                        f"typed by a subtype of {t_red.qualified_name!r}", f,
                     ))
         return issues
 
@@ -160,7 +174,9 @@ class Validator:
             return []
         return [ValidationIssue(
             Severity.WARNING, "usage.typing",
-            "Usage is typically typed by a SysML Definition",
+            f"{u.kind} {element_label(u)} is typed by "
+            f"{', '.join(repr(t.name or t.kind) for t in u.types)}; a usage is typically typed "
+            "by a SysML definition",
             u,
         )]
 
@@ -169,7 +185,7 @@ class Validator:
             return []
         return [ValidationIssue(
             Severity.ERROR, "connection.ends",
-            f"ConnectionUsage must have at least 2 ends (has {len(c.ends)})", c,
+            f"Connector {element_label(c)} must have at least 2 ends (has {len(c.ends)})", c,
         )]
 
     def _rule_port_has_definition(self, p: PortUsage) -> list[ValidationIssue]:
@@ -177,7 +193,8 @@ class Validator:
             return []
         return [ValidationIssue(
             Severity.WARNING, "port.typed",
-            "PortUsage should be typed by a PortDefinition", p,
+            f"Port {element_label(p)} has no interface (it should be typed by a port "
+            "definition)", p,
         )]
 
     def _rule_requirement_has_text_or_constraint(self, r) -> list[ValidationIssue]:
@@ -187,5 +204,5 @@ class Validator:
             return []
         return [ValidationIssue(
             Severity.INFO, "requirement.empty",
-            "Requirement has neither text nor required constraints", r,
+            f"Requirement {element_label(r)} has neither text nor required constraints", r,
         )]

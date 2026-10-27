@@ -73,6 +73,7 @@ from engine import (
     to_json,
 )
 from engine.hooks import notify_created
+from engine.structure import connector_warning_snapshot, new_connector_warnings
 from engine.validator import Severity
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
@@ -101,7 +102,7 @@ from sysmlv2.state_machines import (
 from webapp import routes as _route_plugins
 from webapp.core import (
     KIND_REGISTRY, PLUGIN_ROUTES, SESSION, Body, Session, apply_props, begin_mutation,
-    reset_session, summarize, tree,
+    encode_notices, reset_session, start_notices, summarize, take_notices, tree, warn_user,
 )
 from webapp.core import err as _err, ok as _ok
 
@@ -196,11 +197,18 @@ def api_update_element(req: dict, eid: str) -> Body:
     e = SESSION.find(eid)
     if e is None:
         return _err(f"{eid!r} not found", 404)
+    props = (req.get("body") or {}).get("props") or {}
+    # Typing a port by another interface can leave a connector with a problem: say so.
+    watch = isinstance(e, PortUsage) and "typed_by" in props
+    before = connector_warning_snapshot(SESSION.repo, e) if watch else {}
     try:
-        apply_props(e, (req.get("body") or {}).get("props") or {})
+        apply_props(e, props)
     except ValueError as ex:
         return _err(str(ex))
-    return _ok(summarize(e))
+    out = summarize(e)
+    if watch:
+        warn_user(out, new_connector_warnings(SESSION.repo, e, before))
+    return _ok(out)
 
 
 def api_delete_element(req: dict, eid: str) -> Body:
@@ -489,6 +497,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not m:
                 continue
             finish = None
+            start_notices()
             try:
                 body = None
                 if method in ("POST", "PATCH", "PUT", "DELETE"):
@@ -510,6 +519,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     finish(status, payload)
                 except Exception:  # noqa: BLE001 - the edit itself succeeded; say so
                     traceback.print_exc()
+            notices = take_notices()
             data = json.dumps(payload, default=str).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -517,6 +527,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             # Lets the studio notice any model change, whichever request made it.
             self.send_header("X-Model-Revision", str(SESSION.revision))
+            if notices and status < 400:   # warnings the request itself raised (webapp.core.add_notice)
+                self.send_header("X-Studio-Notices", encode_notices(notices))
             self.end_headers()
             self.wfile.write(data)
             return

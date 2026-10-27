@@ -9,8 +9,10 @@ Rule                               Severity  Reports
 =================================  ========  ===================================================
 ``advisor.empty-composition``      info      an architecture / component with no components,
                                              ports or connectors (and no reference definition)
-``advisor.unconnected-port``       warning   a component port no connector uses (in the
-                                             composition, or inside the component)
+``advisor.unconnected-port``       warning   a component port not wired in the composition
+                                             holding the component (per usage of a reference
+                                             component), or a port of a composition with
+                                             sub-components that none of them is wired to
 ``advisor.duplicate-name``         warning   sibling components / ports whose names differ only
                                              by case, or a usage port that repeats a port of
                                              its definition
@@ -45,7 +47,9 @@ RULES: dict[str, dict] = {
         "description": "Architecture or component with no components, ports or connectors."},
     "advisor.unconnected-port": {
         "title": "Unconnected port", "severity": "warning",
-        "description": "A component port that no connector uses."},
+        "description": "A component port not wired in the composition that holds the "
+                       "component (checked per usage of a reference component), or a port of "
+                       "a composition that none of its components is wired to."},
     "advisor.duplicate-name": {
         "title": "Duplicate sibling name", "severity": "warning",
         "description": "Sibling components or ports whose names collide (ignoring case), "
@@ -63,7 +67,9 @@ CORE_RULES: dict[str, dict] = {
     "name.unique": {"title": "Unique member names", "severity": "error",
                     "description": "Members of a namespace must have distinct names."},
     "feature.typed": {"title": "Typed feature", "severity": "warning",
-                      "description": "A feature should be typed."},
+                      "description": "A plain KerML feature should be typed (it defaults to "
+                                     "Anything); SysML usages such as components, ports and "
+                                     "connectors default to their library definition."},
     "multiplicity.lower": {"title": "Multiplicity lower bound", "severity": "error",
                            "description": "Lower bound must be >= 0."},
     "multiplicity.upper": {"title": "Multiplicity upper bound", "severity": "error",
@@ -168,27 +174,31 @@ def _ends(conns: list[ConnectionUsage]) -> list[tuple[Optional[Element], Element
 
 
 def check_unconnected_ports(repo) -> Iterator[ValidationIssue]:
-    """Repo-level advisor check: component and boundary ports nothing is connected to."""
+    """Repo-level advisor check: ports nothing is connected to, judged level by level.
+
+    A component's port must be wired in the composition that holds the component; a
+    connection inside the component (delegation to its parts) does not wire it to its
+    neighbours. Reference components are judged per usage: FCC-L and FCC-R of one
+    definition are reported separately, on the usage (the port itself belongs to the
+    shared definition). A composition with sub-components (architecture, definition or
+    inline component) must also wire each of its own ports to one of them.
+    """
     for comp in _compositions(repo):
         subs = components_of(comp)
         if not subs:
             continue
         ends = _ends(connectors_of(comp))
         for c in subs:
-            inner = {id(end) for _ctx, end in _ends(connectors_of(c))}
             for p in ports_of(c):
-                used = id(p) in inner or any(end is p and (ctx is None or ctx is c)
-                                             for ctx, end in ends)
-                if not used:
+                if not any(end is p and (ctx is None or ctx is c) for ctx, end in ends):
                     yield _issue(Severity.WARNING, "advisor.unconnected-port",
                                  f"Port {c.name}.{p.name} is not connected in "
-                                 f"{comp.name or comp.kind}", p)
-        if isinstance(comp, PartDefinition):
-            for p in ports_of(comp):
-                if p.owner is comp and not any(end is p for _ctx, end in ends):
-                    yield _issue(Severity.WARNING, "advisor.unconnected-port",
-                                 f"Boundary port {comp.name}.{p.name} is not connected to any "
-                                 "component", p)
+                                 f"{comp.name or comp.kind}", p if p.owner is c else c)
+        for p in ports_of(comp):
+            if p.owner is comp and not any(end is p for _ctx, end in ends):
+                yield _issue(Severity.WARNING, "advisor.unconnected-port",
+                             f"Boundary port {comp.name}.{p.name} is not connected to any "
+                             "component", p)
 
 
 def install() -> None:
