@@ -112,7 +112,9 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   await until(() => document.querySelector('.arch-dock [data-path="Avionics.LRU.mass"]')?.value === "4.54");
   expect(await page.inputValue(dmass) === "4.54", "rounded when not focused");
   expect((await page.$eval(dmass, e => e.title)).includes("4.5359237 kg"), "the tooltip has the stored precision");
-  expect((await page.textContent(".arch-dock [data-st-msg]")).includes("4.54 kg"), "the message gives the rounded value");
+  const msg = await page.textContent(".arch-dock [data-st-msg]");
+  expect(msg.includes("4.54 kg") && msg.includes("entered as 10 lb"), `the message gives the rounded value and what was typed: ${msg}`);
+  expect((await page.getAttribute(dmass, "placeholder")).includes("(e.g. 3 lb)"), "the field says which units it accepts");
   expect((await page.textContent('.arch-dock [data-path="Avionics.LRU.mass"] + .pf-unit')) === "kg", "the unit is shown next to it");
   await page.focus(dmass);
   expect(await page.inputValue(dmass) === "4.5359237", "the focused field shows the stored precision");

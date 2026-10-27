@@ -258,11 +258,11 @@ def tool_get_stereotype_properties(target: str, property: Optional[str] = None) 
 
 def tool_batch_apply_stereotype(stereotype: str, scope: str = "model", ids: Optional[list] = None,
                                 root: Optional[str] = None, category: Optional[str] = None,
-                                values: Optional[dict] = None) -> dict:
+                                values: Optional[dict] = None, dry_run: bool = False) -> dict:
     def run():
         repo = _repo()
         return P.batch_apply(repo, P.find_stereotype(repo, stereotype), scope=scope, root=root,
-                             elements=ids, category=category, values=values)
+                             elements=ids, category=category, values=values, dry_run=dry_run)
     return _call(run)
 
 
@@ -427,12 +427,17 @@ TOOLS: list[dict] = [
      "handler": tool_get_stereotype_properties},
     {"name": "sysml_batch_apply_stereotype",
      "description": "Apply a stereotype to every matching element of a scope: 'selection' (ids), "
-                    "'composition' (root and everything inside it) or 'model'; category narrows the "
-                    "candidates; optional initial values.",
+                    "'composition' (everything the root owns: its components, ports and connectors; "
+                    "not the root itself and not the internals of referenced definitions: select those "
+                    "explicitly) or 'model'; category narrows the candidates; optional initial values. "
+                    "Elements that already carry the stereotype, or inherit it from their definition, "
+                    "are skipped. dry_run=true changes nothing and reports how many elements would "
+                    "get it (count, preview, skipped_by_reason).",
      "inputSchema": _schema({"stereotype": {"type": "string"}, "scope": {"type": "string"},
                              "ids": {"type": "array", "items": {"type": "string"}},
                              "root": {"type": "string"}, "category": {"type": "string"},
-                             "values": {"type": "object"}}, ["stereotype"]),
+                             "values": {"type": "object"}, "dry_run": {"type": "boolean"}},
+                            ["stereotype"]),
      "handler": tool_batch_apply_stereotype},
     {"name": "sysml_export_profile",
      "description": "Export a profile as a standalone JSON profile file (returned as text, or "

@@ -176,7 +176,7 @@ class ProfilesHttpTests(WebAppTestCase):
         self.assertEqual(out["applied"], [self.fmc["id"]])
         out = self.call("POST", f"/api/stereotypes/{lru['id']}/batch",
                         {"scope": "composition", "root": self.arch["id"]})
-        self.assertEqual(set(out["applied"]), {self.arch["id"], other["id"]})
+        self.assertEqual(set(out["applied"]), {other["id"]})      # not the composition itself (SU-7)
         self.assertEqual(out["skipped"][0]["reason"], "already applied")
         self.call("POST", f"/api/stereotypes/{lru['id']}/batch", {"scope": "selection", "ids": []}, expect=400)
 

@@ -545,7 +545,8 @@ class BatchTests(unittest.TestCase):
 
     def test_composition_and_selection_scopes(self):
         out = P.batch_apply(self.repo, self.lru, scope="composition", root=self.arch.element_id)
-        self.assertEqual({self.repo.by_id(i).name for i in out["applied"]}, {"AvSystem", "FMC", "ADC"})
+        # SU-7: the elements inside the composition, not the composition itself
+        self.assertEqual({self.repo.by_id(i).name for i in out["applied"]}, {"FMC", "ADC"})
         out = P.batch_apply(self.repo, self.port, scope="selection",
                             elements=[self.p.element_id, self.other_c.element_id])
         self.assertEqual(out["applied"], [self.p.element_id])

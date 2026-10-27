@@ -56,7 +56,7 @@ __all__ = [
     "apply_stereotype", "remove_stereotype", "remove_all_stereotypes",
     "own_application", "set_property_value", "set_property_values", "reset_property_value", "reset_property_values",
     "get_property_value", "resolve_value_path", "effective_applications", "inheritance_source",
-    "element_stereotypes", "applicable_stereotypes", "batch_apply",
+    "element_stereotypes", "applicable_stereotypes", "batch_apply", "plan_batch",
     "export_profile", "export_profile_json", "import_profile",
     "display_fields", "validate_profiles", "describe_profile", "meta",
 ]
@@ -894,35 +894,32 @@ def applicable_stereotypes(repo, element: Element) -> list[Stereotype]:
 
 
 def _composition_elements(root: Element) -> list[Element]:
-    """``root`` and everything inside it, including reference components' definitions."""
-    out: list[Element] = []
-    seen: set[int] = set()
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        for e in node.walk():
-            if id(e) in seen:
-                continue
-            seen.add(id(e))
-            out.append(e)
-            if "PartUsage" in kind_names(e):
-                for t in getattr(e, "types", []) or []:
-                    if "PartDefinition" in kind_names(t) and id(t) not in seen:
-                        stack.append(t)
-    return out
+    """What the *composition* scope covers: everything ``root`` owns, ``root`` itself excluded.
+
+    The chosen composition is the container, not one of its elements, and the internals of the
+    definitions its reference components are typed by belong to those definitions (shared by
+    every usage of them): neither is part of the scope. Select them explicitly (scope
+    ``selection``) to stereotype them.
+    """
+    return [e for e in root.walk() if e is not root]
 
 
 SCOPES = ("selection", "composition", "model")
+PREVIEW_LIMIT = 200
 
 
-def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
-                elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
-                values: Optional[dict] = None) -> dict:
-    """Apply a stereotype to every matching element of a scope.
+def _brief(e: Element) -> dict:
+    return {"id": e.element_id, "name": e.qualified_name, "kind": e.kind}
 
-    ``scope``: 'selection' (``elements``), 'composition' (``root`` and everything
-    inside it) or 'model'. ``category`` narrows the candidates (defaults to the
-    stereotype's applies-to). Returns ``{"applied": [ids], "skipped": [...]}``.
+
+def plan_batch(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
+               elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
+               values: Optional[dict] = None) -> dict:
+    """Decide what a batch would do, changing nothing (``batch_apply`` runs it).
+
+    Returns ``{"stereotype", "scope", "category", "targets": [elements to stereotype],
+    "overrides": [ids of targets that override a value of their definition], "skipped": [...],
+    "values": the checked initial values}``; raises ProfileError like ``batch_apply``.
     """
     st = stereotype
     if scope not in SCOPES:
@@ -954,31 +951,88 @@ def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any
         else:
             cands = list(repo.root_package.walk())
         report_mismatch = False
-    applied: list[str] = []
     skipped: list[dict] = []
+
+    def skip(e: Element, reason: str) -> None:
+        skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": reason})
+
+    todo: list[Element] = []
+    seen: set[int] = set()
     for e in cands:
-        if e is repo.root_package and scope != "selection":
+        if id(e) in seen or (e is repo.root_package and scope != "selection"):
             continue
+        seen.add(id(e))
         if _in_profile_space(e) or isinstance(e, Relationship):
             if report_mismatch:
-                skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": "profile definition"})
+                skip(e, "profile definition")
             continue
         if category and not matches_category(e, category):
             if report_mismatch:
-                skipped.append({"id": e.element_id, "name": e.qualified_name,
-                                "reason": f"not a {category}"})
+                skip(e, f"not a {category}")
             continue
         if application_of(e, st) is not None:
-            skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": "already applied"})
+            skip(e, "already applied")
             continue
         if not st.can_apply_to(e):
-            skipped.append({"id": e.element_id, "name": e.qualified_name,
-                            "reason": f"«{st.full_name}» does not apply to {e.kind}"})
+            skip(e, f"«{st.full_name}» does not apply to {e.kind}")
             continue
-        st.apply(e, local)
-        applied.append(e.element_id)
-    return {"stereotype": st.full_name, "scope": scope, "category": category,
-            "applied": applied, "skipped": skipped, "count": len(applied)}
+        todo.append(e)
+    # A reference component reads the stereotype from its definition (SU-15): when the definition
+    # carries it, or gets it in this very batch, the component needs no application of its own
+    # (it would repeat the definition's values) unless the batch sets values the definition
+    # does not have; those become an override.
+    in_batch = {id(e) for e in todo}
+    targets: list[Element] = []
+    overrides: list[str] = []
+    for e in todo:
+        d = inheritance_source(e) if st.profile is not None else None
+        if d is not None and id(d) in in_batch:
+            skip(e, f"inherited from {d.name}")
+        elif d is not None and application_of(d, st) is not None:
+            if local:
+                targets.append(e)
+                overrides.append(e.element_id)
+            else:
+                skip(e, f"inherited from {d.name}")
+        else:
+            targets.append(e)
+    return {"stereotype": st.full_name, "scope": scope, "category": category, "targets": targets,
+            "overrides": overrides, "skipped": skipped, "values": local}
+
+
+def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
+                elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
+                values: Optional[dict] = None, dry_run: bool = False) -> dict:
+    """Apply a stereotype to every matching element of a scope.
+
+    ``scope``: 'selection' (``elements``), 'composition' (everything ``root`` owns: its
+    components, ports and connectors; neither ``root`` itself nor the internals of the
+    definitions its reference components are typed by) or 'model'. ``category`` narrows
+    the candidates (defaults to the stereotype's applies-to). Elements that already carry the
+    stereotype, or inherit it from their definition, are skipped.
+
+    With ``dry_run`` nothing is changed: the result says what an application would do (the
+    count the Apply dialog shows before it applies). Returns ``{"applied": [ids], "count",
+    "skipped": [...], "overrides": [ids], "dry_run", "preview": [...]}``; ``preview`` (at most
+    ``PREVIEW_LIMIT`` elements) and ``skipped_by_reason`` summarise the plan.
+    """
+    plan = plan_batch(repo, stereotype, scope=scope, root=root, elements=elements,
+                      category=category, values=values)
+    targets = plan["targets"]
+    if not dry_run:
+        for e in targets:
+            stereotype.apply(e, plan["values"])
+    by_reason: dict[str, int] = {}
+    for x in plan["skipped"]:
+        key = "inherited from its definition" if x["reason"].startswith("inherited from ") else x["reason"]
+        by_reason[key] = by_reason.get(key, 0) + 1
+    out = {"stereotype": plan["stereotype"], "scope": scope, "category": plan["category"],
+           "applied": [e.element_id for e in targets], "skipped": plan["skipped"],
+           "count": len(targets), "overrides": plan["overrides"], "dry_run": bool(dry_run),
+           "skipped_by_reason": by_reason}
+    if dry_run:
+        out["preview"] = [_brief(e) for e in targets[:PREVIEW_LIMIT]]
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -549,6 +549,13 @@ function markOrigin(input, p, app) {
   if (note) note.outerHTML = originNote(p, app?.inherited_from?.name || note.dataset.from);
 }
 
+/** A unit of the same quantity as `unit`, to show what can be typed: kg -> lb, W -> kW. */
+function otherUnit(unit) {
+  const quantity = META.units.find(u => u.symbol === unit)?.quantity;
+  const others = META.units.filter(u => quantity && u.quantity === quantity && u.symbol !== unit);
+  return (others.find(u => u.symbol === "lb") || others.find(u => u.symbol[0] === "k" || u.symbol[0] === "M") || others[0])?.symbol || unit;
+}
+
 function propertyEditor(p, opts = {}) {
   const id = `pf-v-${p.id}-${Math.random().toString(36).slice(2, 7)}`;
   const origin = p.overridden === undefined ? "" : (p.overridden ? " pf-ovr" : " pf-inh");
@@ -570,7 +577,7 @@ function propertyEditor(p, opts = {}) {
     const rounded = !!opts.round && NUMERIC.has(p.type);
     const text = rounded ? shortText(p) : full;
     const hint = NUMERIC.has(p.type)
-      ? `Number, expression (2*0.75)${p.unit ? ` or value with a compatible unit (e.g. 3 ${p.unit === "kg" ? "lb" : p.unit})` : ""}`
+      ? `Number, expression (2*0.75)${p.unit ? ` or value with a compatible unit (e.g. 3 ${otherUnit(p.unit)})` : ""}`
       : "Text";
     const stored = rounded && full !== text ? ` (stored: ${p.display})` : "";
     editor = `<input class="input${invalid}${origin}" id="${id}" data-path="${esc(p.path)}" data-orig="${esc(text)}" value="${esc(text)}"
@@ -596,7 +603,7 @@ async function openBatchDialog(studio, presetStereotype) {
   const current = studio.state.selectedId && studio.selected?.id === studio.state.selectedId ? studio.selected : null;
   const pick = presetStereotype || all[0].id;
   const scopeDefault = sel.length > 1 ? "selection" : (current ? "composition" : "model");
-  openModal(studio, "Apply stereotype to elements", `
+  const form = openModal(studio, "Apply stereotype to elements", `
     <label class="block text-sm">Stereotype
       <select class="input" name="stereotype" data-pf="batch-stereotype">
         ${all.map(s => option(s.id, `${s.qualified_name} — ${CATEGORY_LABEL(s.effective_applies_to)}`, s.id === pick)).join("")}
@@ -604,8 +611,10 @@ async function openBatchDialog(studio, presetStereotype) {
     <fieldset class="text-sm space-y-1 mt-2"><legend class="text-slate-600 mb-1">Scope</legend>
       <label class="flex items-center gap-2"><input type="radio" name="scope" value="selection" ${sel.length ? "" : "disabled"} ${scopeDefault === "selection" ? "checked" : ""}/>
         Selected elements (${sel.length})</label>
-      <label class="flex items-center gap-2"><input type="radio" name="scope" value="composition" ${current ? "" : "disabled"} ${scopeDefault === "composition" ? "checked" : ""}/>
-        Current package / composition: <b>${esc(current?.name || "—")}</b> and everything inside it</label>
+      <label class="flex items-start gap-2"><input type="radio" name="scope" value="composition" class="mt-1" ${current ? "" : "disabled"} ${scopeDefault === "composition" ? "checked" : ""}/>
+        <span>Current package / composition: the elements inside <b>${esc(current?.name || "—")}</b>
+          <span class="block text-xs text-slate-500">Not the composition itself, and not the internals of the definitions its
+          components reference: select those explicitly to stereotype them.</span></span></label>
       <label class="flex items-center gap-2"><input type="radio" name="scope" value="model" ${scopeDefault === "model" ? "checked" : ""}/>
         Whole model</label>
     </fieldset>
@@ -613,17 +622,64 @@ async function openBatchDialog(studio, presetStereotype) {
       <select class="input" name="category" data-pf="batch-category">
         ${option("", "(the stereotype's applies-to)", true)}
         ${META.categories.map(c => option(c, c, false)).join("")}
-      </select></label>`, async (o) => {
-    const body = { scope: o.scope || "model", category: o.category || null };
-    if (body.scope === "selection") body.ids = sel;
-    if (body.scope === "composition") body.root = current?.id;
-    const out = await studio.api("POST", `/api/stereotypes/${encodeURIComponent(o.stereotype)}/batch`, body);
+      </select></label>
+    <div class="pf-batch-preview text-sm mt-3 p-2 rounded border border-slate-200 bg-slate-50" data-pf="batch-preview" role="status" aria-live="polite">Counting…</div>`,
+  async (o) => {
+    const out = await studio.api("POST", `/api/stereotypes/${encodeURIComponent(o.stereotype)}/batch`, batchBody(o));
     studio.log(`Applied «${out.stereotype}» to ${out.count} element(s)` +
-               (out.skipped.length ? `; skipped ${out.skipped.length} (${[...new Set(out.skipped.map(s => s.reason))].join(", ")})` : ""),
+               (out.skipped.length ? `; skipped ${out.skipped.length} (${Object.keys(out.skipped_by_reason || {}).join(", ")})` : ""),
                out.count ? "ok" : "warning");
     await studio.refreshTree();
     if (studio.state.selectedId) await studio.selectElement(studio.state.selectedId);
   });
+  const batchBody = (o) => {
+    const body = { scope: o.scope || "model", category: o.category || null };
+    if (body.scope === "selection") body.ids = sel;
+    if (body.scope === "composition") body.root = current?.id;
+    return body;
+  };
+  // How many elements the choice would affect, shown before anything is applied: the server
+  // plans the batch without changing the model (`dry_run`).
+  const box = form.querySelector("[data-pf=batch-preview]");
+  const submit = document.querySelector("#modal-root [data-modal-submit]");
+  const submitLabel = submit.textContent;
+  let seq = 0, timer = null;
+  const read = () => {
+    const f = new FormData(form);
+    return { stereotype: f.get("stereotype"), scope: f.get("scope"), category: f.get("category") };
+  };
+  const refresh = async () => {
+    const mine = ++seq;
+    const o = read();
+    let out = null, error = "";
+    try { out = await studio.api("POST", `/api/stereotypes/${encodeURIComponent(o.stereotype)}/batch`, { ...batchBody(o), dry_run: true }); }
+    catch (e) { error = errorText(e); }
+    if (mine !== seq || !box.isConnected) return;
+    if (out?.problem) error = out.problem;
+    if (error) {
+      box.dataset.count = "0";
+      box.innerHTML = `<span class="text-red-700" data-pf="batch-problem">${esc(error)}</span>`;
+      submit.disabled = true;
+      submit.textContent = submitLabel;
+      return;
+    }
+    const name = esc(out.stereotype);
+    const skipped = Object.entries(out.skipped_by_reason || {}).map(([why, n]) => `${n} ${esc(why)}`).join(" · ");
+    const shown = (out.preview || []).slice(0, 50);
+    box.innerHTML = `<div data-pf="batch-count"><b>${out.count}</b> element${out.count === 1 ? "" : "s"} will get «${name}»${out.overrides?.length ? ` (${out.overrides.length} as overrides of their definition)` : ""}.</div>
+      ${skipped ? `<div class="text-xs text-slate-600">Skipped: ${skipped}</div>` : ""}
+      ${shown.length ? `<details class="mt-1"><summary class="cursor-pointer text-xs text-slate-600">Show the elements</summary>
+        <ul class="text-xs max-h-40 overflow-auto mt-1">${shown.map(x => `<li><span class="text-slate-500">${esc(x.kind)}</span> ${esc(x.name)}</li>`).join("")}
+        ${out.count > shown.length ? `<li class="text-slate-500">… and ${out.count - shown.length} more</li>` : ""}</ul></details>` : ""}`;
+    box.dataset.count = String(out.count);
+    submit.disabled = out.count === 0;
+    submit.textContent = out.count ? `Apply to ${out.count} element${out.count === 1 ? "" : "s"}` : submitLabel;
+  };
+  // Apply waits for the count: it is never clicked on a choice whose effect was not shown.
+  const pending = () => { submit.disabled = true; box.textContent = "Counting…"; };
+  form.addEventListener("change", () => { clearTimeout(timer); pending(); timer = setTimeout(refresh, 120); });
+  pending();
+  refresh();
 }
 
 /* ------------------------------------------------------------------ Profile Editor */

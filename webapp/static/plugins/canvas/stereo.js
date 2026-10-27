@@ -215,7 +215,9 @@ export class StereoSection {
       const where = this.many ? ` on ${this.ids.length} components` : "";
       // What was stored, rounded for reading: "mass = 4.54 kg (stored 4.5359237 kg)".
       const kept = shown && shown.display_short !== shown.display ? ` (stored ${shown.display})` : "";
-      const text = `${path} = ${shown?.display_short ?? shown?.display ?? ""}${kept}${where}`;
+      // A value typed with a unit says what it came to: "10 lb" -> "mass = 4.54 kg (stored 4.5359237 kg)".
+      const typed = input.type !== "checkbox" && /[A-DF-Za-df-z%°]/.test(String(value)) && shown?.unit ? ` (entered as ${String(value).trim()})` : "";
+      const text = `${path} = ${shown?.display_short ?? shown?.display ?? ""}${kept}${typed}${where}`;
       this.studio.log(`${this.many ? "" : `${this.what()}: `}${path} = ${shown?.display ?? ""}${where}`, "ok");
       this.msg(text, "ok");
       await this.notify();

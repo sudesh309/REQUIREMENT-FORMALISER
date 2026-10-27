@@ -21,6 +21,10 @@ Profiles and stereotypes
     PATCH  /api/stereotypes/<ref>/properties/<p>    same keys (p: id or property name)
     DELETE /api/stereotypes/<ref>/properties/<p>
     POST   /api/stereotypes/<ref>/batch             {scope: selection|composition|model, ids?, root?, category?, values?, dry_run?}
+                                                    composition = everything the root owns (not the root itself, not the
+                                                    internals of referenced definitions); dry_run: say what would happen
+                                                    (count, preview, skipped_by_reason) and change nothing; a choice that
+                                                    cannot be applied answers 200 with count 0 and a ``problem`` text
 
 Applied stereotypes
     GET    /api/elements/<id>/stereotypes           {element, applied: [...], applicable: [...]}
@@ -244,9 +248,20 @@ def api_delete_property(_req: dict, ref: str, prop: str):
 def api_batch_apply(req: dict, ref: str):
     repo = _repo()
     b = _body(req)
-    return ok(P.batch_apply(repo, P.find_stereotype(repo, ref), scope=b.get("scope") or "model",
-                            root=b.get("root"), elements=b.get("ids"), category=b.get("category"),
-                            values=b.get("values")))
+    st = P.find_stereotype(repo, ref)
+    dry = bool(b.get("dry_run"))
+    try:
+        return ok(P.batch_apply(repo, st, scope=b.get("scope") or "model", root=b.get("root"),
+                                elements=b.get("ids"), category=b.get("category"),
+                                values=b.get("values"), dry_run=dry))
+    except P.ProfileError as ex:
+        if not dry:
+            raise
+        # A preview of a choice that cannot be applied is an answer, not a failed request: the
+        # Apply dialog shows the reason where it would show the count.
+        return ok({"stereotype": st.full_name, "scope": b.get("scope") or "model", "dry_run": True,
+                   "count": 0, "applied": [], "skipped": [], "overrides": [], "skipped_by_reason": {},
+                   "preview": [], "problem": str(ex)})
 
 
 # --- applied stereotypes -------------------------------------------------------
