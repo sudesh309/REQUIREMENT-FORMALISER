@@ -22,7 +22,7 @@ from typing import Optional
 from kerml.elements import Annotation, Element, Relationship
 from kerml.features import Feature, FeatureDirection
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from sysmlv2.definitions import (
     ActionDefinition, ActionUsage, AnalysisCaseDefinition, AttributeDefinition,
     AttributeUsage, CalculationDefinition, CalculationUsage, ConcernDefinition,
@@ -214,8 +214,11 @@ class _Writer:
         self.emit(depth, text, True)
 
     def stereotype_comments(self, e: Element, depth: int) -> None:
-        """``#Profile.Stereotype { mass = 1.5 [kg]; }`` (metadata usage with unit literals)."""
-        for app in stereotypes_on(e):
+        """``#Profile.Stereotype { mass = 1.5 [kg]; }`` (metadata usage with unit literals).
+
+        A reference component lists the values it reads: its own and, for a stereotype it
+        inherits from its definition, the definition's (the line says so)."""
+        for app in effective_applications(e):
             values = []
             tags = [t for _st, props in app.stereotype.property_groups() for t in props]
             for tag in tags:                    # inherited (base) properties first
@@ -226,7 +229,8 @@ class _Writer:
                     and not isinstance(v, bool) else ""
                 values.append(f"{tag.name} = {self.literal(v)}{unit}")
             body = f" {{ {'; '.join(values)}; }}" if values else ""
-            self.comment(depth, f"#{app.stereotype.full_name}{body}")
+            where = f"  (inherited from {app.definition.name})" if app.inherited else ""
+            self.comment(depth, f"#{app.stereotype.full_name}{body}{where}")
 
     @staticmethod
     def literal(v) -> str:

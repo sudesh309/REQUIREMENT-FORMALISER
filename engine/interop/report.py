@@ -33,7 +33,7 @@ from engine.structure import (
 )
 from kerml.elements import Element
 from kerml.features import Feature, FeatureDirection
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications, stereotypes_on
 from sysmlv2.definitions import (
     ConnectionUsage, PartDefinition, PartUsage, PortUsage, RequirementDefinition,
     RequirementUsage,
@@ -113,7 +113,9 @@ def _label(text: Any) -> str:
 
 
 def _stereo_names(e: Element) -> str:
-    return ", ".join(a.stereotype.full_name for a in stereotypes_on(e))
+    """The stereotypes ``e`` carries, those a reference component inherits from its definition
+    included (they are what its values are read from)."""
+    return ", ".join(a.stereotype.full_name for a in effective_applications(e))
 
 
 def _type_names(e: Element, repo) -> str:
@@ -361,13 +363,24 @@ class _Report:
         doc = documentation(comp) or (documentation(d) if d is not None else "")
         if doc:
             self.w(f'<p class="doc">{_e(doc)}</p>')
-        # Values as the profiles feature displays them (with units), base properties first.
-        values = [[_e(st["qualified_name"]), _e(p["name"]), _e(p["display"])]
-                  for st in element_stereotypes(comp)
-                  for group in st["groups"] for p in group["properties"]]
+        # Values as the profiles feature displays them (with units), base properties first. A
+        # reference component also lists what it inherits from its definition, with its source.
+        values, sourced = [], False
+        for st in element_stereotypes(comp):
+            for group in st["groups"]:
+                for p in group["properties"]:
+                    src = ""
+                    if p.get("overridden"):
+                        src = f"set here (the definition has {p['inherited_display']})"
+                    elif p.get("inherited"):
+                        src = f"inherited from {st['inherited_from']['name']}"
+                    sourced = sourced or bool(src)
+                    values.append([_e(st["qualified_name"]), _e(p["name"]), _e(p["display"]), _e(src)])
         if values:
             self.w("<h4>Stereotype properties</h4>")
-            self.table(["Stereotype", "Property", "Value"], values)
+            self.table(["Stereotype", "Property", "Value", "Source"] if sourced
+                       else ["Stereotype", "Property", "Value"],
+                       values if sourced else [r[:3] for r in values])
         ports = ports_of(comp)
         self.w("<h4>Ports</h4>")
         self.table(["Port", "Direction", "Kind", "Interface", "Description"], [

@@ -181,14 +181,88 @@ class InheritanceHttpTests(WebAppTestCase):
         self.assertEqual(got, {"fcc1": {"mass": 4.0, "dal": "C"}, "fcc2": {"mass": 8.0, "dal": "C"}})
 
     def test_interop_views_agree(self):
-        """Model Tables, the report, SysML export and Model Check read what get_property_value reads."""
+        """Model Tables, the report, SysML export, Compare and Model Check read what
+        get_property_value reads (SU-15)."""
         self.call("PATCH", f"/api/elements/{self.fcc1['id']}/stereotypes", {"property": "Avionics.LRU.mass", "value": 4})
+        # Model Tables: the stereotypes and values each component reads
         sheets = self.call("GET", "/api/interop/tables?format=json")["tables"]
         rows = {r["Name"]: r for r in _rows(sheets, "Components")}
         self.assertEqual((rows["fcc1"]["Stereotypes"], rows["fcc1"]["Avionics.LRU.mass"], rows["fcc1"]["Avionics.LRU.dal"]),
                          ("Avionics.LRU", 4.0, "A"))
         self.assertEqual((rows["fcc2"]["Stereotypes"], rows["fcc2"]["Avionics.LRU.mass"]), ("Avionics.LRU", 3.0))
         self.assertEqual(rows["plain"]["Stereotypes"], "")
+        # importing the unchanged tables overrides nothing: fcc2 still inherits, fcc1 keeps its one override
+        report = self.call("POST", "/api/interop/tables/import", {"tables": sheets})["report"]
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual(report["updated"], 0)
+        self.assertEqual(self.props(self.fcc2)["mass"]["origin"], "inherited")
+        origins = {k: v["origin"] for k, v in self.props(self.fcc1).items()}
+        self.assertEqual(origins, {"mass": "own", "dal": "inherited"})
+        # an edited cell is an override; the definition's changes still reach the rest
+        head = sheets["Components"][0]
+        for r in sheets["Components"][1:]:
+            if r[head.index("Name")] == "fcc2":
+                r[head.index("Avionics.LRU.dal")] = "E"
+        self.call("POST", "/api/interop/tables/import", {"tables": sheets})
+        self.assertEqual({k: v["origin"] for k, v in self.props(self.fcc2).items()},
+                         {"mass": "inherited", "dal": "own"})
+        self.call("POST", f"/api/elements/{self.fcc2['id']}/stereotypes/reset", {"properties": ["Avionics.LRU.dal"]})
+        # the HTML report lists inherited values with their source
+        html = self.call("GET", "/api/interop/report")["html"].replace("\n", "")
+        self.assertIn("<td>Avionics.LRU</td><td>mass</td><td>3 kg</td><td>inherited from FCC</td>", html)
+        self.assertIn("<td>Avionics.LRU</td><td>mass</td><td>4 kg</td><td>set here (the definition has 3 kg)</td>", html)
+        self.assertIn("class=stereo>«Avionics.LRU»", html)
+        # SysML text
+        text = self.call("GET", "/api/interop/sysml")["text"]
+        self.assertIn('// #Avionics.LRU { mass = 4.0 [kg]; dal = "A"; }', text)
+        self.assertIn("(inherited from FCC)", text)
+        # Model Check: no duplicate / invalid stereotype findings for overrides and inherited values
+        check = self.call("GET", "/api/interop/check")
+        self.assertEqual([r for r in check["by_rule"] if r.startswith("profile.")], [])
+        # Compare with a saved copy: the definition's value changed, so the usages read a new value
+        before = self.call("GET", "/api/save")["text"]
+        self.call("PATCH", f"/api/elements/{self.fcc_def['id']}/stereotypes", {"values": {"Avionics.LRU.mass": 7}})
+        diff = self.call("POST", "/api/interop/compare", {"text": before})
+        changed = {c["name"]: {p["property"]: (p["old"], p["new"]) for p in c["properties"]} for c in diff["changes"]}
+        self.assertEqual(changed["FCC"], {"Avionics.LRU.mass": (3.0, 7.0)})
+        self.assertEqual(changed["fcc2"], {"Avionics.LRU.mass": (3.0, 7.0)})   # inherited: stored nowhere on fcc2
+        self.assertNotIn("fcc1", changed)                                      # its override still reads 4 kg
+        # override bookkeeping alone is not a change: a project compared with itself is identical
+        self.assertTrue(self.call("POST", "/api/interop/compare", {"text": self.call("GET", "/api/save")["text"]})["identical"])
+        # a stereotype that only one of the projects reads
+        self.call("DELETE", f"/api/elements/{self.fcc_def['id']}/stereotypes/Avionics.LRU")
+        diff = self.call("POST", "/api/interop/compare", {"text": before})
+        by = {c["name"]: {p["property"]: (p["old"], p["new"]) for p in c["properties"]} for c in diff["changes"]}
+        self.assertEqual(by["fcc2"]["«Avionics.LRU»"], ("inherited", None))
+        self.assertEqual(by["FCC"]["«Avionics.LRU»"], ("applied", None))
+        self.assertNotIn("fcc1", by)         # its own application stays and reads the same (4 kg, dal A)
+
+    def test_multi_selection_reset_and_labels(self):
+        ids = [self.fcc1["id"], self.fcc2["id"]]
+        base = self.depth()
+        self.call("PATCH", "/api/arch/stereotypes", {"ids": ids, "property": "Avionics.LRU.mass", "value": "2 kg"})
+        self.assertEqual(self.depth(), base + 1)
+        self.assertEqual(self.label(), "Set Avionics.LRU.mass of fcc1, fcc2")
+        out = self.call("GET", f"/api/arch/stereotypes?ids={','.join(ids)}")
+        (app,) = out["applied"]
+        mass = {q["name"]: q for g in app["groups"] for q in g["properties"]}["mass"]
+        self.assertEqual((mass["value"], mass["overridden"], mass["inherited"], app["overridden"], app["inherited"]),
+                         (2.0, True, False, True, False))
+        out = self.call("POST", "/api/arch/stereotypes/reset", {"ids": ids, "properties": ["Avionics.LRU.mass"]})
+        self.assertEqual(self.depth(), base + 2)
+        self.assertEqual(self.label(), "Reset Avionics.LRU.mass of fcc1, fcc2 to the inherited value")
+        self.assertEqual(sorted(out["reset"]), sorted(ids))
+        (app,) = out["applied"]
+        self.assertEqual((app["inherited"], app["overridden"]), (True, False))
+        # all or nothing, and a plain component has nothing to reset
+        err = self.call("POST", "/api/arch/stereotypes/reset",
+                        {"ids": ids + [self.plain["id"]], "properties": ["Avionics.LRU.mass"]}, expect=404)
+        self.assertIn("plain", err["error"])
+        self.call("POST", "/api/arch/stereotypes/reset", {"ids": ids}, expect=400)
+        self.call("POST", "/api/arch/stereotypes", {"ids": [self.plain["id"]], "stereotype": "Avionics.LRU"})
+        self.assertEqual(self.label(), "Apply «Avionics.LRU» to plain")
+        self.call("DELETE", "/api/arch/stereotypes", {"ids": [self.plain["id"]], "stereotype": "Avionics.LRU"})
+        self.assertEqual(self.label(), "Remove «Avionics.LRU» from plain")
 
 
 def _rows(sheets, name):

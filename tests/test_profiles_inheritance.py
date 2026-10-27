@@ -251,6 +251,51 @@ class OverrideTests(Base):
         self.assertEqual(effective_applications(self.fcc2)[0].own_values(), {})
 
 
+class InteropTests(Base):
+
+    def test_tables_round_trip_into_a_new_project(self):
+        from engine.interop import export_tables, tables_to_project
+        from engine.interop.diff import compare
+        P.set_property_value(self.repo, self.fcc1, "mass", 4)              # an override; dal stays inherited
+        P.apply_stereotype(self.repo, self.fcc2, self.lru)                 # an override without values
+        repo2, _report = tables_to_project(export_tables(self.repo))
+        find = lambda n: next(e for e in repo2.root_package.walk() if e.name == n)    # noqa: E731
+        fcc1, fcc2, fdef = find("fcc1"), find("fcc2"), find("FCC")
+        self.assertEqual([t.name for t in stereotypes_on(fcc1)[0].explicit_tags()], ["mass"])
+        self.assertEqual(stereotypes_on(fcc2), [])          # an override that sets nothing reads the same
+        P.set_property_values(repo2, fdef, {"Avionics.LRU.mass": 9, "Avionics.LRU.dal": "E"})
+        self.assertEqual(P.get_property_value(fcc1, "Avionics.LRU.mass"), 4.0)       # still an override
+        self.assertEqual(P.get_property_value(fcc1, "Avionics.LRU.dal"), "E")        # still inherited
+        self.assertEqual(P.get_property_value(fcc2, "Avionics.LRU.mass"), 9.0)
+        self.assertTrue(compare(self.repo, tables_to_project(export_tables(self.repo))[0])["identical"])
+
+    def test_inherited_values_in_the_report_and_sysml(self):
+        from engine.interop.report import generate_report
+        from engine.interop.sysml_export import export_sysml
+        P.set_property_value(self.repo, self.fcc1, "mass", 4)
+        html = generate_report(self.repo).replace("\n", "")
+        self.assertIn("<td>Avionics.LRU</td><td>mass</td><td>3 kg</td><td>inherited from FCC</td>", html)
+        self.assertIn("<td>Avionics.LRU</td><td>dal</td><td>A</td><td>inherited from FCC</td>", html)
+        self.assertIn("<td>Avionics.LRU</td><td>mass</td><td>4 kg</td><td>set here (the definition has 3 kg)</td>", html)
+        text = export_sysml(self.repo)
+        self.assertIn("(inherited from FCC)", text)
+        self.assertEqual(text.count("#Avionics.LRU"), 3)                    # FCC, fcc1 (override), fcc2 (inherited)
+
+    def test_legacy_stereotypes_keep_their_values_per_element(self):
+        """The pre-profile API (a stereotype in a plain package, untyped tags) is not inherited."""
+        from kerml.namespaces import Package
+        from kerml.stereotypes import Stereotype
+        pkg = Package(name="Legacy")
+        self.root.own(pkg)
+        old = Stereotype("Old", applies_to=[PartDefinition, PartUsage])
+        pkg.own(old)
+        old.define_tag("mass", default=0.0)
+        old.apply(self.fcc_def, {"mass": 4.2})
+        self.assertEqual([a.stereotype.name for a in effective_applications(self.fcc1)], ["LRU"])   # not «Old»
+        old.apply(self.fcc1)
+        self.assertEqual(stereotypes_on(self.fcc1)[0].values, {"mass": 0.0})      # the default, not 4.2
+
+
 class PersistenceTests(Base):
 
     def _reload(self):

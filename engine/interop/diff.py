@@ -129,6 +129,37 @@ def _stereo_map(e: dict) -> dict[str, dict]:
     return {s["stereotype"]: dict(s.get("values") or {}) for s in e.get("stereotypes") or []}
 
 
+def _inherited_stereotypes(data: dict) -> dict[str, dict[str, dict]]:
+    """``{element id: {stereotype id: values}}`` for the stereotypes reference components inherit
+    from their definitions and carry no application of (SU-15), as the profiles feature reads them.
+
+    The saved applications hold what each element reads; an inherited one is stored nowhere, so
+    the project is loaded to ask the engine. A project that cannot be loaded has none.
+    """
+    try:
+        from engine.serializer import from_dict
+        from kerml.stereotypes import effective_applications
+        repo = from_dict(copy.deepcopy(data))
+        out: dict[str, dict[str, dict]] = {}
+        for e in repo.root_package.walk():
+            inherited = {a.stereotype.element_id: dict(a.values)
+                         for a in effective_applications(e) if a.inherited}
+            if inherited:
+                out[e.element_id] = inherited
+        return out
+    except Exception:           # noqa: BLE001 - a damaged project is compared as it was saved
+        return {}
+
+
+def _ext_data(e: dict, name: str) -> Any:
+    """An element's codec data for comparison. The record of which stereotype values were set on a
+    reference component (``overrides``) is bookkeeping: what the element reads is compared."""
+    data = ((e.get("ext") or {}).get(name) or {}).get("data")
+    if name == "profiles" and isinstance(data, dict) and "overrides" in data:
+        data = {k: v for k, v in data.items() if k != "overrides"} or None
+    return data
+
+
 def _links_by_source(data: dict) -> dict[str, dict[str, dict]]:
     out: dict[str, dict[str, dict]] = {}
     for link in data.get("links") or []:
@@ -155,7 +186,8 @@ def _fmt(names: _Names, key: str, value: Any) -> Any:
 
 
 def _element_diffs(names: _Names, old_data: dict, new_data: dict, a: dict, b: dict,
-                   links_a: dict, links_b: dict, include_layout: bool) -> list[dict]:
+                   links_a: dict, links_b: dict, include_layout: bool,
+                   inherited: Optional[tuple[dict, dict]] = None) -> list[dict]:
     props: list[dict] = []
     keys = sorted(set(a) | set(b))
     for k in keys:
@@ -173,22 +205,28 @@ def _element_diffs(names: _Names, old_data: dict, new_data: dict, a: dict, b: di
         props.append({"property": "owner (moved)", "key": "owner",
                       "old": names.qname(oa), "new": names.qname(ob)})
     sa, sb = _stereo_map(a), _stereo_map(b)
+    # What a reference component reads from its definition counts as carried (SU-15).
+    ia = (inherited[0] if inherited else {}).get(a.get("id"), {})
+    ib = (inherited[1] if inherited else {}).get(b.get("id"), {})
+    inh_a, inh_b = set(ia) - set(sa), set(ib) - set(sb)
+    sa.update({sid: v for sid, v in ia.items() if sid not in sa})
+    sb.update({sid: v for sid, v in ib.items() if sid not in sb})
     for sid in sorted(set(sa) | set(sb), key=names.qname):
         sname = names.stereotype(sid)
         if sid not in sa:
             props.append({"property": f"«{sname}»", "key": f"stereotype:{sid}",
-                          "old": None, "new": "applied"})
+                          "old": None, "new": "inherited" if sid in inh_b else "applied"})
         elif sid not in sb:
             props.append({"property": f"«{sname}»", "key": f"stereotype:{sid}",
-                          "old": "applied", "new": None})
+                          "old": "inherited" if sid in inh_a else "applied", "new": None})
         for prop in sorted(set(sa.get(sid, {})) | set(sb.get(sid, {}))):
             if sid in sa and sid in sb and sa[sid].get(prop) != sb[sid].get(prop):
                 props.append({"property": f"{sname}.{prop}", "key": f"value:{sid}:{prop}",
                               "old": sa[sid].get(prop), "new": sb[sid].get(prop)})
     ea, eb = a.get("ext") or {}, b.get("ext") or {}
     for name in sorted(set(ea) | set(eb)):
-        da = (ea.get(name) or {}).get("data")
-        db = (eb.get(name) or {}).get("data")
+        da = _ext_data(a, name)
+        db = _ext_data(b, name)
         if da != db:
             props.append({"property": f"{name} data", "key": f"ext:{name}",
                           "old": da, "new": db})
@@ -209,6 +247,7 @@ def compare(old: Any, new: Any, *, include_layout: bool = False,
     names = _Names(nd, od)
     ea, eb = _elements(od), _elements(nd)
     la, lb = _links_by_source(od), _links_by_source(nd)
+    inherited = (_inherited_stereotypes(od), _inherited_stereotypes(nd))
     changes: list[dict] = []
 
     def entry(ident: str, change: str, e: dict, props: list[dict]) -> dict:
@@ -225,7 +264,7 @@ def compare(old: Any, new: Any, *, include_layout: bool = False,
             changes.append(entry(ident, "removed", a, []))
         else:
             props = _element_diffs(names, od, nd, a, b, la.get(ident, {}), lb.get(ident, {}),
-                                   include_layout)
+                                   include_layout, inherited)
             if props:
                 changes.append(entry(ident, "modified", b, props))
     project_props = []
