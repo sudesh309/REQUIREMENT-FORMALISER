@@ -54,8 +54,9 @@ __all__ = [
     "add_stereotype", "update_stereotype", "delete_stereotype",
     "add_property", "update_property", "delete_property", "move_property",
     "apply_stereotype", "remove_stereotype", "remove_all_stereotypes",
-    "own_application", "set_property_value", "set_property_values", "reset_property_value", "reset_property_values",
-    "get_property_value", "resolve_value_path", "effective_applications", "inheritance_source",
+    "own_application", "set_property_value", "set_property_values",
+    "reset_property_value", "reset_property_values", "get_property_value", "resolve_value_path",
+    "effective_applications", "inheritance_source",
     "element_stereotypes", "applicable_stereotypes", "batch_apply", "plan_batch",
     "export_profile", "export_profile_json", "import_profile",
     "display_fields", "validate_profiles", "describe_profile", "meta",
@@ -853,7 +854,8 @@ def _value_entry(a, tag: StereotypeTag) -> dict:
 
 
 def _definition_ref(a) -> Optional[dict]:
-    d = a.parent().annotated_element if a.parent() is not None else None
+    parent = a.parent()
+    d = parent.annotated_element if parent is not None else None
     return None if d is None else {"id": d.element_id, "name": d.name, "qualified_name": d.qualified_name}
 
 
@@ -1630,7 +1632,7 @@ def _on_removed(repo, removed: set[int]) -> None:
 # Persistence
 # ---------------------------------------------------------------------------
 
-def inheritance_capable(e: Element) -> bool:
+def _inheritance_capable(e: Element) -> bool:
     """Can ``e`` inherit stereotype values (so the properties set on it are worth recording)?"""
     return "PartUsage" in kind_names(e)
 
@@ -1652,7 +1654,7 @@ def _encode(e: Element) -> Any:
         return {"type": e.prop_type, "unit": e.unit, "min": e.minimum, "max": e.maximum,
                 "literals": list(e.literals), "description": e.description}
     apps = stereotypes_on(e)
-    if apps and inheritance_capable(e):
+    if apps and _inheritance_capable(e):
         # Which values were set on the element itself (the others are inherited from the
         # definition it is typed by). `values` in the application records what is read.
         return {"overrides": [{"stereotype": a.stereotype.element_id,
