@@ -48,6 +48,15 @@ class ProfileToolTests(unittest.TestCase):
         names = [t["name"] for t in M.TOOLS]
         self.assertEqual(len(names), len(set(names)), "tool names are unique")
 
+    def test_vocabulary_lists_the_categories(self):
+        vocab = ok("sysml_profile_vocabulary")
+        cats = vocab["categories"]
+        self.assertEqual(cats[cats.index("Allocation") + 1], "AllocationSet")
+        self.assertIn("InterfaceElement", cats)
+        self.assertNotIn("", cats)                                # '' is "all elements", not a category
+        self.assertIn("enumeration", vocab["types"])
+        self.assertNotIn("units", vocab)
+
     def test_allocation_categories(self):
         """PO-13: the tools take the AllocationSet category and keep Allocation to allocations."""
         ok("sysml_create_profile", name="Alloc")

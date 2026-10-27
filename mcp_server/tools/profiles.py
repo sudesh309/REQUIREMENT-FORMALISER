@@ -44,6 +44,12 @@ def _given(**kw: Any) -> dict:
 
 # --- profiles -----------------------------------------------------------------
 
+def tool_profile_vocabulary() -> dict:
+    """The values a profile definition may use: property types, applies-to categories, icons ..."""
+    meta = P.meta()
+    return _ok({k: v for k, v in meta.items() if k != "units"})
+
+
 def tool_list_profiles() -> dict:
     def run():
         repo = _repo()
@@ -314,6 +320,11 @@ def _schema(props: dict, required: list[str]) -> dict:
 
 
 TOOLS: list[dict] = [
+    {"name": "sysml_profile_vocabulary",
+     "description": "The vocabulary of profile definitions: property types, applies-to categories "
+                    "(including Allocation and AllocationSet), icons, line styles, default slots. "
+                    "Units are listed by sysml_list_units.",
+     "inputSchema": _schema({}, []), "handler": tool_profile_vocabulary},
     {"name": "sysml_list_profiles",
      "description": "List profiles with their stereotypes and typed properties, stereotypes outside "
                     "profiles, and the profile import log.",

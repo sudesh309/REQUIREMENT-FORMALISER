@@ -9,7 +9,8 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   const lru = await api("POST", `/api/profiles/${prof.id}/stereotypes`,
                         { name: "LRU", applies_to: "Component", style: { fill: "#ffeeaa", icon: "computer" } });
   for (const b of [{ name: "mass", type: "double", unit: "kg", default: 1.5, min: 0 },
-                   { name: "dal", type: "enumeration", literals: ["A", "B", "C", "D", "E"] }])
+                   { name: "dal", type: "enumeration", literals: ["A", "B", "C", "D", "E"] },
+                   { name: "ima", type: "boolean" }])
     await api("POST", `/api/stereotypes/${lru.id}/properties`, b);
   const root = await api("POST", "/api/arch/architecture", { name: "Aircraft" });
   const fccDef = await api("POST", "/api/arch/architecture", { name: "FCC" });
@@ -88,6 +89,24 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   expect(await depth() === d + 1 && await label() === "Reset Avionics.LRU.mass of fcc1 to the inherited value", `reset step: ${await label()}`);
   expect((await page.textContent('[data-section="stereotypes"] .pf-app > summary')).includes("inherited from FCC"), "inherited again");
   expect((await api("GET", `/api/elements/${fcc1.id}/stereotypes`)).applied[0].overridden === false, "the empty override is gone");
+
+  // --- every editor kind overrides and resets the same way: enumeration list, checkbox ------------------
+  const ima = '[data-section="stereotypes"] [data-path="Avionics.LRU.ima"]';
+  await page.selectOption(dal, "C");
+  await until(() => document.querySelector('[data-section="stereotypes"] [data-note-for="Avionics.LRU.dal"] .pf-reset'));
+  await page.check(ima);
+  await until(() => document.querySelector('[data-section="stereotypes"] [data-note-for="Avionics.LRU.ima"] .pf-reset'));
+  p = await props(fcc1);
+  expect(p.dal.origin === "own" && p.dal.value === "C" && p.ima.origin === "own" && p.ima.value === true, `list and checkbox overridden: ${JSON.stringify([p.dal.origin, p.ima.origin])}`);
+  expect(await page.$eval(dal, e => e.classList.contains("pf-ovr")), "the list is marked overridden");
+  await page.click('[data-section="stereotypes"] [data-reset="Avionics.LRU.ima"]');
+  await until(() => document.querySelector('[data-section="stereotypes"] [data-path="Avionics.LRU.ima"]')?.checked === false);
+  p = await props(fcc1);
+  expect(p.ima.origin === "inherited" && p.dal.origin === "own", "resetting the checkbox leaves the list's override alone");
+  await page.click('[data-section="stereotypes"] [data-reset="Avionics.LRU.dal"]');
+  await until(() => document.querySelector('[data-section="stereotypes"] [data-path="Avionics.LRU.dal"]')?.value === "D");
+  expect((await props(fcc1)).dal.origin === "inherited", "the list inherits again");
+  expect((await api("GET", `/api/elements/${fcc1.id}/stereotypes`)).applied[0].overridden === false, "no override left");
 
   // --- canvas Property Inspector: rounding, units, override and reset -----------------------------------
   await page.click('.tab[data-tab="architecture"]');

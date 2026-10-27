@@ -391,6 +391,7 @@ The legacy `/api/stereotype/define` and `/api/stereotype/apply` keep working.
 
 | Tool | Purpose |
 |------|---------|
+| `sysml_profile_vocabulary` | property types, applies-to categories (with `Allocation` and `AllocationSet`), icons, line styles |
 | `sysml_list_profiles` | profiles with stereotypes and properties, ungrouped stereotypes, import log |
 | `sysml_create_profile` / `sysml_update_profile` / `sysml_delete_profile` | profile CRUD (update sets the model root stereotype) |
 | `sysml_add_stereotype` / `sysml_update_stereotype` / `sysml_delete_stereotype` | stereotype CRUD (applies_to, base, abstract, style, defaults, force) |

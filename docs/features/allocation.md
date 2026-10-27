@@ -284,7 +284,10 @@ components. Targets with nothing allocated are absent.
   `source → target`; sets carry `allocation_set` and a `source → target` badge;
   scenarios a `N alloc` badge; allocatable elements an `allocation_category`.
 * `Allocation` is registered as a creatable kind so stereotypes can be limited
-  to allocations with `applies_to: ["Allocation"]`.
+  to allocations with `applies_to: ["Allocation"]`. Profile stereotypes use the
+  *Applies to* categories of the [profiles feature](profiles.md): `Allocation`
+  applies to allocations only, allocation sets have their own `AllocationSet`
+  category (a scenario takes neither).
 
 ## System Composer parity
 
