@@ -339,6 +339,7 @@ class InheritanceMcpTests(unittest.TestCase):
         self.assertAlmostEqual(out["stored"]["Avionics.LRU.mass"], 0.90718474)
         got = ok("sysml_get_stereotype_properties", target=self.fcc["id"], property="Avionics.LRU.mass")
         self.assertEqual((got["origin"], got["overridden"], got["inherited_value"]), ("own", True, 3.0))
+        self.assertEqual((got["display"], got["display_short"]), ("0.90718474 kg", "0.907 kg"))
         self.assertEqual(ok("sysml_get_stereotype_properties", target=self.fcc["id"],
                             property="Avionics.LRU.dal")["value"], "B")
         out = ok("sysml_reset_stereotype_property", target=self.fcc["id"], property="Avionics.LRU.mass")

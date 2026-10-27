@@ -201,6 +201,29 @@ class CategoryTests(unittest.TestCase):
         self.assertIn("AllocationSet", CATEGORIES)
         self.assertEqual(CATEGORIES.index("AllocationSet"), CATEGORIES.index("Allocation") + 1)
 
+    def test_allocation_categories_persist_and_travel_in_profile_files(self):
+        """PO-13: the AllocationSet category survives Save / Load and a profile file."""
+        repo = Repository("A")
+        prof = P.create_profile(repo, "Alloc")
+        P.add_stereotype(repo, prof, "Plan", applies_to="AllocationSet")
+        P.add_stereotype(repo, prof, "Binding", applies_to="Allocation")
+        again = from_json(to_json(repo))
+        self.assertEqual([(s.name, s.category) for s in P.find_profile(again, "Alloc").stereotypes],
+                         [("Plan", "AllocationSet"), ("Binding", "Allocation")])
+        text = P.export_profile_json(prof)
+        self.assertIn('"applies_to": "AllocationSet"', text)
+        other = Repository("B")
+        P.import_profile(other, text)
+        self.assertEqual(P.find_stereotype(other, "Alloc.Plan").effective_category(), "AllocationSet")
+        with self.assertRaises(P.ProfileError):
+            P.add_stereotype(other, P.find_profile(other, "Alloc"), "Bad", applies_to="AllocationSets")
+        # a derived stereotype inherits the category; mixing the two is refused
+        base = P.find_stereotype(other, "Alloc.Plan")
+        derived = P.add_stereotype(other, P.find_profile(other, "Alloc"), "SubPlan", base=base)
+        self.assertEqual(derived.effective_category(), "AllocationSet")
+        with self.assertRaises(P.ProfileError):
+            P.add_stereotype(other, P.find_profile(other, "Alloc"), "Odd", base=base, applies_to="Allocation")
+
     def test_allocation_stereotypes_apply_only_to_allocations(self):
         from engine.allocation import AllocationSet, ArchitectureAllocation
         repo = Repository("A")

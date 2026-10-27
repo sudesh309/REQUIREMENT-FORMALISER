@@ -251,6 +251,7 @@ def tool_get_stereotype_properties(target: str, property: Optional[str] = None) 
             out = {"property": f"{a.stereotype.full_name}.{tag.name}", "value": v,
                    "unit": tag.unit, "type": tag.type_label(),
                    "display": P.format_value(v, tag.unit),
+                   "display_short": P.format_short(v, tag.unit),       # rounded: '4.54 kg'
                    # own / inherited (from the definition a reference component is typed by) / default
                    "origin": a.origin(tag.name), "inherited": a.origin(tag.name) == "inherited"}
             if parent is not None:
