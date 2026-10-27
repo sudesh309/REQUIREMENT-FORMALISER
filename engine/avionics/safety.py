@@ -460,7 +460,13 @@ def _issue(sev: str, rule: str, message: str, element: Element, related: Iterabl
 
 
 def _name(e: Optional[Element]) -> str:
-    return (getattr(e, "req_id", None) or e.name or f"<{e.kind}>") if e is not None else "?"
+    """How an issue names an element: ``ADC1``, or ``SYS-3 Provide air data`` for a requirement."""
+    if e is None:
+        return "?"
+    rid = getattr(e, "req_id", None)
+    if rid:
+        return f"{rid} {e.name}".strip() if e.name else rid
+    return e.name or f"<{e.kind}>"
 
 
 def _item_for(source: Element) -> Optional[Element]:
