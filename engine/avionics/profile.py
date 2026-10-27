@@ -29,6 +29,7 @@ the part definitions (reference components), so ``ADC1 : AirDataComputer`` has t
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any, Iterable, Optional
 
 from kerml.elements import Element
@@ -40,7 +41,7 @@ from engine.structure import definition_of
 __all__ = [
     "PROFILE_NAME", "DALS", "DAL_DEFAULT", "BUS_TYPES", "STEREOTYPES", "EQUIPMENT_STEREOTYPES",
     "ensure_profile", "find_profile", "stereotype", "apply", "set_values", "read", "effective",
-    "effective_dal", "dal_rank", "dal_at_least", "normalize_dal", "is_dal",
+    "effective_dal", "equipment_summary", "dal_rank", "dal_at_least", "normalize_dal", "is_dal",
 ]
 
 PROFILE_NAME = "Avionics"
@@ -278,10 +279,11 @@ def set_values(repo, element: Element, name: str, values: dict) -> dict:
 # Reading values
 # ---------------------------------------------------------------------------
 
-def _declaring(prop: str) -> list[str]:
+@lru_cache(maxsize=None)
+def _declaring(prop: str) -> tuple[str, ...]:
     """Qualified paths ``Avionics.<Stereotype>.<prop>`` for every stereotype declaring ``prop``."""
-    return [f"{PROFILE_NAME}.{s['name']}.{prop}" for s in STEREOTYPES
-            if any(p["name"] == prop for p in s["props"])]
+    return tuple(f"{PROFILE_NAME}.{s['name']}.{prop}" for s in STEREOTYPES
+                 if any(p["name"] == prop for p in s["props"]))
 
 
 def read(element: Optional[Element], prop: str) -> Any:
@@ -292,7 +294,7 @@ def read(element: Optional[Element], prop: str) -> Any:
     """
     if element is None or not stereotypes_on(element):
         return None
-    for path in [*_declaring(prop), prop]:
+    for path in (*_declaring(prop), prop):
         try:
             return P.get_property_value(element, path)
         except ValueError:
@@ -337,3 +339,43 @@ def dal_at_least(actual: Any, required: Any) -> bool:
 
 def effective_dal(element: Optional[Element]) -> Optional[str]:
     return normalize_dal(effective(element, "dal"))
+
+
+# ---------------------------------------------------------------------------
+# Roll-up
+# ---------------------------------------------------------------------------
+
+def equipment_summary(repo, architecture: Optional[Element] = None) -> list[dict]:
+    """Mass, power and DAL roll-up per architecture.
+
+    Every component (at any depth, reference components through their definition) that has a
+    mass or a power value counts once per usage, so two ``FlightControlComputer`` usages weigh
+    twice. ``architecture`` limits the roll-up to one architecture; by default every top-level
+    architecture that holds such equipment is listed.
+    """
+    from engine import architecture as A
+    from engine.structure import component_tree
+    roots = [architecture] if architecture is not None else A.architecture_roots(repo)
+    out = []
+    for root in roots:
+        items, mass, nominal, peak = 0, 0.0, 0.0, 0.0
+        by_dal: dict[str, int] = {}
+        for comp, depth, _parent in component_tree(root):
+            if depth == 0:
+                continue
+            m, pn, pp = (effective(comp, "mass"), effective(comp, "powerNominal"),
+                         effective(comp, "powerPeak"))
+            if not any(isinstance(v, (int, float)) for v in (m, pn, pp)):
+                continue
+            items += 1
+            mass += m if isinstance(m, (int, float)) else 0.0
+            nominal += pn if isinstance(pn, (int, float)) else 0.0
+            peak += pp if isinstance(pp, (int, float)) else 0.0
+            dal = effective_dal(comp)
+            if dal:
+                by_dal[dal] = by_dal.get(dal, 0) + 1
+        if items:
+            out.append({"id": root.element_id, "name": root.name, "items": items,
+                        "mass_kg": round(mass, 3), "power_nominal_w": round(nominal, 1),
+                        "power_peak_w": round(peak, 1), "by_dal": dict(sorted(by_dal.items()))})
+    return out

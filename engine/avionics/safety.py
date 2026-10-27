@@ -565,25 +565,43 @@ def _check_fha(repo) -> Iterator[SafetyIssue]:
             if not items:
                 continue
             bad = [(t, d) for t, d in items if not AP.dal_at_least(d, need)]
+            channels = _channel_groups(items)
             listing = ", ".join(f"{_name(t)} ({d})" for t, d in items)
             if bad:
-                if len(items) >= 2 and valid_decomposition(need, [d for _t, d in items]):
+                # A bad item is fine when it belongs to redundant channels (usages of one
+                # definition) whose levels form a valid decomposition of the function's level.
+                lone = [(t, d) for t, d in bad
+                        if not valid_decomposition(need, [dd for g in channels if any(t is m for m, _x in g)
+                                                          for _m, dd in g])]
+                if not lone:
                     yield _issue("info", "avionics.dal.decomposition",
                                  f"{_name(f)} needs DAL {need} ({ids}) and is allocated to {listing}: a valid "
-                                 f"DAL decomposition if the items are independent (ARP4754A 5.2.3)",
+                                 f"DAL decomposition if the channels are independent (ARP4754A 5.2.3)",
                                  bad[0][0], [f] + [t for t, _d in items] + group)
                 else:
-                    names = ", ".join(f"{_name(t)} (DAL {d})" for t, d in bad)
+                    names = ", ".join(f"{_name(t)} (DAL {d})" for t, d in lone)
                     yield _issue("error", "avionics.dal.allocation",
                                  f"{_name(f)} needs DAL {need} ({ids}) but is allocated to {names}: raise the "
-                                 f"DAL of the item(s) or decompose the function over independent items",
-                                 bad[0][0], [f] + [t for t, _d in bad[1:]] + group)
-            elif len(items) >= 2 and AP.dal_rank(need) is not None and AP.dal_rank(need) <= 2:
-                yield _issue("info", "avionics.dal.decomposition",
-                             f"{_name(f)} needs DAL {need} ({ids}) and is allocated to {listing}: if the items "
-                             f"are independent, ARP4754A 5.2.3 allows decomposing the level (for example "
-                             f"{_example_split(need)}) and lowering the DAL of the items",
-                             items[0][0], [f] + [t for t, _d in items[1:]] + group)
+                                 f"DAL of the item(s) or decompose the function over independent redundant "
+                                 f"items", lone[0][0], [f] + [t for t, _d in lone[1:]] + group)
+            elif AP.dal_rank(need) is not None and AP.dal_rank(need) <= 1:
+                redundant = [g for g in channels if len(g) >= 2]
+                if redundant:
+                    names = "; ".join(", ".join(f"{_name(t)} ({d})" for t, d in g) for g in redundant)
+                    yield _issue("info", "avionics.dal.decomposition",
+                                 f"{_name(f)} needs DAL {need} ({ids}) and is allocated to redundant items "
+                                 f"{names}: if they are independent, ARP4754A 5.2.3 allows decomposing the level "
+                                 f"(for example {_example_split(need)}) and lowering the DAL of the items",
+                                 redundant[0][0][0], [f] + [t for g in redundant for t, _d in g][1:] + group)
+
+
+def _channel_groups(items: list) -> list[list]:
+    """Items grouped into redundant channels: usages of one definition form a group."""
+    groups: dict[int, list] = {}
+    for t, d in items:
+        key = definition_of(t) or t
+        groups.setdefault(id(key), []).append((t, d))
+    return list(groups.values())
 
 
 def _example_split(level: str) -> str:

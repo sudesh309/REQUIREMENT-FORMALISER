@@ -36,7 +36,7 @@ def R(summary: str, text: str = "", kind: str = "functional", method: Optional[s
 
 
 def group(summary: str, text: str, children: Iterable[dict]) -> dict:
-    return R(summary, text, "other", None, "E", children=children)
+    return R(summary, text or f"{summary}.", "other", None, "E", children=children)
 
 
 # ---------------------------------------------------------------------------------------------
