@@ -238,6 +238,18 @@ bare name) and its values are set through the profiles API (`set_property_value(
 `StereotypeApplication.values` as a snapshot: it is a fresh dict, assigning into it
 changes nothing. Do not re-derive names from owning packages or coerce values yourself.
 
+**Stereotype values are inherited (SU-15).** A reference component (a `PartUsage` typed by a
+`PartDefinition`) reads the values of the profile stereotypes applied to its definition unless it
+overrides them, so a feature that reads values must not look at `stereotypes_on(e)` (what is
+*stored* on the element) alone: read one value with `engine.profiles.get_property_value(e,
+"Profile.Stereotype.prop")`, list what an element carries with
+`kerml.stereotypes.effective_applications(e)` (own applications, then `.inherited` ones, each with
+`.stereotype`, `.values`, `.get`) or `engine.profiles.element_stereotypes(e)` (with units, display
+strings and `origin`). Write through `set_property_value(s)` (an override on a reference component),
+`reset_property_value(s)` and `apply_stereotype`; copy an application's `own_values()`, never its
+`values`. Roll-ups over a composition follow `engine.structure` (component usages, each read through
+its own definition), so a value set once on a definition counts for every component typed by it.
+
 **Element JSON display fields**: every summary has `badges` (list of short
 strings) and `style` (dict with optional `fill`, `stroke`, `text`, `dash`,
 `icon`). Summary hooks *append* badges and *set* style keys; the tree shows

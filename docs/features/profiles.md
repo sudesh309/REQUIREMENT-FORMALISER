@@ -6,7 +6,9 @@ The studio's counterpart of the MATLAB System Composer **Profile Editor**: a
 element it applies to, may inherit from a base stereotype and carries a display
 style. Applying a stereotype to an element (an LRU, an ARINC 429 port, a bus
 connector, a requirement, ...) gives that element the stereotype's properties,
-whose values are checked and converted on entry.
+whose values are checked and converted on entry. A reference component (a usage typed
+by a definition) reads the values of the stereotypes applied to its definition unless it overrides
+them (see *Inherited values*).
 
 Typical avionics use: a profile `Avionics` with an abstract `Equipment`
 stereotype (mass, power, MTBF), derived `LRU` and `IMAModule` stereotypes (DAL,
@@ -78,7 +80,8 @@ classDiagram
   | Interface | kinds containing `Interface` (not `...Dictionary`), `PortDefinition` |
   | InterfaceElement | `DataElement`, `PhysicalElement`, `FunctionElement` kinds, `AttributeUsage` owned by an interface |
   | Requirement | `RequirementDefinition`, `RequirementUsage` |
-  | Allocation | kinds starting with `Allocation` |
+  | Allocation | allocations only: an allocation object, `AllocationUsage`, `AllocationDefinition` |
+  | AllocationSet | allocation sets (kind `AllocationSet`); a scenario is neither an allocation nor a set |
   | Function | `ActionDefinition`, `ActionUsage` (not calculations / states / transitions) |
   | Architecture | a `PartDefinition` not owned by a component (the model root) |
 
@@ -97,6 +100,47 @@ classDiagram
   (`Avionics.LRU.mass`); `Stereotype.property` and a bare `property` also work
   when unambiguous, and the stereotype part may name a base of the applied
   stereotype (`Avionics.Equipment.mass` on an `LRU`).
+
+### Inherited values (reference components)
+
+A *reference component* is a `PartUsage` typed by a `PartDefinition`. It **reads the values of the
+stereotypes applied to its definition** (`engine.profiles.get_property_value(component,
+"Avionics.LRU.mass")`) unless it overrides them:
+
+```mermaid
+flowchart LR
+    D["definition FCC<br/>«LRU» mass 3 kg, dal A"] -->|typed by| U1["fcc1<br/>reads 3 kg, A"]
+    D -->|typed by| U2["fcc2<br/>override: mass 4.54 kg<br/>reads 4.54 kg, A"]
+    D -.->|"mass changed to 9 kg"| U1
+```
+
+- **Reading.** The usage lists the definition's stereotypes (badges, inspectors, tables) as
+  *inherited*; each value comes from the definition until the usage sets its own. A change to the
+  definition reaches every usage that has not overridden that value. Nested references work at any
+  depth: a part inside a definition is itself a usage typed by another definition and reads from
+  that one.
+- **Overriding.** Setting a value on the usage (inspector, HTTP, MCP, `set_property_value`) creates
+  an application of the stereotype on the usage that holds *only the values you set*; every other
+  property stays inherited. Applying the stereotype to a usage whose definition already carries it
+  is an override too, never a duplicate (`values` given are the overrides).
+- **Resetting.** *Reset* (or `reset_property_value`) takes an override back: the property reads the
+  definition's value again (the property default when there is none). An override application that
+  sets nothing any more is dropped.
+- **Removing.** An inherited stereotype cannot be removed from the usage (it belongs to the
+  definition: remove it there, 409 otherwise); removing the usage's own application removes its
+  overrides. *Remove all* removes the element's own applications only.
+- **Which stereotypes.** Only stereotypes of a profile whose applies-to fits the usage are
+  inherited (an `Architecture` stereotype on a root definition is not). Stereotypes of the legacy
+  API (a plain package, untyped tags) keep their values per element. Ports, connectors and other
+  usages do not inherit from their types yet.
+- **Units and edits.** Property edits (unit, type, deletion) convert or drop the definition's and
+  the overrides' stored values alike, so the usages follow.
+- **Where it shows.** The tree and canvas blocks show the badge of an inherited stereotype (dashed
+  in the tree); Model Tables list the stereotypes and values each component reads (importing an
+  unchanged table overrides nothing, an edited cell is an override); the HTML report adds a *Source*
+  column ("inherited from FCC", "set here (the definition has 3 kg)"); the SysML text export writes
+  the values read, marked "(inherited from FCC)"; Compare reports a changed definition value on every
+  usage that reads it; Model Check reports an inherited value once, on the definition.
 
 ### Values: checks, units and expressions
 
@@ -207,20 +251,46 @@ Select any model element in the containment tree. The **Stereotypes** section
   them. Invalid input is outlined in red with the reason; Escape restores the
   stored value;
 - x on a group removes that stereotype (and its values); *Remove all* removes
-  every stereotype; *Profile Editor...* opens the editor.
+  every stereotype of its own; *Profile Editor...* opens the editor.
+- on a **reference component** the stereotypes of its definition are listed too, headed
+  *inherited from FCC*; their values are shown in italics with an *inherited* note and no remove
+  button. Type a value to override it for this component: the note then reads *overridden · FCC has
+  3 kg* with a **Reset** link that inherits the definition's value again, and the group says
+  *overrides FCC* (its x removes all overrides). Overrides and resets are named undo steps ("Set
+  Avionics.LRU.mass of fcc1", "Reset Avionics.LRU.mass of fcc1 to the inherited value").
+
+The canvas **Property Inspector** (Architecture tab) has the same section for one or several selected
+components (one request and one undo step per edit). Its values are shown with their unit and
+**rounded for reading** (`4.5359237 kg` reads `4.54 kg`; values from 1 up show two decimals, smaller
+ones three significant digits) while the full precision stays stored: the field shows the stored
+digits while it has the focus, its tooltip and the status line give them, and leaving it unchanged
+stores nothing. Input is unit-aware: a number, an expression (`2*1.5`) or a value with a compatible
+unit (`10 lb`) is converted to the property's unit; the field says which units it accepts and the
+status line says what the entry came to ("entered as 10 lb").
 
 Stereotyped elements show a `«Name»` badge per stereotype in the containment
 tree, coloured with the stereotype's style and showing its icon.
 
 ### Apply stereotypes dialog
 
-Toolbar **Apply stereotypes...** (or *Apply to Elements* in the editor): pick
-a stereotype, a scope (*Selected elements* from the current multi-selection,
-*Current package / composition* = the selected element and everything inside
-it, including the definitions of reference components, or *Whole model*) and
-optionally an element category. Elements that already carry the stereotype or
-do not match are skipped; the log reports how many were stereotyped and why
-others were skipped.
+Toolbar **Apply stereotypes...** (or *Apply to Elements* in the editor): pick a stereotype, a scope and
+optionally an element category.
+
+| Scope | Elements |
+|-------|----------|
+| *Selected elements* | exactly the current multi-selection (a way to tag the internals of a referenced definition or the composition itself) |
+| *Current package / composition* | everything the selected element **contains**: its components (nested inline ones too), ports and connectors. Not the composition itself, and not the internals of the definitions its reference components are typed by: those belong to the definitions and are shared by every usage |
+| *Whole model* | every matching element of the project |
+
+The dialog **counts before it applies**: *N elements will get «Avionics.LRU»*, with the elements
+(*Show the elements*), how many are skipped and why (already applied, inherited from the definition,
+does not apply), and an **Apply to N elements** button that stays disabled while counting or when
+nothing would change. A choice that cannot be applied (an abstract stereotype, a stereotype for all
+elements without a category) shows its reason instead of a count. Elements that already carry the
+stereotype are skipped, and so are reference components whose definition carries it or gets it in the
+same batch (they read it from there; values given in a batch for a component whose definition
+already has the stereotype become an override). The log reports how many elements were
+stereotyped and why others were skipped.
 
 ### Validation
 
@@ -298,17 +368,20 @@ Errors are JSON `{"error": message}` with 400 (invalid), 404 (not found) or 409
 | GET / PATCH / DELETE | `/api/stereotypes/<ref>` | PATCH also takes `force` (strip invalidated applications) |
 | POST | `/api/stereotypes/<ref>/properties` | `{name?, type?, unit?, default?, min?, max?, literals?, description?, index?}` |
 | PATCH / DELETE | `/api/stereotypes/<ref>/properties/<prop>` | same keys; PATCH returns `converted`, `reset` |
-| POST | `/api/stereotypes/<ref>/batch` | `{scope: selection\|composition\|model, ids?, root?, category?, values?}` |
-| GET | `/api/elements/<id>/stereotypes` | `{element, applied: [groups with typed values], applicable}` |
-| POST | `/api/elements/<id>/stereotypes` | `{stereotype, values?}` |
-| PATCH | `/api/elements/<id>/stereotypes` | `{values: {"Profile.Stereotype.prop": v}}` or `{property, value}` (all or nothing) |
-| DELETE | `/api/elements/<id>/stereotypes[/<ref>]` | remove all / one |
+| POST | `/api/stereotypes/<ref>/batch` | `{scope: selection\|composition\|model, ids?, root?, category?, values?, dry_run?}` -> `{applied, count, skipped, skipped_by_reason, overrides}`; `dry_run` changes nothing and adds `preview` (a choice that cannot be applied answers 200 with `count: 0` and a `problem`) |
+| GET | `/api/elements/<id>/stereotypes` | `{element, applied: [groups with typed values], applicable}`; a reference component's `applied` includes inherited stereotypes (`inherited`, `overridden`, `inherited_from`) and each value has `origin` (own / inherited / default), `inherited`, `overridden`, `inherited_value`, `short` / `display_short` (rounded) |
+| POST | `/api/elements/<id>/stereotypes` | `{stereotype, values?}` (an override on a reference component whose definition carries it) |
+| PATCH | `/api/elements/<id>/stereotypes` | `{values: {"Profile.Stereotype.prop": v}}` or `{property, value}` (all or nothing; an override on a reference component) |
+| POST | `/api/elements/<id>/stereotypes/reset` | `{properties: ["Profile.Stereotype.prop", ...]}` inherit the definition's values again -> `{reset, unchanged, removed}` |
+| DELETE | `/api/elements/<id>/stereotypes[/<ref>]` | remove all / one of the element's own (409 for an inherited one) |
+| GET / PATCH / POST / DELETE | `/api/arch/stereotypes[/reset]` | the canvas inspector's multi-selection variants (`ids`) |
 | GET | `/api/units`, `/api/units/convert?value=3 lb&to=kg` | unit table, conversion |
 
 Also: element JSON (`GET /api/element/<id>`, `/api/tree`) carries
-`badges` (`«LRU»` per applied stereotype), `style` (merged `fill`, `stroke`,
-`text`, `icon`, `dash` from the line style) and per-stereotype entries
-`stereotypes: [{name, qualified_name, id, profile, style, values}]`.
+`badges` (`«LRU»` per applied or inherited stereotype), `style` (merged `fill`,
+`stroke`, `text`, `icon`, `dash` from the line style) and per-stereotype entries
+`stereotypes: [{name, qualified_name, id, profile, style, values, display, display_short,
+inherited}]`.
 `PATCH /api/element/<id>` with `{"props": {"Avionics.LRU.mass": "3 lb"}}` sets
 a value, and generic edits of profiles, stereotypes and properties go through
 the same checks. `POST /api/element` with kind `Profile` creates a profile.
@@ -324,9 +397,10 @@ The legacy `/api/stereotype/define` and `/api/stereotype/apply` keep working.
 | `sysml_add_stereotype_property` / `sysml_update_stereotype_property` / `sysml_delete_stereotype_property` | property CRUD with propagation |
 | `sysml_apply_stereotype` | apply with optional values (replaces the core tool of that name; same arguments, also accepts `Profile.Stereotype` and dotted value keys) |
 | `sysml_remove_stereotype` | remove one or all stereotypes from an element |
-| `sysml_set_stereotype_property` | set one (`property`, `value`) or many (`values`) values |
-| `sysml_get_stereotype_properties` | applied stereotypes with grouped values, or one value |
-| `sysml_batch_apply_stereotype` | apply over selection / composition / model |
+| `sysml_set_stereotype_property` | set one (`property`, `value`) or many (`values`) values (an override on a reference component) |
+| `sysml_reset_stereotype_property` | inherit the definition's value again (`property` / `properties`) |
+| `sysml_get_stereotype_properties` | applied and inherited stereotypes with grouped values (`origin`, `inherited`, `overridden`), or one value |
+| `sysml_batch_apply_stereotype` | apply over selection / composition / model; `dry_run` counts first |
 | `sysml_export_profile` / `sysml_import_profile` | profile files as text or a path |
 | `sysml_list_units` / `sysml_convert_units` | unit table and conversion |
 
@@ -349,6 +423,14 @@ P.apply_stereotype(repo, fcc, lru, {"mass": "3 lb"})
 P.set_property_value(repo, fcc, "Avionics.LRU.dal", "b")
 P.get_property_value(fcc, "Avionics.LRU.mass")      # 1.36077711 (kg)
 P.batch_apply(repo, lru, scope="model")
+P.batch_apply(repo, lru, scope="composition", root=arch, dry_run=True)["count"]   # what it would tag
+
+# Reference components inherit from their definition (SU-15).
+fcc = ...                                    # a PartUsage typed by the PartDefinition fcc_def
+P.apply_stereotype(repo, fcc_def, lru, {"mass": "3 kg"})
+P.get_property_value(fcc, "Avionics.LRU.mass")      # 3.0, read from fcc_def
+P.set_property_value(repo, fcc, "Avionics.LRU.mass", "4 kg")     # an override on fcc only
+P.reset_property_value(repo, fcc, "Avionics.LRU.mass")           # inherits 3.0 again
 text = P.export_profile_json(prof)
 P.import_profile(Repository("Other"), text)
 ```
@@ -367,8 +449,16 @@ The legacy API still works: `Stereotype(name, applies_to=[cls])`,
 - **Removal**: deletion goes through `Repository.remove`; a removal hook keeps
   the import log and application bookkeeping clean.
 - Reading values from other features: `engine.profiles.get_property_value(e,
-  "Avionics.Equipment.mass")` (unit = the property's unit) or
-  `element_stereotypes(e)` for everything with units and display strings.
+  "Avionics.Equipment.mass")` (unit = the property's unit; for a reference component the
+  definition's value unless overridden) or `element_stereotypes(e)` for everything with units and
+  display strings. To list the stereotypes of an element use
+  `kerml.stereotypes.effective_applications(e)` (its own, then those it inherits; each has
+  `.stereotype`, `.values`, `.get(name)`, `.inherited`) rather than `stereotypes_on(e)`, which
+  returns only what is stored on the element, and never copy `.values` into another element
+  (`own_values()` carries what was set).
+- **Persistence**: the properties set on a reference component are recorded by the `profiles` codec
+  (`ext.profiles.data.overrides`, stereotype and property ids); the saved `values` are what the
+  element reads. A file without the record loads with "differs from the default = set".
 - **Interop** (tables, report, Compare / merge, SysML text, XMI; see
   [interop.md](interop.md)) names stereotypes by `full_name`, finds them with
   `find_stereotype`, creates and edits profiles, stereotypes and properties from the
@@ -398,7 +488,10 @@ The legacy API still works: `Stereotype(name, applies_to=[cls])`,
 | apply-stereotype-ui | closed | inspector section (order 10) with Add / remove / Remove all |
 | multiple-stereotypes | closed | several stereotypes per element, duplicates rejected |
 | property-inspector-editing | closed | typed editors, units, expressions, inline errors, Escape |
-| batch-apply-stereotypes | closed | selection / composition / model scope, category filter |
+| batch-apply-stereotypes | closed | selection / composition / model scope, category filter; the composition scope covers what the composition contains (not itself, not referenced definitions' internals) and the dialog counts the affected elements before applying (SU-7) |
+| stereotype-value-inheritance | closed | reference components read their definition's stereotype values, override and reset them; every view agrees (SU-15) |
+| allocation-categories | closed | `Allocation` stereotypes apply to allocations only, allocation sets have the `AllocationSet` category (PO-13) |
+| dock-value-units | closed | the canvas inspector shows values with their unit rounded, stores full precision, accepts unit-aware input (SU-11) |
 | default-stereotypes | closed | component / port / connector defaults, model root stereotype, via created hook |
 | profile-change-propagation | closed | renames, unit / type changes, deletions propagate to stored values |
 
@@ -417,6 +510,12 @@ Deferred (with reasons):
 - **View filters by stereotype / property value** and **analysis roll-ups**
   belong to the views and analysis features; they read values through
   `engine.profiles` (see *Cross-feature notes*).
+- **Inheritance beyond reference components**: ports and connectors do not inherit values from the
+  interface they are typed by, and a definition does not inherit from the definitions it specializes
+  (only usage-from-definition, the System Composer reference component case).
+- **Overrides typed into a table**: a Model Tables cell that equals the inherited value leaves the
+  value inherited (the table carries values, not the record of which were set); use the inspector to
+  make an override that happens to equal the definition's.
 - **Stereotype property values bound to model parameters** (System Composer
   parameters / expressions over other properties): values are literals or
   numeric expressions only; parameters are a separate feature.

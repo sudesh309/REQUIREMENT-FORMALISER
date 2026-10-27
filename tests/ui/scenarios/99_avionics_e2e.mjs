@@ -282,7 +282,8 @@ async function run({ page, waitReady, expect, api }, step) {
   expect(await dockValue("power") === "120 W" && await dockValue("dal") === "B",
          `FMS values in the dock: ${await dockValue("power")}, ${await dockValue("dal")}`);
   await clickBlock("ADIRU");
-  await dockValueIs("mass", "4.08233133 kg", "ADIRU mass converted from lb");
+  // SU-11: the dock rounds for reading (4.08233133 kg is stored, as the Properties tab shows).
+  await dockValueIs("mass", "4.08 kg", "ADIRU mass converted from lb and rounded");
   await shot("profile");
 
   // =========================================================================================
