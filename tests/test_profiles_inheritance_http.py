@@ -71,6 +71,36 @@ class InheritanceHttpTests(WebAppTestCase):
         self.assertIn("mass", {k for c in self.call("GET", f"/api/arch/view/{self.root['id']}")["components"]
                                if c["name"] == "fcc1" for s in c["stereotypes"] for k in s["values"]})
 
+    def test_values_are_also_given_rounded_for_the_dock(self):
+        """SU-11: `value` / `display` keep the full precision, `short` / `display_short` round it."""
+        self.call("PATCH", f"/api/elements/{self.fcc1['id']}/stereotypes", {"property": "Avionics.LRU.mass", "value": "10 lb"})
+        mass = self.props(self.fcc1)["mass"]
+        self.assertEqual((mass["value"], mass["display"], mass["short"], mass["display_short"]),
+                         (4.5359237, "4.5359237 kg", "4.54", "4.54 kg"))
+        self.assertEqual((mass["inherited_value"], mass["inherited_short"]), (3.0, "3"))
+        self.assertEqual(self.props(self.fcc1)["dal"]["display_short"], "A")          # not a number: as it is
+        el = self.call("GET", f"/api/element/{self.fcc1['id']}")
+        (entry,) = el["stereotypes"]
+        self.assertEqual((entry["display"]["mass"], entry["display_short"]["mass"], entry["values"]["mass"]),
+                         ("4.5359237 kg", "4.54 kg", 4.5359237))
+        tree = self.call("GET", "/api/tree")
+
+        def find(node, name):
+            if node.get("name") == name:
+                return node
+            for c in node.get("children", []):
+                hit = find(c, name)
+                if hit:
+                    return hit
+        self.assertEqual(find(tree, "fcc1")["stereotypes"][0]["display_short"]["mass"], "4.54 kg")
+        # the multi-selection view rounds the same way
+        out = self.call("GET", f"/api/arch/stereotypes?ids={self.fcc1['id']}")
+        got = {p["name"]: p for g in out["applied"][0]["groups"] for p in g["properties"]}["mass"]
+        self.assertEqual((got["display"], got["display_short"]), ("4.5359237 kg", "4.54 kg"))
+        # nothing was rounded in storage
+        saved = self.call("GET", "/api/save")["text"]
+        self.assertIn("4.5359237", saved)
+
     def test_override_reset_and_undo(self):
         base = self.depth()
         out = self.call("PATCH", f"/api/elements/{self.fcc1['id']}/stereotypes",

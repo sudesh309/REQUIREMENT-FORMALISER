@@ -424,6 +424,11 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
             ends = connector_ends(conn)       # contexts resolved before the typing changes
             if any((retyped and ctx is c and p.owner is old) or id(p) in swap for ctx, p in ends):
                 affected.append((conn, ends))
+    if definition is None and old is not None:
+        try:      # the component keeps the stereotype values it read from the definition it leaves
+            _profiles().freeze_inherited(repo, c)
+        except ImportError:
+            pass
     c.feature_typings = []
     c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
     if definition is not None:

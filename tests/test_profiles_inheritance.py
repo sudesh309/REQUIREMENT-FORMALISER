@@ -296,6 +296,38 @@ class InteropTests(Base):
         self.assertEqual(stereotypes_on(self.fcc1)[0].values, {"mass": 0.0})      # the default, not 4.2
 
 
+class RetypingTests(Base):
+    """What a component reads must not change silently when its typing goes away."""
+
+    def test_inlining_a_component_keeps_what_it_read(self):
+        from engine import architecture as A
+        P.set_property_value(self.repo, self.fcc1, "mass", 4)                # an override; dal inherited
+        A.inline_component(self.repo, self.fcc1)
+        A.inline_component(self.repo, self.fcc2)
+        self.assertIsNone(inheritance_source(self.fcc1))
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.mass"), 4.0)
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.dal"), "A")      # was inherited
+        self.assertEqual(P.get_property_value(self.fcc2, "Avionics.LRU.mass"), 3.0)     # was inherited
+        P.set_property_value(self.repo, self.fcc_def, "Avionics.LRU.mass", 9)           # no longer follows
+        self.assertEqual(P.get_property_value(self.fcc2, "Avionics.LRU.mass"), 3.0)
+        self.assertEqual([a.inherited for a in effective_applications(self.fcc2)], [False])
+
+    def test_retyping_follows_the_new_definition(self):
+        from engine import architecture as A
+        other = _own(self.repo, PartDefinition, "Other", self.root)
+        P.apply_stereotype(self.repo, other, self.lru, {"mass": 20})
+        A.set_definition(self.repo, self.fcc2, other)
+        self.assertEqual(P.get_property_value(self.fcc2, "Avionics.LRU.mass"), 20.0)
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.mass"), 3.0)
+
+    def test_copies_do_not_freeze_inherited_values(self):
+        from engine import architecture as A
+        P.set_property_value(self.repo, self.fcc1, "mass", 4)
+        copies, _mapping, apps = A.clone_forest([self.fcc1, self.fcc2])
+        self.assertEqual([(c.name, st.name, vals) for c, st, vals in apps],
+                         [("fcc1", "LRU", {"mass": 4.0})])                # fcc2 inherits: nothing to copy
+
+
 class PersistenceTests(Base):
 
     def _reload(self):

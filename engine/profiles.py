@@ -54,7 +54,7 @@ __all__ = [
     "add_stereotype", "update_stereotype", "delete_stereotype",
     "add_property", "update_property", "delete_property", "move_property",
     "apply_stereotype", "remove_stereotype", "remove_all_stereotypes",
-    "own_application", "set_property_value", "set_property_values",
+    "own_application", "freeze_inherited", "set_property_value", "set_property_values",
     "reset_property_value", "reset_property_values", "get_property_value", "resolve_value_path",
     "effective_applications", "inheritance_source",
     "element_stereotypes", "applicable_stereotypes", "batch_apply", "plan_batch",
@@ -815,6 +815,24 @@ def reset_property_values(repo, element: Element, paths: Iterable[str]) -> dict:
             _strip(element, a)
             out["removed"].append(a.stereotype.full_name)
     return out
+
+
+def freeze_inherited(repo, element: Element) -> int:
+    """Make what ``element`` reads from its definition its own: every inherited stereotype gets
+    an application of its own holding the values it reads, and the values an override
+    application still inherits are set on it. For the moment the typing goes away (an inlined
+    component keeps its stereotypes and values). Returns how many applications changed."""
+    changed = 0
+    for a in effective_applications(element):
+        if a.inherited:
+            _wrap(a.stereotype.apply, element, dict(a.values))
+            changed += 1
+        elif a.parent() is not None:
+            todo = [t for t in a.stereotype.all_tags() if not a.is_explicit(t)]
+            for t in todo:
+                a.assign(t, a.get(t.name))
+            changed += bool(todo)
+    return changed
 
 
 def reset_property_value(repo, element: Element, path: str) -> dict:
