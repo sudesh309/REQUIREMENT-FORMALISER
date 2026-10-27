@@ -402,7 +402,7 @@ def _prop_hook(e: Element, key: str, value: Any) -> bool:
     if isinstance(e, Profile) and key in _PROFILE_PROPS:
         P.update_profile(repo, e, **{_PROFILE_PROPS[key]: value})
         return True
-    if isinstance(key, str) and "." in key and stereotypes_on(e):
+    if isinstance(key, str) and "." in key and effective_applications(e):
         P.set_property_value(repo, e, key, value)
         return True
     return False

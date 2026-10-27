@@ -298,6 +298,32 @@ label("POST", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$",
       lambda c: f"Apply «{_stereo(c, c.body.get('stereotype'))}» to {c.name(c.args['eid'])}")
 label("PATCH", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$", _set_values)
 label("POST", r"^/api/elements/(?P<eid>[^/]+)/stereotypes/reset$", _reset_values)
+def _arch_who(c: Ctx) -> str:
+    return c.names(c.body.get("ids"))
+
+
+def _arch_set_values(c: Ctx) -> str:
+    values = dict(c.body.get("values") or {})
+    if "property" in c.body:
+        values[c.body["property"]] = c.body.get("value")
+    what = next(iter(values)) if len(values) == 1 else f"{len(values)} stereotype values"
+    return f"Set {what} of {_arch_who(c)}"
+
+
+def _arch_reset(c: Ctx) -> str:
+    paths = list(c.body.get("properties") or [])
+    if c.body.get("property"):
+        paths.append(c.body["property"])
+    what = paths[0] if len(paths) == 1 else f"{len(paths)} stereotype values"
+    return f"Reset {what} of {_arch_who(c)} to the inherited value"
+
+
+label("POST", r"^/api/arch/stereotypes$",
+      lambda c: f"Apply «{_stereo(c, c.body.get('stereotype'))}» to {_arch_who(c)}")
+label("PATCH", r"^/api/arch/stereotypes$", _arch_set_values)
+label("DELETE", r"^/api/arch/stereotypes$",
+      lambda c: f"Remove «{_stereo(c, c.body.get('stereotype'))}» from {_arch_who(c)}")
+label("POST", r"^/api/arch/stereotypes/reset$", _arch_reset)
 label("DELETE", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$",
       lambda c: f"Remove all stereotypes from {c.name(c.args['eid'])}")
 label("DELETE", r"^/api/elements/(?P<eid>[^/]+)/stereotypes/(?P<ref>[^/]+)$",

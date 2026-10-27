@@ -89,6 +89,16 @@ const STYLE = `
 .pf-props .pf-field-err { grid-column:2 / -1; color:#b91c1c; font-size:11px; margin-top:-2px; }
 .pf-props input.pf-invalid { border-color:#ef4444; background:#fef2f2; }
 .pf-props input[type=checkbox] { width:16px; height:16px; justify-self:start; }
+/* values a reference component inherits from its definition (SU-15) */
+.pf-props input.pf-inh, .pf-props select.pf-inh { font-style:italic; color:#64748b; background:#f8fafc; }
+.pf-props .pf-ovr { border-left:3px solid #8b5cf6; }
+.pf-props .pf-note { grid-column:2 / -1; margin-top:-2px; font-size:11px; color:#64748b; display:flex; flex-wrap:wrap; gap:2px 8px; align-items:center; }
+.pf-tag { font-size:10px; line-height:15px; padding:0 6px; border-radius:9px; background:#ede9fe; color:#6d28d9; white-space:nowrap; }
+.pf-tag.inh { background:#f1f5f9; color:#475569; }
+.pf-reset { border:0; background:transparent; color:#2563eb; font-size:11px; text-decoration:underline; cursor:pointer; padding:0; }
+.pf-reset:hover { color:#1d4ed8; }
+.pf-from { font-size:10px; font-weight:400; color:#64748b; white-space:nowrap; }
+#tree .tree-badge.pf-badge.pf-badge-inh { border-style:dashed; opacity:.85; }
 /* the profiles plugin renders stereotypes as styled badges (display contract);
    hide the core's legacy inline «…» text and the raw JSON line */
 #tree li.tree-node > .row > span:nth-child(2) > span { display:none; }
@@ -179,7 +189,8 @@ export default async function install(studio) {
   // `ui`: the typed value editors of the Stereotypes section, reused by the canvas's Property
   // Inspector so both look, check and report errors the same way.
   studio.profiles = { editor, openBatchDialog: () => openBatchDialog(studio),
-                      ui: { propertyEditor, showStored, findValue, errorText, once } };
+                      ui: { propertyEditor, showStored, findValue, errorText, once, markOrigin,
+                            rounding, groupTag, removeButton, markGroup } };
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -262,7 +273,8 @@ function decorateTree(studio) {
       if (!app) continue;                      // a badge from another feature
       const st = app.style || {};
       b.classList.add("pf-badge");
-      b.title = app.qualified_name || app.name;
+      b.classList.toggle("pf-badge-inh", !!app.inherited);
+      b.title = (app.qualified_name || app.name) + (app.inherited ? " (inherited from the definition)" : "");
       if (st.fill) { b.style.background = st.fill; b.style.color = st.text || colorFor(expandHex(st.fill)); }
       else if (st.text) b.style.color = st.text;
       if (st.stroke) b.style.borderColor = st.stroke;
@@ -297,6 +309,7 @@ function renderInspector(studio, editor, el, box) {
 function fillInspector(studio, box, view) {
   const eid = view.element.id;
   const applicable = view.applicable || [];
+  const hasOwn = view.applied.some(a => !a.inherited);
   const bar = `
     <div class="pf-insp-bar">
       <select class="input" data-pf="add-stereotype" aria-label="Add stereotype" ${applicable.length ? "" : "disabled"}
@@ -306,7 +319,8 @@ function fillInspector(studio, box, view) {
       </select>
       <button type="button" class="btn-action" data-pf="open-editor" title="Define profiles and stereotypes">Profile Editor…</button>
       <span class="flex-1"></span>
-      <button type="button" class="btn-action" data-pf="remove-all" ${view.applied.length ? "" : "disabled"}>Remove all</button>
+      <button type="button" class="btn-action" data-pf="remove-all" ${hasOwn ? "" : "disabled"}
+              title="Remove the stereotypes applied to this element (those inherited from its definition stay)">Remove all</button>
     </div>`;
   const groups = view.applied.map(app => {
     const st = app.style || {};
@@ -318,16 +332,15 @@ function fillInspector(studio, box, view) {
     const rows = app.groups.map(g => {
       if (!g.properties.length) return "";
       const head = heads ? `<div class="pf-ghead">${esc(g.stereotype)}${g.id !== app.id ? " (inherited)" : ""}</div>` : "";
-      return head + g.properties.map(p => propertyEditor(p)).join("");
+      return head + g.properties.map(p => propertyEditor(p, { from: app.inherited_from?.name })).join("");
     }).join("");
     return `
       <details class="pf-app" data-app="${esc(app.id)}" ${collapsed.has(app.id) ? "" : "open"}>
         <summary title="${esc(app.description || "")}">
           <span class="pf-caret">▸</span>${sw}${icon}
-          <span class="pf-name">«${esc(app.qualified_name)}»</span>
+          <span class="pf-name">«${esc(app.qualified_name)}»</span><span data-group-tag>${groupTag(app)}</span>
           <span class="flex-1"></span>
-          <button type="button" class="pf-icon-btn danger" data-pf="remove" data-st="${esc(app.id)}"
-                  title="Remove «${esc(app.qualified_name)}»" aria-label="Remove ${esc(app.qualified_name)}">✕</button>
+          <span data-group-rm>${removeButton(app)}</span>
         </summary>
         <div class="pf-props">${rows || '<div class="text-xs text-slate-400 col-span-3">No properties.</div>'}</div>
       </details>`;
@@ -358,15 +371,32 @@ function fillInspector(studio, box, view) {
       await studio.refreshTree();
     } catch (err) { msg(errorText(err), "err"); }
   });
-  for (const btn of box.querySelectorAll("[data-pf=remove]")) {
-    btn.addEventListener("click", async (e) => {
+  // One delegated listener per box (the notes under the values are re-drawn in place); it acts
+  // on whatever this box shows now.
+  box._pfCtx = { eid, view, msg, rerender };
+  if (!box._pfResetBound) {
+    box._pfResetBound = true;
+    box.addEventListener("click", async (e) => {
+      const c = box._pfCtx;
+      const btn = e.target.closest("[data-reset]");
+      if (btn) {
+        e.preventDefault();
+        try {
+          const v = await studio.api("POST", `/api/elements/${encodeURIComponent(c.eid)}/stereotypes/reset`, { properties: [btn.dataset.reset] });
+          studio.log(`${c.view.element.name}: ${btn.dataset.reset} is inherited again`, "ok");
+          c.rerender(v);
+        } catch (err) { c.msg(errorText(err), "err"); }
+        return;
+      }
+      const rm = e.target.closest("[data-pf=remove]");
+      if (!rm) return;
       e.preventDefault(); e.stopPropagation();
       try {
-        const v = await studio.api("DELETE", `/api/elements/${encodeURIComponent(eid)}/stereotypes/${encodeURIComponent(btn.dataset.st)}`);
-        studio.log(`Removed stereotype from ${view.element.qualified_name}`, "warning");
-        rerender(v);
+        const v = await studio.api("DELETE", `/api/elements/${encodeURIComponent(c.eid)}/stereotypes/${encodeURIComponent(rm.dataset.st)}`);
+        studio.log(`Removed stereotype from ${c.view.element.qualified_name}`, "warning");
+        c.rerender(v);
         await studio.refreshTree();
-      } catch (err) { msg(errorText(err), "err"); }
+      } catch (err) { c.msg(errorText(err), "err"); }
     });
   }
   for (const det of box.querySelectorAll("details.pf-app")) {
@@ -383,7 +413,14 @@ function fillInspector(studio, box, view) {
         const shown = findValue(v, path);
         studio.log(`${view.element.name}: ${path} = ${shown?.display ?? ""}`, "ok");
         // Update this editor in place (no re-render): focus may already be in the next field.
-        if (shown) showStored(input, shown);
+        if (shown) {
+          showStored(input, shown);
+          const app = appOf(v, path);
+          markOrigin(input, shown, app);
+          markGroup(input.closest("details.pf-app"), app, removeButton(app));
+          const all = box.querySelector("[data-pf=remove-all]");
+          if (all) all.disabled = !v.applied.some(a => !a.inherited);
+        }
         msg(`${path} = ${shown?.display ?? ""}`, "ok");
       } catch (err) {
         input.classList.add("pf-invalid");
@@ -400,6 +437,10 @@ function fillInspector(studio, box, view) {
   }
 }
 
+function appOf(view, path) {
+  return (view.applied || []).find(a => a.groups.some(g => g.properties.some(p => p.path === path))) || null;
+}
+
 function findValue(view, path) {
   for (const app of view.applied || []) for (const g of app.groups) for (const p of g.properties) if (p.path === path) return p;
   return null;
@@ -413,22 +454,104 @@ function editorText(p) {
   return String(p.value);
 }
 
-/** Show a freshly stored value in its editor and clear any error marking. */
+/** The same rounded for compact displays (SU-11): 4.5359237 -> 4.54; the stored value is untouched. */
+function shortText(p) {
+  if (p.value === null || p.value === undefined) return "";
+  if (NUMERIC.has(p.type) && typeof p.value === "number" && p.short !== undefined) return p.short;
+  return editorText(p);
+}
+
+/** Tooltip of a value editor: description, type and range, and the full precision when rounded. */
+function valueTip(p, rounded) {
+  const full = rounded && editorText(p) !== shortText(p) ? `stored: ${p.display}` : "";
+  return [p.description, full].filter(Boolean).join(" · ");
+}
+
+/** Show a freshly stored value in its editor and clear any error marking. Rounded editors
+ *  (`data-round`) show the short text and the full precision while they have the focus. */
 function showStored(input, p) {
   if (input.type === "checkbox") input.checked = !!p.value;
   else {
-    const text = p.type === "enumeration" ? (p.value ?? "") : editorText(p);
+    const full = p.type === "enumeration" ? (p.value ?? "") : editorText(p);
+    const rounded = input.dataset.round !== undefined && p.type !== "enumeration";
+    const short = rounded ? shortText(p) : full;
+    input.dataset.full = full;
+    input.dataset.short = short;
+    const text = rounded && document.activeElement !== input ? short : full;
     input.value = text;
     input.dataset.orig = text;
   }
   input.classList.remove("pf-invalid");
   input.removeAttribute("aria-invalid");
-  input.title = p.description || "";
+  input.title = valueTip(p, input.dataset.round !== undefined);
   delete input._pfSent;
 }
 
-function propertyEditor(p) {
+/** Focus shows the full precision of a rounded value, leaving it again shows the short form. */
+function rounding(root) {
+  root.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (t.dataset?.round === undefined || t.dataset.full === undefined) return;
+    if (t.value === t.dataset.short && t.dataset.full !== t.dataset.short) { t.value = t.dataset.full; t.dataset.orig = t.dataset.full; }
+  });
+  root.addEventListener("focusout", (e) => {
+    const t = e.target;
+    if (t.dataset?.round === undefined || t.dataset.full === undefined) return;
+    if (t.value === t.dataset.full && t.dataset.full !== t.dataset.short) { t.value = t.dataset.short; t.dataset.orig = t.dataset.short; }
+  });
+}
+
+/** «Stereotype» group tag: where an inherited stereotype comes from, or that values override it. */
+function groupTag(app) {
+  const from = esc(app.inherited_from?.name || "the definition");
+  if (app.inherited) return ` <span class="pf-tag inh" title="Applied to ${from}, which this component is typed by">inherited from ${from}</span>`;
+  if (app.overridden) return ` <span class="pf-tag" title="Also applied to ${from}: values set here override its values">overrides ${from}</span>`;
+  return "";
+}
+
+/** The remove button of a stereotype group: none for a stereotype only inherited from the
+ *  definition, "remove the overrides" when values were set here as well. `attrs` marks it for the caller. */
+function removeButton(app, attrs = "", suffix = "") {
+  if (app.inherited) return "";
+  const from = esc(app.inherited_from?.name || "the definition");
+  return `<button type="button" class="pf-icon-btn danger" ${attrs || `data-pf="remove" data-st="${esc(app.id)}"`}
+            title="${app.overridden ? `Remove the overrides: inherit everything from ${from}` : `Remove «${esc(app.qualified_name)}»`}${suffix}"
+            aria-label="Remove ${esc(app.qualified_name)}">✕</button>`;
+}
+
+/** Refresh the tag and remove button of a stereotype group in place (focus stays where it is). */
+function markGroup(details, app, removeHtml) {
+  if (!details || !app) return;
+  const tag = details.querySelector("[data-group-tag]");
+  if (tag) tag.innerHTML = groupTag(app);
+  const rm = details.querySelector("[data-group-rm]");
+  if (rm) rm.innerHTML = removeHtml;
+}
+
+/** The note under a value of a reference component: inherited, or overridden with a reset. */
+function originNote(p, from) {
+  if (p.overridden === undefined) return "";                     // nothing to inherit from
+  const where = esc(from || "the definition");
+  const body = p.overridden
+    ? `<span class="pf-tag" title="Set on this component only">overridden</span> ${where} has ${esc(p.inherited_display ?? "")}
+       <button type="button" class="pf-reset" data-reset="${esc(p.path)}" title="Inherit ${esc(p.inherited_display ?? "the value")} from ${where} again">Reset</button>`
+    : `<span class="pf-tag inh" title="Edit the value to override it on this component">inherited</span> from ${where}`;
+  return `<div class="pf-note" data-note-for="${esc(p.path)}" data-from="${esc(from || "")}">${body}</div>`;
+}
+
+/** Update the inherited / overridden marks of an editor after its value was stored. */
+function markOrigin(input, p, app) {
+  if (p.overridden === undefined) return;
+  input.classList.toggle("pf-inh", !p.overridden);
+  input.classList.toggle("pf-ovr", !!p.overridden);
+  const grid = input.closest(".pf-props");
+  const note = grid && [...grid.querySelectorAll("[data-note-for]")].find(n => n.dataset.noteFor === p.path);
+  if (note) note.outerHTML = originNote(p, app?.inherited_from?.name || note.dataset.from);
+}
+
+function propertyEditor(p, opts = {}) {
   const id = `pf-v-${p.id}-${Math.random().toString(36).slice(2, 7)}`;
+  const origin = p.overridden === undefined ? "" : (p.overridden ? " pf-ovr" : " pf-inh");
   const tip = [p.description, p.type + (p.unit ? ` [${p.unit}]` : ""),
                p.min != null ? `min ${p.min}` : "", p.max != null ? `max ${p.max}` : ""].filter(Boolean).join(" · ");
   const label = `<label for="${id}" title="${esc(tip)}">${esc(p.name)}</label>`;
@@ -439,20 +562,24 @@ function propertyEditor(p) {
   } else if (p.type === "enumeration") {
     const lits = [...p.literals];
     const cur = p.value ?? "";
-    editor = `<select class="input${invalid}" id="${id}" data-path="${esc(p.path)}" data-orig="${esc(cur)}">
+    editor = `<select class="input${invalid}${origin}" id="${id}" data-path="${esc(p.path)}" data-orig="${esc(cur)}">
       ${cur === "" || !lits.includes(cur) ? option(cur, cur === "" ? "—" : `${cur} (invalid)`, true) : ""}
       ${lits.map(l => option(l, l, l === cur)).join("")}</select>`;
   } else {
-    const text = editorText(p);
+    const full = editorText(p);
+    const rounded = !!opts.round && NUMERIC.has(p.type);
+    const text = rounded ? shortText(p) : full;
     const hint = NUMERIC.has(p.type)
       ? `Number, expression (2*0.75)${p.unit ? ` or value with a compatible unit (e.g. 3 ${p.unit === "kg" ? "lb" : p.unit})` : ""}`
       : "Text";
-    editor = `<input class="input${invalid}" id="${id}" data-path="${esc(p.path)}" data-orig="${esc(text)}" value="${esc(text)}"
-              ${NUMERIC.has(p.type) ? 'inputmode="decimal"' : ""} placeholder="${esc(hint)}" title="${esc(p.problem || hint)}" autocomplete="off"/>`;
+    const stored = rounded && full !== text ? ` (stored: ${p.display})` : "";
+    editor = `<input class="input${invalid}${origin}" id="${id}" data-path="${esc(p.path)}" data-orig="${esc(text)}" value="${esc(text)}"
+              ${rounded ? `data-round data-full="${esc(full)}" data-short="${esc(text)}"` : ""}
+              ${NUMERIC.has(p.type) ? 'inputmode="decimal"' : ""} placeholder="${esc(hint)}" title="${esc((p.problem || hint) + stored)}" autocomplete="off"/>`;
   }
   const unit = `<span class="pf-unit">${esc(p.unit || "")}</span>`;
   const problem = p.valid === false && p.problem ? `<div class="pf-field-err">${esc(p.problem)}</div>` : "";
-  return label + editor + unit + problem;
+  return label + editor + unit + problem + originNote(p, opts.from);
 }
 
 function escapeRe(s) { return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
