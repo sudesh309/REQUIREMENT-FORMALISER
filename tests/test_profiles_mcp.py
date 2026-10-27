@@ -48,6 +48,27 @@ class ProfileToolTests(unittest.TestCase):
         names = [t["name"] for t in M.TOOLS]
         self.assertEqual(len(names), len(set(names)), "tool names are unique")
 
+    def test_allocation_categories(self):
+        """PO-13: the tools take the AllocationSet category and keep Allocation to allocations."""
+        ok("sysml_create_profile", name="Alloc")
+        ok("sysml_add_stereotype", profile="Alloc", name="Binding", applies_to="Allocation")
+        ok("sysml_add_stereotype", profile="Alloc", name="Plan", applies_to="AllocationSet")
+        bad = call("sysml_add_stereotype", profile="Alloc", name="Bad", applies_to="Sets")
+        self.assertFalse(bad["ok"])
+        self.assertIn("AllocationSet", bad["error"])             # the refusal lists the categories
+        text = M.TOOL_BY_NAME["sysml_add_stereotype"]["description"]
+        self.assertIn("AllocationSet", text)
+        other = ok("sysml_create_element", kind="PartDefinition", name="Other")
+        bus = ok("sysml_create_element", kind="PartUsage", name="Bus", parent=other["id"])
+        aset = ok("sysml_create_allocation_set", name="L2P", source=self.arch["id"], target=other["id"])
+        alloc = ok("sysml_allocate", scenario=aset["scenarios"][0]["id"], source=self.fmc["id"],
+                   target=bus["id"])
+        aid = alloc["id"]
+        self.assertFalse(call("sysml_apply_stereotype", stereotype="Alloc.Binding", target=aset["id"])["ok"])
+        self.assertTrue(call("sysml_apply_stereotype", stereotype="Alloc.Plan", target=aset["id"])["ok"])
+        self.assertFalse(call("sysml_apply_stereotype", stereotype="Alloc.Plan", target=aid)["ok"])
+        self.assertTrue(call("sysml_apply_stereotype", stereotype="Alloc.Binding", target=aid)["ok"])
+
     def test_end_to_end(self):
         self._profile()
         # the pre-existing apply tool now checks typed values

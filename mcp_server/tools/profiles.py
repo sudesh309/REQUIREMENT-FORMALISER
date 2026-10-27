@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 from engine import profiles as P
 from engine import units
-from kerml.stereotypes import Profile, StereotypeError, stereotypes_on
+from kerml.stereotypes import CATEGORIES, Profile, StereotypeError, stereotypes_on
 from mcp_server.core import SESSION, _err, _ok, register_kind, register_summary_hook
 
 
@@ -269,6 +269,8 @@ def _summary(e, out: dict) -> None:
 register_summary_hook(_summary)
 register_kind("Profile", Profile)
 
+# The applies-to categories, from the metamodel so the text cannot go stale.
+_CATEGORY_TEXT = ", ".join(c for c in CATEGORIES if c)
 _STYLE_SCHEMA = {"type": "object", "description": "Display style: fill / stroke / text (hex colours), "
                  "icon (one of the fixed icons), line (solid|dashed|dotted|dashdot, connectors)"}
 _DEFAULTS_SCHEMA = {"type": "object", "description": "Default stereotypes applied to new elements "
@@ -303,8 +305,8 @@ TOOLS: list[dict] = [
      "inputSchema": _schema({"profile": {"type": "string"}}, ["profile"]),
      "handler": tool_delete_profile},
     {"name": "sysml_add_stereotype",
-     "description": "Add a stereotype to a profile. applies_to: '' (all), Component, Port, Connector, "
-                    "Interface, InterfaceElement, Requirement, Allocation, Function or Architecture.",
+     "description": "Add a stereotype to a profile. applies_to: '' (all elements) or one category: "
+                    + _CATEGORY_TEXT + ".",
      "inputSchema": _schema({"profile": {"type": "string"}, "name": {"type": "string"},
                              "description": {"type": "string"}, "applies_to": {"type": "string"},
                              "base": {"type": "string", "description": "base stereotype (Profile.Stereotype)"},
@@ -312,8 +314,9 @@ TOOLS: list[dict] = [
                              "defaults": _DEFAULTS_SCHEMA}, ["profile", "name"]),
      "handler": tool_add_stereotype},
     {"name": "sysml_update_stereotype",
-     "description": "Edit a stereotype (name, description, applies_to, base ('' clears), abstract, "
-                    "style, defaults). force=true strips applications the change would invalidate.",
+     "description": "Edit a stereotype (name, description, applies_to (" + _CATEGORY_TEXT + "), "
+                    "base ('' clears), abstract, style, defaults). force=true strips applications "
+                    "the change would invalidate.",
      "inputSchema": _schema({"stereotype": {"type": "string"}, "name": {"type": "string"},
                              "description": {"type": "string"}, "applies_to": {"type": "string"},
                              "base": {"type": "string"}, "abstract": {"type": "boolean"},

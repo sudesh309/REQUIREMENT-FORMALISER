@@ -55,7 +55,7 @@ _SINGLE_MAX = 3.4028234663852886e38
 # Element categories a stereotype can be restricted to ('' = any element).
 CATEGORIES: tuple[str, ...] = (
     "", "Component", "Port", "Connector", "Interface", "InterfaceElement",
-    "Requirement", "Allocation", "Function", "Architecture",
+    "Requirement", "Allocation", "AllocationSet", "Function", "Architecture",
 )
 # Small fixed icon set for stereotype styling (rendered by the web UI).
 ICONS: tuple[str, ...] = (
@@ -132,6 +132,7 @@ def normalize_style(style: Optional[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 _KIND_CACHE: dict[type, frozenset[str]] = {}
+_ALLOCATION_CONTAINERS = ("AllocationSet", "AllocationScenario")
 
 
 def kind_names(e: Any) -> frozenset[str]:
@@ -175,7 +176,11 @@ def matches_category(e: Any, category: str) -> bool:
     if category == "Requirement":
         return bool(k & {"RequirementDefinition", "RequirementUsage"})
     if category == "Allocation":
-        return any(x.startswith("Allocation") for x in k)
+        # Allocations only (an allocation object, an AllocationUsage / AllocationDefinition):
+        # the sets and scenarios that group them have their own category / none.
+        return any(x.startswith("Allocation") and not x.startswith(_ALLOCATION_CONTAINERS) for x in k)
+    if category == "AllocationSet":
+        return any(x.startswith("AllocationSet") for x in k)
     if category == "Function":
         if "Function" in kind and "Element" not in kind:
             return True
