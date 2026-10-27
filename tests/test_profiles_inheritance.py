@@ -124,6 +124,28 @@ class InheritanceTests(Base):
         self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.mass"), 5.0)
 
 
+    def test_own_stereotypes_win_over_inherited_ones_for_a_shared_base_property(self):
+        """Inheritance must not make a path ambiguous that was not (the avionics roll-up reads
+        ``Avionics.Equipment.dal`` on usages that carry another Equipment stereotype)."""
+        base = P.add_stereotype(self.repo, self.prof, "Equipment", applies_to="Component", abstract=True)
+        P.add_property(self.repo, base, "tier", "enumeration", literals="X,Y,Z", default="Z")
+        comp = P.add_stereotype(self.repo, self.prof, "Computer", base=base)
+        item = P.add_stereotype(self.repo, self.prof, "LogicalItem", base=base)
+        d = _own(self.repo, PartDefinition, "Adc", self.root)
+        P.apply_stereotype(self.repo, d, comp, {"tier": "Y"})
+        u1, u2 = _typed(self.repo, "adc1", self.arch, d), _typed(self.repo, "adc2", self.arch, d)
+        P.apply_stereotype(self.repo, u2, item, {"tier": "X"})
+        self.assertEqual(P.get_property_value(u1, "Avionics.Equipment.tier"), "Y")        # inherited
+        self.assertEqual(P.get_property_value(u2, "Avionics.Equipment.tier"), "X")        # its own wins
+        self.assertEqual(P.get_property_value(u2, "Avionics.Computer.tier"), "Y")         # still reachable
+        self.assertEqual(P.get_property_value(u2, "Avionics.LogicalItem.tier"), "X")
+        # two own stereotypes sharing the base property are still ambiguous
+        P.apply_stereotype(self.repo, u2, comp)
+        with self.assertRaises(P.ProfileError) as cm:
+            P.get_property_value(u2, "Avionics.Equipment.tier")
+        self.assertIn("ambiguous", str(cm.exception))
+
+
 class OverrideTests(Base):
 
     def test_setting_a_value_overrides_it_on_that_usage_only(self):

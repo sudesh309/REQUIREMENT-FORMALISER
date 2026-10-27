@@ -730,6 +730,8 @@ def resolve_value_path(element: Element, path: str) -> tuple[StereotypeApplicati
     The stereotype part may also name a base of an applied stereotype. The application is the
     element's own or, for a stereotype a reference component inherits from its definition,
     an inherited one (``.inherited``; reading it works, ``set_property_value`` overrides it).
+    When several applied stereotypes match (two derive from the base named), the element's own
+    win over inherited ones; several own ones are ambiguous.
     """
     if not isinstance(path, str) or not path.strip():
         raise ProfileError("property path must be 'Profile.Stereotype.property'")
@@ -750,6 +752,12 @@ def resolve_value_path(element: Element, path: str) -> tuple[StereotypeApplicati
         cands = [a for a in apps if a.stereotype.find_tag(prop) is not None]
     if not cands:
         raise _not_found(f"stereotype property {path!r} on {element.qualified_name!r}")
+    if len(cands) > 1:
+        # Inheritance must not make a path ambiguous that was not: the element's own stereotypes
+        # take precedence over the ones it only inherits from its definition.
+        own = [a for a in cands if not a.inherited]
+        if own:
+            cands = own
     if len(cands) > 1:
         raise ProfileError(f"{path!r} is ambiguous on {element.qualified_name!r}; use one of "
                            f"{[a.stereotype.full_name + '.' + prop for a in cands]}")
