@@ -40,7 +40,7 @@ from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications, stereotypes_on
 from kerml.types import Type
 from sysmlv2.definitions import (
     PORT_KINDS, ConnectionUsage, PartDefinition, PartUsage, PortUsage,
@@ -1082,7 +1082,7 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
             if isinstance(a, Documentation):
                 c.add_annotation(Documentation(body=a.body))
         for app in stereotypes_on(o):
-            apps.append((c, app.stereotype, dict(app.values)))
+            apps.append((c, app.stereotype, app.own_values()))      # not what it inherits
     return [mapping[id(r)] for r in roots], mapping, apps
 
 
@@ -1991,7 +1991,8 @@ def _ref(e: Optional[Element]) -> Optional[dict]:
 
 def _basic_decor(e: Element) -> dict:
     return {"badges": component_badges(e) + port_badges(e), "style": {},
-            "stereotypes": [{"name": a.stereotype.name, "values": a.values} for a in stereotypes_on(e)]}
+            "stereotypes": [{"name": a.stereotype.name, "values": a.values}
+                            for a in effective_applications(e)]}
 
 
 def _decor(decorate: Optional[Callable[[Element], dict]], e: Element) -> dict:

@@ -251,6 +251,16 @@ def _set_values(c: Ctx) -> str:
     return f"Set {len(values)} stereotype values of {who}"
 
 
+def _reset_values(c: Ctx) -> str:
+    paths = list(c.body.get("properties") or [])
+    if c.body.get("property"):
+        paths.append(c.body["property"])
+    who = c.name(c.args["eid"])
+    if len(paths) == 1:
+        return f"Reset {paths[0]} of {who} to the inherited value"
+    return f"Reset {len(paths)} stereotype values of {who} to the inherited values"
+
+
 def _property(c: Ctx) -> str:
     try:
         tag = P.find_property(_repo(), c.args["prop"], P.find_stereotype(_repo(), c.args["ref"]))
@@ -287,6 +297,7 @@ label("POST", r"^/api/stereotypes/(?P<ref>[^/]+)/batch$", _batch)
 label("POST", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$",
       lambda c: f"Apply «{_stereo(c, c.body.get('stereotype'))}» to {c.name(c.args['eid'])}")
 label("PATCH", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$", _set_values)
+label("POST", r"^/api/elements/(?P<eid>[^/]+)/stereotypes/reset$", _reset_values)
 label("DELETE", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$",
       lambda c: f"Remove all stereotypes from {c.name(c.args['eid'])}")
 label("DELETE", r"^/api/elements/(?P<eid>[^/]+)/stereotypes/(?P<ref>[^/]+)$",

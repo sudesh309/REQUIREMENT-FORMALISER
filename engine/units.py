@@ -463,3 +463,25 @@ def format_number(value: Number, digits: int = 10) -> str:
     if isinstance(value, int):
         return str(value)
     return f"{value:.{digits}g}"
+
+
+def format_short(value: Number, places: int = 2, digits: int = 3) -> str:
+    """Rounded display form of a number; the stored value is never touched.
+
+    Values from 1 up show ``places`` decimals (``4.5359237`` -> ``4.54``, ``1234.5678`` ->
+    ``1234.57``), smaller ones ``digits`` significant digits (``0.45359237`` -> ``0.454``);
+    trailing zeros go (``3.00`` -> ``3``). Whole numbers are shown as they are.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if not math.isfinite(value):
+        return str(value)
+    mag = abs(value)
+    if mag >= 1e12 or (0 < mag < 1e-4):
+        return f"{value:.{digits}g}"
+    if mag >= 1:
+        text = f"{value:.{places}f}"
+        return (text.rstrip("0").rstrip(".") if "." in text else text) or "0"
+    return f"{value:.{digits}g}"

@@ -20,15 +20,22 @@ Profiles and stereotypes
     POST   /api/stereotypes/<ref>/properties        {name?, type?, unit?, default?, min?, max?, literals?, description?, index?}
     PATCH  /api/stereotypes/<ref>/properties/<p>    same keys (p: id or property name)
     DELETE /api/stereotypes/<ref>/properties/<p>
-    POST   /api/stereotypes/<ref>/batch             {scope: selection|composition|model, ids?, root?, category?, values?}
+    POST   /api/stereotypes/<ref>/batch             {scope: selection|composition|model, ids?, root?, category?, values?, dry_run?}
 
 Applied stereotypes
     GET    /api/elements/<id>/stereotypes           {element, applied: [...], applicable: [...]}
     POST   /api/elements/<id>/stereotypes           {stereotype, values?}
     PATCH  /api/elements/<id>/stereotypes           {values: {"Profile.Stereotype.prop": value, ...}}
                                                     or {property: "Profile.Stereotype.prop", value}
-    DELETE /api/elements/<id>/stereotypes           remove all
-    DELETE /api/elements/<id>/stereotypes/<ref>     remove one
+    POST   /api/elements/<id>/stereotypes/reset     {properties: ["Profile.Stereotype.prop", ...]}
+                                                    inherit the definition's values again
+    DELETE /api/elements/<id>/stereotypes           remove all (the element's own; inherited ones stay)
+    DELETE /api/elements/<id>/stereotypes/<ref>     remove one (an override, on a reference component)
+
+A reference component (a PartUsage typed by a PartDefinition) carries the stereotypes of its
+definition: ``applied`` lists them with ``inherited: true`` and each value with ``origin``
+(own / inherited / default); setting a value on the component overrides it (``overridden``),
+the reset route takes the override back.
 
 Units
     GET    /api/units                               table of units
@@ -47,8 +54,8 @@ from engine import profiles as P
 from engine import units
 from kerml.elements import Element
 from kerml.stereotypes import (
-    Profile, Stereotype, StereotypeError, StereotypeTag, categories_of, format_value,
-    stereotypes_on,
+    Profile, Stereotype, StereotypeError, StereotypeTag, categories_of, effective_applications,
+    format_short, format_value, stereotypes_on,
 )
 from webapp.core import err, ok, register_kind, register_prop_hook, register_summary_hook, \
     route, session, summarize
@@ -289,6 +296,22 @@ def api_set_values(req: dict, eid: str):
     return ok({**_element_view(e), "stored": stored})
 
 
+@route("POST", r"^/api/elements/(?P<eid>[^/]+)/stereotypes/reset$")
+@_guard
+def api_reset_values(req: dict, eid: str):
+    """Take back values set on a reference component: the definition's apply again."""
+    repo = _repo()
+    b = _body(req)
+    e = P.find_element(repo, eid)
+    paths = list(b.get("properties") or [])
+    if b.get("property"):
+        paths.append(b["property"])
+    if not paths:
+        return err("send {properties: ['Profile.Stereotype.property', ...]} or {property}")
+    out = P.reset_property_values(repo, e, paths)
+    return ok({**_element_view(e), **out})
+
+
 @route("DELETE", r"^/api/elements/(?P<eid>[^/]+)/stereotypes$")
 @_guard
 def api_remove_all(_req: dict, eid: str):
@@ -333,15 +356,20 @@ def _summary(e: Element, d: dict) -> None:
     badges, style = P.display_fields(e)
     d.setdefault("badges", []).extend(badges)
     d.setdefault("style", {}).update(style)
-    for entry, app in zip(d.get("stereotypes") or [], stereotypes_on(e)):
+    for entry, app in zip(d.get("stereotypes") or [], effective_applications(e)):
         st = app.stereotype
         values = entry.get("values") or {}
         entry.update(id=st.element_id, qualified_name=st.full_name,
                      profile=st.profile.name if st.profile else None,
                      style=st.effective_style(),
-                     # Values as shown to users, with units ("7 kg"), keyed like `values`.
+                     # Values as shown to users, with units ("7 kg"), keyed like `values`;
+                     # `display_short` rounds them for compact displays ("4.54 kg").
                      display={t.name: format_value(values.get(t.name), t.unit)
-                              for t in st.all_tags() if t.name in values})
+                              for t in st.all_tags() if t.name in values},
+                     display_short={t.name: format_short(values.get(t.name), t.unit)
+                                    for t in st.all_tags() if t.name in values},
+                     # True when the element only has it through the definition it is typed by.
+                     inherited=bool(app.inherited))
     if isinstance(e, StereotypeTag):
         d["stereotype_property"] = e.describe()
     elif isinstance(e, Stereotype):

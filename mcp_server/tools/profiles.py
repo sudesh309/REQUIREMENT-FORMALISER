@@ -8,6 +8,11 @@ All logic lives in :mod:`engine.profiles`. Stereotypes are addressed by id,
 ``sysml_apply_stereotype`` here replaces the core tool of the same name (same
 arguments and result keys): it also accepts ``Profile.Stereotype`` and unique
 bare names, dotted value keys, and refuses duplicates with a clear message.
+
+Reference components (a ``PartUsage`` typed by a ``PartDefinition``) inherit the stereotypes
+and values of their definition: the read tools list them with ``inherited`` / ``origin``,
+``sysml_set_stereotype_property`` (or applying the stereotype with values) overrides a value
+on the component, ``sysml_reset_stereotype_property`` inherits the definition's again.
 """
 from __future__ import annotations
 
@@ -15,7 +20,9 @@ from typing import Any, Callable, Optional
 
 from engine import profiles as P
 from engine import units
-from kerml.stereotypes import CATEGORIES, Profile, StereotypeError, stereotypes_on
+from kerml.stereotypes import (
+    CATEGORIES, Profile, StereotypeError, effective_applications, stereotypes_on,
+)
 from mcp_server.core import SESSION, _err, _ok, register_kind, register_summary_hook
 
 
@@ -193,7 +200,9 @@ def tool_remove_stereotype(target: str, stereotype: Optional[str] = None) -> dic
             removed = 1
         else:
             removed = P.remove_all_stereotypes(repo, e)
-        return {"removed": removed, "applied": [a.stereotype.full_name for a in stereotypes_on(e)]}
+        # What the element still carries: stereotypes inherited from its definition stay.
+        return {"removed": removed, "applied": [a.stereotype.full_name for a in stereotypes_on(e)],
+                "inherited": [a.stereotype.full_name for a in effective_applications(e) if a.inherited]}
     return _call(run)
 
 
@@ -212,6 +221,19 @@ def tool_set_stereotype_property(target: str, property: Optional[str] = None, va
     return _call(run)
 
 
+def tool_reset_stereotype_property(target: str, property: Optional[str] = None,
+                                   properties: Optional[list] = None) -> dict:
+    def run():
+        repo = _repo()
+        e = P.find_element(repo, target)
+        paths = list(properties or [])
+        if property:
+            paths.append(property)
+        out = P.reset_property_values(repo, e, paths)
+        return {**out, "stereotypes": P.element_stereotypes(e)}
+    return _call(run)
+
+
 def tool_get_stereotype_properties(target: str, property: Optional[str] = None) -> dict:
     def run():
         repo = _repo()
@@ -219,9 +241,16 @@ def tool_get_stereotype_properties(target: str, property: Optional[str] = None) 
         if property:
             a, tag = P.resolve_value_path(e, property)
             v = a.get(tag.name)
-            return {"property": f"{a.stereotype.full_name}.{tag.name}", "value": v,
-                    "unit": tag.unit, "type": tag.type_label(),
-                    "display": P.format_value(v, tag.unit)}
+            parent = a.parent()
+            out = {"property": f"{a.stereotype.full_name}.{tag.name}", "value": v,
+                   "unit": tag.unit, "type": tag.type_label(),
+                   "display": P.format_value(v, tag.unit),
+                   # own / inherited (from the definition a reference component is typed by) / default
+                   "origin": a.origin(tag.name), "inherited": a.origin(tag.name) == "inherited"}
+            if parent is not None:
+                out.update(overridden=a.origin(tag.name) == "own", inherited_value=parent.get(tag.name),
+                           inherited_from=parent.annotated_element.qualified_name)
+            return out
         return {"element": e.qualified_name, "stereotypes": P.element_stereotypes(e),
                 "applicable": [s.full_name for s in P.applicable_stereotypes(repo, e)]}
     return _call(run)
@@ -257,13 +286,14 @@ def tool_convert_units(value: Any, to: str, unit: Optional[str] = None) -> dict:
 # --- element summaries ----------------------------------------------------------
 
 def _summary(e, out: dict) -> None:
-    apps = stereotypes_on(e)
+    apps = effective_applications(e)
     if not apps:
         return
     badges, style = P.display_fields(e)
     out.setdefault("badges", []).extend(badges)
     out.setdefault("style", {}).update(style)
-    out["stereotypes"] = [{"stereotype": a.stereotype.full_name, "values": a.values} for a in apps]
+    out["stereotypes"] = [{"stereotype": a.stereotype.full_name, "values": a.values,
+                           "inherited": bool(a.inherited)} for a in apps]
 
 
 register_summary_hook(_summary)
@@ -356,7 +386,8 @@ TOOLS: list[dict] = [
                             ["stereotype", "property"]),
      "handler": tool_delete_stereotype_property},
     {"name": "sysml_apply_stereotype",
-     "description": "Apply a stereotype to an element. stereotype: id, 'Profile.Stereotype', "
+     "description": "Apply a stereotype to an element (on a reference component whose definition "
+                    "already carries it, an override of the given values). stereotype: id, 'Profile.Stereotype', "
                     "'Pkg::Stereotype' or a unique name. Optional initial values keyed by "
                     "property name or 'Profile.Stereotype.prop' are checked (type, range, "
                     "literals) and converted from compatible units ('3 lb' into kg). Abstract, "
@@ -365,20 +396,33 @@ TOOLS: list[dict] = [
                              "values": {"type": "object"}}, ["stereotype", "target"]),
      "handler": tool_apply_stereotype},
     {"name": "sysml_remove_stereotype",
-     "description": "Remove an applied stereotype from an element (all of them if 'stereotype' is omitted).",
+     "description": "Remove an applied stereotype from an element (all of them if 'stereotype' is "
+                    "omitted). Stereotypes inherited from a definition cannot be removed here: remove "
+                    "them from the definition.",
      "inputSchema": _schema({"target": {"type": "string"}, "stereotype": {"type": "string"}}, ["target"]),
      "handler": tool_remove_stereotype},
     {"name": "sysml_set_stereotype_property",
      "description": "Set stereotype property values on an element: property='Profile.Stereotype.prop' "
                     "with value, or values={path: value}. Values are checked (type, range, literals) "
-                    "and converted from compatible units; all-or-nothing.",
+                    "and converted from compatible units; all-or-nothing. On a reference component "
+                    "(typed by a definition that carries the stereotype) this overrides the "
+                    "definition's value for that component only.",
      "inputSchema": _schema({"target": {"type": "string"}, "property": {"type": "string"},
                              "value": _ANY, "values": {"type": "object"}}, ["target"]),
      "handler": tool_set_stereotype_property},
+    {"name": "sysml_reset_stereotype_property",
+     "description": "Take back values set on a reference component so it inherits its definition's "
+                    "again (property, or properties=[...]); an override that no longer sets anything "
+                    "is dropped. Without a definition value the property default applies.",
+     "inputSchema": _schema({"target": {"type": "string"}, "property": {"type": "string"},
+                             "properties": {"type": "array", "items": {"type": "string"}}}, ["target"]),
+     "handler": tool_reset_stereotype_property},
     {"name": "sysml_get_stereotype_properties",
      "description": "Stereotypes applied to an element with their property values (grouped by "
                     "owning stereotype) and the stereotypes that could still be applied; or one "
-                    "value when 'property' is given.",
+                    "value when 'property' is given. A reference component also lists the "
+                    "stereotypes and values it inherits from its definition (inherited / origin / "
+                    "overridden mark them).",
      "inputSchema": _schema({"target": {"type": "string"}, "property": {"type": "string"}}, ["target"]),
      "handler": tool_get_stereotype_properties},
     {"name": "sysml_batch_apply_stereotype",

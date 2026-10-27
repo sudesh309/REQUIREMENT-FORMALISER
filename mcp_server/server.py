@@ -44,7 +44,7 @@ from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
@@ -372,8 +372,10 @@ def tool_list_stereotypes(target: Optional[str] = None) -> dict:
         if t is None:
             return _err(f"Target {target!r} not found")
         return _ok([
-            {"stereotype": a.stereotype.qualified_name, "values": a.values}
-            for a in stereotypes_on(t)
+            {"stereotype": a.stereotype.qualified_name, "values": a.values,
+             # True: only through the definition the (reference) component is typed by.
+             "inherited": bool(a.inherited)}
+            for a in effective_applications(t)
         ])
     return _ok([
         {"qualified_name": s.qualified_name,
