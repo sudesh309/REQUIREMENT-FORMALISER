@@ -761,11 +761,23 @@ export default async function install(studio) {
     title: "Avionics: templates, interface and requirement libraries, FHA", onClick() { studio.switchTab("avionics"); go("start"); },
   });
   openBtn.dataset.openTab = "avionics";
-  studio.registerToolbarButton({
+  const safetyBtn = studio.registerToolbarButton({
     id: "avionics-safety", label: "Safety Check", group: "Analysis", section: "analysis",
     title: "Avionics safety / DAL rules: requirement DAL, FHA allocation, partitioning, verification guidance",
     onClick() { studio.switchTab("avionics"); go("safety"); },
   });
+  // The toolstrip is one row at 1600 px with no room to spare, so these two entries are
+  // contextual: they show in projects that use the Avionics profile or an FHA. The Avionics tab
+  // and File > New from template… are always there.
+  const openGroup = openBtn.closest(".rb-group");
+  function syncRibbon() {
+    const has = [...studio.state.treeIndex.values()].some((n) =>
+      (n.kind === "Profile" && n.name === "Avionics") || n.kind === "FhaTable");
+    if (openGroup) openGroup.style.display = has ? "" : "none";
+    safetyBtn.style.display = has ? "" : "none";
+  }
+  studio.on("model-changed", syncRibbon);
+  syncRibbon();
 
   // File > New from template…: next to New in the header.
   const newCmd = document.querySelector('header [data-cmd="new"]');

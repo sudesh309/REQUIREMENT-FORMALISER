@@ -9,6 +9,10 @@ matching MCP tool call) so you can reproduce it yourself.
 > a map of the studio's tabs and a click-by-click tutorial that builds a
 > small avionics model (architecture → interfaces → profile → requirements
 > → allocation → report) without writing any code.
+>
+> **Modeling a whole avionics system?** [Chapter 17](#17-modeling-an-avionics-system-end-to-end)
+> walks the complete IMA example (functions, logical and physical architectures, IMA partitions,
+> requirements, allocation, FHA and the safety rules) in the browser.
 
 ```mermaid
 mindmap
@@ -266,6 +270,7 @@ flowchart TB
 | Author requirements, link them (Implement, Verify, Derive…), see traceability and suspect links | **Requirements ▸ Requirements**, **Req Perspective** (Alt+Shift+R), **Traceability** | [features/requirements.md](features/requirements.md) |
 | Allocate functions to partitions and hardware | **Modeling ▸ Allocation** (tab **Allocation**) | [features/allocation.md](features/allocation.md) |
 | Check the model, generate a report, exchange tables / SysML text / XMI, compare and merge | **Analysis ▸ Validate**, **Model Check** (Ctrl+Shift+K); **Interop ▸ Import / Export**, **Compare** | [features/interop.md](features/interop.md) |
+| Start from an avionics template (blank, or a complete IMA avionics example), import the ARINC / MIL-STD-1553B interface library and the ARP4754A / DO-178C requirement skeletons, keep the FHA, run the safety / DAL rules | Header **New from template…**, tab **Avionics**, **Analysis ▸ Safety Check** | [features/avionics.md](features/avionics.md), chapter 17 |
 | Generic SysML elements, typed links, state machines, the Links and Parser tabs | **Advanced ▾** at the end of the tab bar | chapters 5–11 |
 
 **Undo / redo.** Every change, from any tab, is one named step of a single
@@ -874,4 +879,92 @@ chapter 4a and summarized in the last rows.
 | Requirements, trace links ([doc](features/requirements.md)) | `engine.requirements` | Web: *Requirements*, *Req Perspective* | `sysml_add_requirement`, `sysml_link_requirement` |
 | Allocation ([doc](features/allocation.md)) | `engine.allocation`                     | Web: *Allocation*            | `sysml_create_allocation_set`, `sysml_allocate` |
 | Model Check, report, tables ([doc](features/interop.md)) | `engine.interop`         | Web: *Model Check*, *Import / Export* | `sysml_model_check`, `sysml_generate_report` |
+| Avionics profile, libraries, FHA, safety rules ([doc](features/avionics.md)) | `engine.avionics` | Web: tab *Avionics*, header *New from template…* | `sysml_create_avionics_project`, `sysml_safety_check` |
 | Undo / redo                     | `engine.undo`                            | Web: *Undo / Redo*, Ctrl+Z / Ctrl+Y | `sysml_undo` / `sysml_redo` |
+
+---
+
+## 17. Modeling an avionics system end to end
+
+This chapter walks the **complete IMA avionics example** in the browser: how an engineer reads it, checks it,
+changes it and starts their own. Everything below is clicks, drags and the keyboard. The reference for the
+profile, the libraries, the FHA and the rules is [features/avionics.md](features/avionics.md); the browser
+scenarios `tests/ui/scenarios/90_avionics_example.mjs`, `90_avionics_fha.mjs` and `90_avionics_libraries.mjs`
+replay these steps.
+
+```mermaid
+flowchart LR
+    F["FunctionalArchitecture<br/>13 functions"] -->|"FunctionsToLogical"| L["LogicalArchitecture<br/>12 items with a DAL"]
+    L -->|"LogicalToPhysical"| P["PhysicalArchitecture<br/>24 LRUs, IMA cabinet,<br/>AFDX A / B, ARINC 429, 1553B"]
+    P --> IMA["IMA cabinet → modules →<br/>partitions → software items"]
+    R["Requirements<br/>SYS · ITM · HLR · LLR"] -.implement / verify.-> L & P
+    H["FHA<br/>21 failure conditions"] -.function.-> F
+    H -->|"classification → DAL"| S["Safety rules<br/>Model Check · Safety check"]
+    L --> S
+    P --> S
+```
+
+**1. Open the example.**
+Click **New from template…** in the header, pick **Complete IMA avionics example**, keep the name `IMA_Avionics`
+and click **Create**. The **Architecture** tab opens `PhysicalArchitecture`: 24 blocks and 73 connectors. Port and
+connector colours come from their interfaces (ARINC 429 blue, AFDX orange, MIL-STD-1553B purple, discretes red,
+analog green); the label on a connector is the interface it carries. Blocks show `DAL A` / `DAL B` badges, `SM`
+for the flight control computers (they have a mode state machine) and `3 req` for linked requirements. Click
+**Arrange** to lay the blocks out again, **Fit** to see all of it, or zoom into the area you want.
+
+**2. Go down the hierarchy.**
+Click the `IMA_Cabinet` block and press **Enter**: its three modules (`CPM1`, `CPM2`, `PSM`) appear. Open `CPM1`:
+the partitions `P_FMS` (flight management) and `P_FWS` (flight warning); open `P_FMS`: the software items
+`FMS_Nav` and `FMS_Perf`, each with its DAL. **Alt+↑** goes up one level, the breadcrumbs jump further. Open
+`FCC_L` from the physical architecture to see the command and monitor lanes of the flight control computer.
+
+**3. Read the equipment values.**
+Equipment values belong to the *definitions*, so ADC1 and ADC2 share them. Switch to **Properties**, select the
+part definition `AirDataComputer` in the containment tree (package `Equipment`) and read the **Stereotypes**
+section: mass, power, MTBF and failure rate in FIT, part number, ATA chapter, DAL, TSO, DO-160 categories. The
+roll-up of mass and power per architecture is in **Avionics ▸ Start**.
+
+**4. Interfaces and requirements.**
+**Interface Editor** lists the whole library (ARINC 429 label sets, AFDX virtual link message, 1553B message ...);
+click `A429AirData` to see the elements with their labels. In **Requirements** pick the set `SystemRequirements`:
+each requirement has a type, a verification method and, in the detail pane, its DAL, derived and safety related
+flags. **Traceability** shows which components implement which requirements and which test cases verify them; the
+gaps are visible there: *GNSS integrity monitoring* is implemented by nothing, five requirements have no test case,
+one test case failed and two are unexecuted. **Req Perspective** keeps the requirements under the canvas, so you can
+drag a requirement onto a block to link it.
+
+**5. Allocation and the FHA.**
+**Allocation** has two sets: `FunctionsToLogical` (function to logical item) and `LogicalToPhysical` (logical item
+to hardware or to an IMA partition). Click a function's row header to highlight what realises it; **Chain** shows
+function → logical item → hardware. In **Avionics ▸ FHA** every failure condition names its function, flight
+phase, effect and classification; the DAL column is the standard mapping (Catastrophic A, Hazardous B, Major C,
+Minor D, No Safety Effect E) and *Allocated to* lists the items, with their DAL, that carry the function.
+
+**6. Check it.**
+Click **Analysis ▸ Model Check** (Ctrl+Shift+K): no errors, the six requirement gaps as warnings and seven hints about
+DAL decomposition (for example *ProvideAirData needs DAL A and is allocated to ADC1 (B), ADC2 (B): a valid DAL
+decomposition if the channels are independent*). **Avionics ▸ Safety check** lists only the avionics rules; every
+issue links to the elements it names.
+
+**7. Ask "what if the DAL is lower?"**
+Select the definition `FlightControlComputer` in the tree, change **Avionics.Computer.dal** from `A` to `C` in the
+Stereotypes section. The canvas badges follow at once; Model Check and the Safety check now report
+`avionics.dal.requirement` (the computers implement requirements of DAL A) and `avionics.dal.allocation`
+(*ComputeFlightControlLaws needs DAL A but is allocated to FCC_L (DAL C)*) as errors. Click an element link in the
+Safety check to see the computer on the canvas. Press **Ctrl+Z**: the DAL goes back and the rules are quiet again.
+Try the same in the FHA table: set the classification of `FHA-9` (loss of flight management) to *Catastrophic* and
+the rule demands DAL A of the logical item and the partition that realise it.
+
+**8. Report, save, compare.**
+**Interop ▸ Import / Export ▸ Generate Report** produces the HTML report with the architecture diagrams, the
+equipment values, interfaces and traceability. **Save JSON** keeps everything; **Tables XLSX** exports the model
+as a workbook (the FHA rows are on the *Elements* sheet) and **Compare ▸ With Last Saved** shows no differences
+after you re-import it as a new project.
+
+**9. Start your own.**
+Click **New from template… ▸ Blank avionics project**: you get the Avionics profile, the interface library, the four
+requirement skeleton sets (ARP4754A system and item, DO-178C high- and low-level) and an empty `SystemArchitecture`.
+Add components and ports on the canvas, drag interfaces from the **Interface Editor** onto ports, apply
+`Avionics.Computer`, `Avionics.Sensor` ... to the part definitions and type the values, approve the skeleton
+requirements as you tailor them, add FHA rows in **Avionics ▸ FHA** and watch **Safety check**. Label numbers in the
+library are typical values: verify them against your programme's ICD.

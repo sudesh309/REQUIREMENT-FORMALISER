@@ -32,8 +32,9 @@ async function run({ page, waitReady, expect, api, fresh }, step) {
 
   // =========================================================================================
   step("start view and profile");
-  await page.click('#ribbon [data-plugin-button="avionics"]');
-  await until(() => !document.querySelector("#tab-avionics")?.classList.contains("hidden"), null, "Avionics tab shown");
+  // The ribbon entries are contextual: not shown in a project without the Avionics profile.
+  expect(!(await page.isVisible('#ribbon [data-plugin-button="avionics"]')), "no Avionics ribbon entry yet");
+  await tab("avionics");
   await page.waitForSelector('[data-av="status-profile"]');
   expect(/missing/.test(await page.textContent('[data-av="status-profile"]')), "the profile is missing");
   expect(await page.$$eval("[data-av-template]", (c) => c.map((x) => x.dataset.avTemplate).join()) === "blank,ima_example",
@@ -41,6 +42,7 @@ async function run({ page, waitReady, expect, api, fresh }, step) {
   expect(/No equipment with mass or power values/.test(await page.textContent("#tab-avionics")), "no equipment yet");
   await page.click('[data-av-act="profile"]');
   await undoIs("Add the Avionics profile");
+  await until(() => document.querySelector('#ribbon [data-plugin-button="avionics"]')?.offsetParent !== null, null, "Avionics ribbon entry appears");
   await until(() => /present/.test(document.querySelector('[data-av="status-profile"]')?.textContent || ""), null, "profile present");
   expect(/16 of 16 stereotypes/.test(await page.textContent('[data-av="status-profile"]')), "all 16 stereotypes");
   // The Profile Editor lists the stereotypes with their units.
