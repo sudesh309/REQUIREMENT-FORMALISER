@@ -724,20 +724,22 @@ def remove_all_stereotypes(repo, element: Element) -> int:
     return len(apps)
 
 
-def resolve_value_path(element: Element, path: str) -> tuple[StereotypeApplication, StereotypeTag]:
+def resolve_value_path(element: Element, path: str, *, inherit: bool = True
+                       ) -> tuple[StereotypeApplication, StereotypeTag]:
     """``Profile.Stereotype.property`` (or ``Stereotype.property`` / ``property``) on an element.
 
     The stereotype part may also name a base of an applied stereotype. The application is the
     element's own or, for a stereotype a reference component inherits from its definition,
     an inherited one (``.inherited``; reading it works, ``set_property_value`` overrides it).
     When several applied stereotypes match (two derive from the base named), the element's own
-    win over inherited ones; several own ones are ambiguous.
+    win over inherited ones; several own ones are ambiguous. ``inherit=False`` looks at the
+    element's own applications only (what is stored on it).
     """
     if not isinstance(path, str) or not path.strip():
         raise ProfileError("property path must be 'Profile.Stereotype.property'")
     path = path.strip()
     prefix, _, prop = path.rpartition(".")
-    apps = effective_applications(element)
+    apps = effective_applications(element) if inherit else stereotypes_on(element)
     if not apps:
         raise _not_found(f"stereotype property {path!r}: {element.qualified_name!r} has no stereotypes")
     if prefix:
@@ -847,11 +849,13 @@ def reset_property_value(repo, element: Element, path: str) -> dict:
     return reset_property_values(repo, element, [path])
 
 
-def get_property_value(element: Element, path: str) -> Any:
+def get_property_value(element: Element, path: str, *, inherit: bool = True) -> Any:
     """The value a property reads on ``element``: its own, else the definition's (reference
-    component), else the property default."""
-    a, tag = resolve_value_path(element, path)
-    return a.get(tag.name)
+    component), else the property default. ``inherit=False`` reads only what is applied to the
+    element itself (a reference component with no application of its own has no value then:
+    404), the stored value without the definition's."""
+    a, tag = resolve_value_path(element, path, inherit=inherit)
+    return a.get(tag.name) if inherit else a.stored(tag.name)
 
 
 def _value_entry(a, tag: StereotypeTag) -> dict:

@@ -827,6 +827,12 @@ class StereotypeApplication(Annotation):
         """Only the values set on this application (what copying it should carry over)."""
         return {t.name: self._slots[t] for t in self.explicit_tags() if t in self._slots}
 
+    def stored(self, name: str) -> Any:
+        """The value stored on this application (its default when none was set), without what
+        the definition would supply: ``get`` is what the element reads."""
+        tag = self.tag(name)
+        return self._slots[tag] if tag in self._slots else tag.default_value
+
     def tag(self, name: str) -> StereotypeTag:
         tag = self.stereotype.find_tag(name)
         if tag is None:

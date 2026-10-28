@@ -146,6 +146,18 @@ class InheritanceTests(Base):
         self.assertIn("ambiguous", str(cm.exception))
 
 
+    def test_reading_only_what_is_stored_on_the_element(self):
+        """``inherit=False``: what the element itself carries, for code that wants the stored value."""
+        with self.assertRaises(P.ProfileError) as cm:
+            P.get_property_value(self.fcc1, "Avionics.LRU.mass", inherit=False)
+        self.assertEqual(cm.exception.status, 404)
+        P.set_property_value(self.repo, self.fcc1, "Avionics.LRU.dal", "D")
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.dal", inherit=False), "D")
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.mass", inherit=False), 1.5)   # stored: default
+        self.assertEqual(P.get_property_value(self.fcc1, "Avionics.LRU.mass"), 3.0)                  # read: inherited
+        self.assertEqual(P.get_property_value(self.fcc_def, "Avionics.LRU.mass", inherit=False), 3.0)
+
+
 class OverrideTests(Base):
 
     def test_setting_a_value_overrides_it_on_that_usage_only(self):
