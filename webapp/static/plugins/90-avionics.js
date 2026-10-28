@@ -166,7 +166,7 @@ export default async function install(studio) {
   // of it, but do not rebuild this tab's tables under the user's cursor.
   async function refreshQuietly() {
     S.quiet++;
-    try { await studio.refreshTree(); } finally { setTimeout(() => { S.quiet = Math.max(0, S.quiet - 1); }, 80); }
+    try { await studio.refreshTree(); } finally { S.quiet = Math.max(0, S.quiet - 1); }
   }
 
   const safeApi = async (fn) => { try { return await fn(); } catch { return null; } };
@@ -523,8 +523,7 @@ export default async function install(studio) {
     if (value === stored) return;
     const body = { [field]: field === "function" ? (value || null) : value };
     const input = tr.querySelector(`[data-av-field="${field}"]`);
-    S.quiet++;                       // the edit's own revision change must not rebuild the table
-    setTimeout(() => { S.quiet = Math.max(0, S.quiet - 1); }, 400);
+    S.quiet++;                       // the edit's own model change must not rebuild the table
     try {
       const upd = await studio.api("PATCH", `/api/avionics/fha/${enc(r.id)}`, body);
       Object.assign(r, upd);
@@ -543,6 +542,8 @@ export default async function install(studio) {
         input.classList.add("bad");
         setTimeout(() => input.classList.remove("bad"), 1500);
       }
+    } finally {
+      S.quiet = Math.max(0, S.quiet - 1);
     }
   }
 
