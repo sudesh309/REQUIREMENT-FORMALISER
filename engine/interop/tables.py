@@ -47,7 +47,8 @@ from kerml.features import Feature, FeatureDirection
 from kerml.namespaces import Package
 from kerml.stereotypes import (
     CATEGORIES, DEFAULT_SLOTS, NUMERIC_TYPES, STYLE_KEYS, Profile, Stereotype, StereotypeError,
-    StereotypeTag, build_property, normalize_style, stereotypes_on,
+    StereotypeTag, build_property, effective_applications, inheritance_source, normalize_style,
+    stereotypes_on,
 )
 from sysmlv2.definitions import (
     ConnectionUsage, Definition, InterfaceDefinition, PartDefinition, PartUsage,
@@ -228,7 +229,9 @@ def _element_row(repo, e: Element, table: str) -> dict[str, Any]:
         others = [x for x in e.ends if x is not None][2:]  # type: ignore[attr-defined]
         if others:
             row["Other End IDs"] = _ref_ids(repo, others)
-    apps = stereotypes_on(e)
+    # What the element reads: its own stereotypes, then the ones a reference component inherits
+    # from its definition (SU-15), with the values it reads (an override or the definition's).
+    apps = effective_applications(e)
     row["Stereotypes"] = ";".join(a.stereotype.full_name for a in apps)
     for a in apps:
         # Stored (canonical) values: numbers are in the property's unit (Profiles sheet).
@@ -612,7 +615,7 @@ class _Importer:
         self.report = ImportReport(warnings=self.warnings)
         self._warned: set[str] = set()
         self._orig: dict[tuple[int, str], Any] = {}     # see _wants
-        self._orig_values: dict[tuple[int, int], Any] = {}
+        self._orig_values: dict[tuple[int, int, int], Any] = {}
         self._names_before: dict[str, Stereotype] = {}
         self._props_before: dict[tuple[int, str], StereotypeTag] = {}
         self._filled: set[tuple[str, str]] = set()      # see import_profiles
@@ -1249,13 +1252,24 @@ class _Importer:
                     if not any(app.stereotype is st for st in wanted):
                         P.remove_stereotype(self.repo, e, app.stereotype)
                 for st in wanted:
-                    if not any(a.stereotype is st for a in stereotypes_on(e)):
+                    if not any(a.stereotype is st for a in effective_applications(e)):
                         P.apply_stereotype(self.repo, e, st)
                         self.report.stereotypes_applied += 1
+                for a in effective_applications(e):
+                    if a.inherited and not any(a.stereotype is st for st in wanted):
+                        self.warn_once(f"{spec.where}:inherit:{a.stereotype.element_id}",
+                                       f"{spec.where}: «{a.stereotype.full_name}» is inherited from "
+                                       f"{a.definition.qualified_name} and stays; remove it there")
                 _order_applications(e, wanted)
             # Every value is checked (and converted) by the profiles metamodel when set.
             for app, prop, value in self._stereotype_values(spec):
-                app.set(prop, value)
+                # A cell that shows what the element reads anyway (a value inherited from the
+                # definition, or the default) sets nothing: only a changed value is an override.
+                tag = app.tag(prop)
+                stored = tag.coerce(value, f"{app.stereotype.full_name}.{prop}")
+                if not app.is_explicit(tag) and stored == app.get(prop):
+                    continue
+                P.own_application(self.repo, e, app).assign(tag, stored)
 
     def _stereotype_values(self, spec: _Spec) -> list[tuple[Any, str, Any]]:
         """``Profile.Stereotype.property`` columns of a row as ``(application, property, value)``.
@@ -1272,8 +1286,8 @@ class _Importer:
                 continue
             st_ref, prop = col.rsplit(".", 1)
             st = self.stereotype(st_ref)
-            app = next((a for a in stereotypes_on(e) if st is not None and a.stereotype.is_kind_of(st)),
-                       None)
+            app = next((a for a in effective_applications(e)
+                        if st is not None and a.stereotype.is_kind_of(st)), None)
             if app is None:
                 if st is None:
                     self.warn_once(f"col:{col}", f"column {col!r}: stereotype {st_ref!r} "
@@ -1290,7 +1304,7 @@ class _Importer:
             # A cell still showing the value from before the import is left alone, so a
             # unit or type change made in the Profiles sheet (which converts the stored
             # values) is not undone by the old numbers in an unedited value column.
-            before = self._orig_values.get((id(app), id(tag)), _MISSING)
+            before = self._orig_values.get((id(e), id(app.stereotype), id(tag)), _MISSING)
             if before is not _MISSING and (_same(value, before) or (
                     isinstance(value, str) and value.strip() == cell_text(before))):
                 continue
@@ -1477,8 +1491,9 @@ class _Importer:
         from engine.hooks import notify_created
         self.parse_rows()
         # Stereotype values and names before the import (see _stereotype_values, stereotype).
-        self._orig_values = {(id(a), id(t)): v for e in P.model_elements(self.repo)
-                             for a in stereotypes_on(e) for t, v in a.raw_slots().items()}
+        self._orig_values = {(id(e), id(a.stereotype), id(t)): a.get(t.name)
+                             for e in P.model_elements(self.repo)
+                             for a in effective_applications(e) for t in a.stereotype.all_tags()}
         names: dict[str, list[Stereotype]] = {}
         for st in P.stereotypes_of(self.repo):
             names.setdefault(st.full_name, []).append(st)
@@ -1493,7 +1508,9 @@ class _Importer:
         for spec in self.specs:
             if spec.created:
                 notify_created(spec.element, self.repo)  # type: ignore[arg-type]
-        for spec in self.specs:
+        # Definitions before the usages typed by them: a reference component reads (and a cell
+        # equal to it leaves inherited) the values its definition gets in this very import.
+        for spec in sorted(self.specs, key=lambda sp: inheritance_source(sp.element) is not None):
             self.apply_stereotypes(spec)
         self.import_links()
         self.restore_order()

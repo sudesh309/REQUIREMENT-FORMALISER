@@ -262,7 +262,7 @@ flowchart TB
 |---|---|---|
 | Draw architectures: components, ports, connectors, reference components, Group, Arrange | **Modeling ▸ New model…**, tab **Architecture** (canvas toolstrip, Property Inspector on the right) | [features/architecture.md](features/architecture.md) |
 | Define interfaces, value types, ARINC 429 / AFDX / MIL-STD-1553 / discrete / analog templates, adapters | **Modeling ▸ Interface Editor** (tab **Interfaces**, Alt+I) | [features/interfaces.md](features/interfaces.md) |
-| Define profiles and stereotypes (DAL, ATA chapter, mass, power, MTBF…), apply them, enter values | **Modeling ▸ Profile Editor**, **Apply stereotypes…**; values in tab **Properties** | [features/profiles.md](features/profiles.md) |
+| Define profiles and stereotypes (DAL, ATA chapter, mass, power, MTBF…), apply them, enter values; reference components inherit their definition's values | **Modeling ▸ Profile Editor**, **Apply stereotypes…**; values in tab **Properties** and in the canvas Property Inspector (see [4d](#4d-profiles-in-practice-inherited-values-bulk-tagging-units)) | [features/profiles.md](features/profiles.md) |
 | Author requirements, link them (Implement, Verify, Derive…), see traceability and suspect links | **Requirements ▸ Requirements**, **Req Perspective** (Alt+Shift+R), **Traceability** | [features/requirements.md](features/requirements.md) |
 | Allocate functions to partitions and hardware | **Modeling ▸ Allocation** (tab **Allocation**) | [features/allocation.md](features/allocation.md) |
 | Check the model, generate a report, exchange tables / SysML text / XMI, compare and merge | **Analysis ▸ Validate**, **Model Check** (Ctrl+Shift+K); **Interop ▸ Import / Export**, **Compare** | [features/interop.md](features/interop.md) |
@@ -396,6 +396,43 @@ allocation.
 | Requirements | Insert add · Shift+Insert add child · Alt+Shift+arrows move / indent · Ctrl+Enter save the text |
 | Interface Editor | Insert add element · Alt+↑ / Alt+↓ reorder |
 | Dialogs | Enter OK · Escape cancel |
+
+### 4d. Profiles in practice: inherited values, bulk tagging, units
+
+**Reference components inherit their definition's values.** Tag a *definition* once (select
+`FCC` in the containment tree, add `Avionics.LRU` in the *Stereotypes* section of **Properties** and type
+mass `3`, dal `A`): every component typed by it (`fcc1`, `fcc2`, any number) shows the `«LRU»` badge
+(dashed in the tree) and reads those values. Select `fcc1`: its *Stereotypes* section, in the
+Properties tab and in the canvas Property Inspector, lists `«Avionics.LRU»` *inherited from FCC*
+with the values in italics and an *inherited* note. Nothing needs to be applied per component.
+
+- **Override** one value for one component by typing it (`4 kg`, `10 lb`, `2*1.5`): the note changes
+  to *overridden · FCC has 3 kg*, the group says *overrides FCC*, and the other values stay inherited.
+  When FCC's mass later changes to 9 kg, `fcc2` reads 9 kg and `fcc1` keeps its own.
+- **Reset** with the **Reset** link in the note: the component reads the definition's value again.
+  The ✕ of an overriding group takes back all of its overrides; an inherited-only group has no ✕
+  (the stereotype belongs to `FCC`: remove it there).
+- Tables, the report, the SysML text export, Compare and Model Check show and compare the values a
+  component reads, so a roll-up over components sees the same numbers as the inspector. Each override
+  and reset is one named undo step.
+
+**Tag many elements at once.** **Modeling ▸ Apply stereotypes…** takes a stereotype, a scope and an
+optional category, and tells you **before it applies** how many elements it will tag (*3 elements will
+get «Avionics.LRU»*; *Show the elements* lists them, and the line under it says how many are skipped
+and why). *Current package / composition* tags what the selected composition **contains**; the
+composition itself and the internals of the definitions its components reference stay untouched. To
+tag those, select them (canvas rubber band or Shift-click) and use *Selected elements*. Components
+whose definition already carries the stereotype are skipped: they inherit it.
+
+**Allocations and allocation sets.** A stereotype made for *Allocation* applies to allocations
+only; allocation sets have their own category, *AllocationSet*, in the **Applies to** lists of the
+Profile Editor.
+
+**Units and rounding.** Number fields accept a plain number, an expression or a value with a
+compatible unit; the field names a unit it accepts (`3 lb` for a mass in kg, `3 kW` for a power in
+W). The canvas Property Inspector shows values rounded with their unit (`4.54 kg`) while the full
+precision stays stored: click into the field to see it, hover for the tooltip, and the line under the
+section says what was stored ("entered as 10 lb").
 
 ---
 
@@ -660,6 +697,11 @@ safety.apply(vehicle, {"asilLevel": "D"})   # validated at apply time
 ```
 
 Stereotypes round-trip through JSON, appear in every diagram, and serialize to the knowledge-graph as `:stereotype` edges with tag values.
+
+This is the pre-profile API (untyped tags, no units, values kept per element). Typed properties with
+units and ranges, applies-to categories, and values that reference components inherit from their
+definitions come with profiles: see [4d](#4d-profiles-in-practice-inherited-values-bulk-tagging-units)
+and [features/profiles.md](features/profiles.md).
 
 ---
 

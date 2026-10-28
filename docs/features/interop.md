@@ -143,7 +143,8 @@ usages are written as real SysML v2 syntax. Constructs the engine parser cannot 
 are written as `//` comments in SysML v2 form so the file stays re-parsable: state
 transitions (`// transition first Off then On;`), metadata definitions (stereotypes) and
 stereotype values as metadata usages with unit literals
-(`// #Avionics.LRU { mass = 2.5 [kg]; dal = "B"; }`). The exporter probes the parser
+(`// #Avionics.LRU { mass = 2.5 [kg]; dal = "B"; }`; a reference component's line is marked
+`(inherited from FCC)` when the values come from its definition). The exporter probes the parser
 (`parser_capabilities()`), so these become real syntax as soon as the parser supports
 them. The SysML Text view says which constructs are commented.
 
@@ -190,7 +191,9 @@ preview frame:
    connector),
 4. component hierarchy,
 5. per component: documentation, reference definition, stereotype property values (as the
-   profiles feature displays them, with units, inherited properties first), ports
+   profiles feature displays them, with units, base-stereotype properties first; a reference
+   component also lists what it inherits from its definition, with a *Source* column:
+   "inherited from FCC" / "set here (the definition has 3 kg)"), ports
    (direction, kind, interface) and connectors,
 6. interfaces with their elements,
 7. requirements and traceability (implemented by / verified by / other links, coverage %),
@@ -221,7 +224,9 @@ tree nests changed elements under their (grey, unchanged) owners; each modified 
 expands to a property table (old value, current value): name, kind, owner (moved), type,
 direction, multiplicity, documentation, short name, abstract, req id and text, connection
 ends, specializations, stereotypes applied / removed and their property values (labelled
-`Avionics.LRU.mass`, as the profiles feature names them), links
+`Avionics.LRU.mass`, as the profiles feature names them; the values a reference component reads
+from its definition count, so a changed definition value shows on every component that reads it,
+as *inherited* when the component has no application of its own), links
 added / removed, and feature data stored through codecs. Filters: Added / Removed /
 Modified, a search box (names, kinds, property names and values), **Expand all** /
 **Collapse all**. Click a name (or press Enter) to select the element in the tree and
@@ -317,7 +322,11 @@ Sheets, in order (first row = header):
   authority for stereotype names, lookup, typed values and units:
   - `Stereotypes` lists the applied stereotypes, in order (the first one's style wins), as
     `Profile.Stereotype` (`Avionics.LRU`); a stereotype kept in a plain package (the legacy
-    `Stereotype(...)` API) has no profile and is just `LRU`;
+    `Stereotype(...)` API) has no profile and is just `LRU`. A reference component also lists
+    the stereotypes it inherits from its definition and its value columns hold the values it
+    reads (SU-15; see [profiles](profiles.md)): on import a cell that shows the inherited
+    value leaves it inherited, a changed cell overrides it, and definitions are imported
+    before the components typed by them;
   - each property value has a column `Profile.Stereotype.property` (`Avionics.LRU.mass`)
     holding the stored value: numbers are in the property's unit (the Profiles sheet's
     `Unit`). On import the column may also name a base stereotype

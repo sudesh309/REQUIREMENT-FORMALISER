@@ -111,6 +111,29 @@ class ExpressionTests(unittest.TestCase):
         self.assertEqual(U.format_number(3), "3")
         self.assertEqual(U.format_number(True), "true")
 
+    def test_format_short_rounds_for_reading(self):
+        """SU-11: 4.5359237 kg reads 4.54 kg; the stored value is not touched by formatting."""
+        short = U.format_short
+        self.assertEqual(short(4.5359237), "4.54")
+        self.assertEqual(short(1234.5678), "1234.57")
+        self.assertEqual(short(0.45359237), "0.454")            # below 1: three significant digits
+        self.assertEqual(short(3.0), "3")                        # no trailing zeros
+        self.assertEqual(short(4.50), "4.5")
+        self.assertEqual(short(-2.7183), "-2.72")
+        self.assertEqual(short(0), "0")
+        self.assertEqual(short(31), "31")                        # whole numbers are exact
+        self.assertEqual(short(1e-6), "1e-06")
+        self.assertEqual(short(2.5e13), "2.5e+13")
+        self.assertEqual(short(True), "true")
+        value = 4.5359237
+        short(value)
+        self.assertEqual(value, 4.5359237)
+        from kerml.stereotypes import format_short
+        self.assertEqual(format_short(4.5359237, "kg"), "4.54 kg")
+        self.assertEqual(format_short("A", ""), "A")
+        self.assertEqual(format_short(None, "kg"), "")
+        self.assertEqual(format_short(False), "false")
+
 
 if __name__ == "__main__":
     unittest.main()
