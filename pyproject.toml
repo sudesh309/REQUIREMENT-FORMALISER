@@ -24,4 +24,4 @@ sysml-gui = "gui.app:main"
 include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*"]
 
 [tool.setuptools.package-data]
-webapp = ["static/*"]
+webapp = ["static/*", "static/**/*"]
