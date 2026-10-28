@@ -129,6 +129,12 @@ flowchart LR
 - **Removing.** An inherited stereotype cannot be removed from the usage (it belongs to the
   definition: remove it there, 409 otherwise); removing the usage's own application removes its
   overrides. *Remove all* removes the element's own applications only.
+- **Addressing.** `Profile.Stereotype.property` (or a base stereotype's name) resolves among the
+  stereotypes the element carries, inherited ones included. When several match (two stereotypes
+  derived from the base you named), the element's *own* win over inherited ones, so inheritance
+  never makes a path ambiguous that was not; several own ones are still ambiguous (400, the
+  message lists the candidates). `get_property_value(e, path, inherit=False)` reads only what is
+  applied to the element itself (404 on a component with no application of its own).
 - **Which stereotypes.** Only stereotypes of a profile whose applies-to fits the usage are
   inherited (an `Architecture` stereotype on a root definition is not). Stereotypes of the legacy
   API (a plain package, untyped tags) keep their values per element. Ports, connectors and other
@@ -432,6 +438,7 @@ P.apply_stereotype(repo, fcc_def, lru, {"mass": "3 kg"})
 P.get_property_value(fcc, "Avionics.LRU.mass")      # 3.0, read from fcc_def
 P.set_property_value(repo, fcc, "Avionics.LRU.mass", "4 kg")     # an override on fcc only
 P.reset_property_value(repo, fcc, "Avionics.LRU.mass")           # inherits 3.0 again
+P.get_property_value(fcc, "Avionics.LRU.mass", inherit=False)   # 404: nothing applied on fcc itself
 text = P.export_profile_json(prof)
 P.import_profile(Repository("Other"), text)
 ```

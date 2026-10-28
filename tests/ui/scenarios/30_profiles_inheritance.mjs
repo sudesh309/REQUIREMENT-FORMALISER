@@ -21,8 +21,12 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   const fcc1 = await mk("fcc1", 60, 60, fccDef.id);
   const fcc2 = await mk("fcc2", 340, 60, fccDef.id);
   const plain = await mk("plain", 60, 240);
+  // Nested references: rack1 is typed by Rack, whose part slot is typed by FCC.
+  const rack = await api("POST", "/api/arch/architecture", { name: "Rack" });
+  const slot = await api("POST", "/api/arch/component", { composition: rack.id, name: "slot", definition: fccDef.id, layout: { x: 60, y: 60 } });
+  await mk("rack1", 340, 240, rack.id);
   await waitReady();
-  await page.waitForFunction(() => document.querySelectorAll(".arch-block").length === 3);
+  await page.waitForFunction(() => document.querySelectorAll(".arch-block").length === 4);
   const until = (fn, arg) => page.waitForFunction(fn, arg, { timeout: 10000 });
   const depth = async () => (await api("GET", "/api/undo/state")).undo_depth;
   const label = async () => (await api("GET", "/api/undo/state")).undo_label;
@@ -162,6 +166,22 @@ export default async function ({ page, fresh, waitReady, expect, api, errors }) 
   await until(() => document.querySelector('.arch-dock [data-path="Avionics.LRU.mass"]')?.value === "9");
   expect((await props(fcc1)).mass.origin === "inherited" && (await props(fcc2)).mass.origin === "inherited", "both inherit again");
   expect((await label()).startsWith("Reset Avionics.LRU.mass of fcc1, fcc2"), `reset label: ${await label()}`);
+  // nested references: open rack1 (typed by Rack); its part slot (typed by FCC) reads FCC's values
+  await page.dblclick('.arch-block[data-name="rack1"] .arch-body', { position: { x: 14, y: 12 } });
+  await page.waitForSelector('.arch-block[data-name="slot"]');
+  await page.click('.arch-block[data-name="slot"] .arch-body', { position: { x: 10, y: 10 } });
+  await page.waitForSelector(dmass);
+  expect(await page.inputValue(dmass) === "9", "slot, inside the reference rack1, reads the mass of its definition FCC");
+  expect((await page.textContent(".arch-dock .pf-app > summary")).includes("inherited from FCC"), "marked inherited from FCC");
+  await page.fill(dmass, "2 kg");
+  await page.press(dmass, "Enter");
+  await until(() => document.querySelector('.arch-dock [data-note-for="Avionics.LRU.mass"] .pf-reset'));
+  expect((await props(slot)).mass.value === 2 && (await props(fcc1)).mass.value === 9, "the override is on slot only");
+  await page.click('.arch-dock [data-reset="Avionics.LRU.mass"]');
+  await until(() => document.querySelector('.arch-dock [data-path="Avionics.LRU.mass"]')?.value === "9");
+  expect((await props(slot)).mass.origin === "inherited", "slot inherits from FCC again");
+  await page.click("[data-crumb-up]");                                      // back up to Aircraft
+  await page.waitForSelector('.arch-block[data-name="plain"]');
   // an unrelated component has no inherited stereotype, and the dock offers it
   await page.click('.arch-block[data-name="plain"] .arch-body', { position: { x: 10, y: 10 } });
   await page.waitForSelector(".arch-dock [data-st-add]:not([disabled])");

@@ -247,7 +247,9 @@ overrides them, so a feature that reads values must not look at `stereotypes_on(
 `.stereotype`, `.values`, `.get`) or `engine.profiles.element_stereotypes(e)` (with units, display
 strings and `origin`). Write through `set_property_value(s)` (an override on a reference component),
 `reset_property_value(s)` and `apply_stereotype`; copy an application's `own_values()`, never its
-`values`. Roll-ups over a composition follow `engine.structure` (component usages, each read through
+`values`. `get_property_value(e, path, inherit=False)` reads only what is applied to `e` itself, for
+code that must tell its own value from the definition's. A path that names a base stereotype
+resolves to the element's own application before an inherited one. Roll-ups over a composition follow `engine.structure` (component usages, each read through
 its own definition), so a value set once on a definition counts for every component typed by it.
 
 **Element JSON display fields**: every summary has `badges` (list of short

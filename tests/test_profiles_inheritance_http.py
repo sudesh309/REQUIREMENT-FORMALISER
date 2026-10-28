@@ -101,6 +101,30 @@ class InheritanceHttpTests(WebAppTestCase):
         saved = self.call("GET", "/api/save")["text"]
         self.assertIn("4.5359237", saved)
 
+    def test_nested_references(self):
+        """rack1 is typed by Rack, whose part slot is typed by FCC: each reads from its own definition."""
+        rack = self.call("POST", "/api/arch/architecture", {"name": "Rack"})
+        slot = self.call("POST", "/api/arch/component",
+                         {"composition": rack["id"], "name": "slot", "definition": self.fcc_def["id"]})
+        rack1 = self.call("POST", "/api/arch/component",
+                          {"composition": self.root["id"], "name": "rack1", "definition": rack["id"]})
+        self.assertEqual(self.view(rack1)["applied"], [])                       # Rack carries nothing yet
+        self.assertEqual(self.props(slot)["mass"]["value"], 3.0)                # slot reads FCC's
+        self.call("POST", f"/api/elements/{rack['id']}/stereotypes",
+                  {"stereotype": "Avionics.LRU", "values": {"mass": 20}})
+        self.assertEqual(self.props(rack1)["mass"]["value"], 20.0)              # rack1 reads Rack's
+        self.assertEqual(self.props(slot)["mass"]["value"], 3.0)
+        # the canvas view of the inside of rack1 carries slot with the values it reads
+        inside = self.call("GET", f"/api/arch/view/{rack1['id']}")
+        got = {c["name"]: {k: v for st in c["stereotypes"] for k, v in st["values"].items()}
+               for c in inside["components"]}
+        self.assertEqual(got["slot"]["mass"], 3.0)
+        self.call("PATCH", f"/api/elements/{self.fcc_def['id']}/stereotypes", {"property": "mass", "value": 5})
+        self.assertEqual(self.props(slot)["mass"]["value"], 5.0)
+        self.assertEqual(self.props(rack1)["mass"]["value"], 20.0)
+        self.call("PATCH", f"/api/elements/{slot['id']}/stereotypes", {"property": "mass", "value": 6})
+        self.assertEqual((self.props(slot)["mass"]["value"], self.props(self.fcc1)["mass"]["value"]), (6.0, 5.0))
+
     def test_override_reset_and_undo(self):
         base = self.depth()
         out = self.call("PATCH", f"/api/elements/{self.fcc1['id']}/stereotypes",
