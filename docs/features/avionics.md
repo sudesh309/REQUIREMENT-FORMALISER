@@ -104,9 +104,10 @@ and never changes a stereotype or property that exists.
 Values are checked and converted by the profiles feature: `9 lb` into `mass` is stored as 4.08 kg, `1 MB` into a
 kB property as 1000, `2*15` as 30. An element carries **one** Equipment-derived stereotype (a second would repeat
 every Equipment property); pick the most specific. Equipment values live on the **part definitions** (reference
-components): `ADC1 : AirDataComputer` reads the definition's DAL and mass. `profile.effective(e, "dal")` does that
-for the rules (the element's own value first, else its definition's) and every read goes through
-`engine.profiles.get_property_value`.
+components) and the profiles feature lets usages inherit them: `ADC1 : AirDataComputer` shows `«Computer»`, its mass
+and its DAL, and a value set on the usage overrides the definition's. In Python `profile.read(e, "dal")` is what is
+stored on the element itself (`get_property_value(..., inherit=False)`), `profile.effective(e, "dal")` adds what it
+inherits (plain `get_property_value`); the rules use `effective`.
 
 `verificationMethod` is a superset of the Requirements feature's own *Verification method* column (it adds review and
 similarity); the rules prefer the column when it is set.
@@ -314,7 +315,7 @@ with a `status`).
 | dal-rules | closed | requirement DAL, FHA allocation, partitioning mark, hosting, decomposition hints, verification guidance |
 | project-templates | closed | File > New from template: blank avionics project, complete IMA example |
 | complete-example | closed | functional, logical, physical architectures, IMA, requirements, allocation, FHA, state machine |
-| Equipment value inheritance by usages | partly | rules read a usage's definition (`profile.effective`); the Properties tab and canvas show a usage's own stereotypes only: inheriting definition values in those views belongs to the profiles feature |
+| Equipment value inheritance by usages | closed | by the profiles feature: usages show and use their definition's stereotype values (`profile.effective`) |
 | Fault tree / FMEA / common cause analysis, quantitative probability roll-up | deferred | the FHA gives the objective, not the analysis (ARP4761 safety assessment is a separate effort) |
 | Proof of independence for DAL decomposition | deferred | the studio hints and accepts valid pairs of redundant channels, independence stays an engineering claim |
 | Schedulability of ARINC 653 partition windows, AFDX bandwidth and latency budgets | deferred | `timeWindow`, `period`, `bandwidth`, `latency` are stored; no analysis reads them yet |

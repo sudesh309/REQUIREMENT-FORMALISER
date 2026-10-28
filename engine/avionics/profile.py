@@ -22,10 +22,11 @@ An element carries at most one *Equipment*-derived stereotype (a second one woul
 every Equipment property); pick the most specific one (Computer, Sensor, ...).
 
 Reading values: :func:`read` and :func:`effective` go through
-``engine.profiles.get_property_value`` only. ``effective`` looks at the element itself and,
-for a component usage typed by a definition, at its definition: equipment values live on
-the part definitions (reference components), so ``ADC1 : AirDataComputer`` has the DAL of
-``AirDataComputer``.
+``engine.profiles.get_property_value`` only. ``read`` is what is stored on the element
+(``inherit=False``); ``effective`` adds what a component usage inherits from the part
+definition it is typed by: equipment values live on the part definitions (reference
+components), so ``ADC1 : AirDataComputer`` has the DAL of ``AirDataComputer``, and a value
+on the usage itself wins.
 """
 from __future__ import annotations
 
@@ -36,7 +37,6 @@ from kerml.elements import Element
 from kerml.stereotypes import Profile, Stereotype, application_of, stereotypes_on
 
 from engine import profiles as P
-from engine.structure import definition_of
 
 __all__ = [
     "PROFILE_NAME", "DALS", "DAL_DEFAULT", "BUS_TYPES", "STEREOTYPES", "EQUIPMENT_STEREOTYPES",
@@ -286,29 +286,36 @@ def _declaring(prop: str) -> tuple[str, ...]:
                  if any(p["name"] == prop for p in s["props"]))
 
 
-def read(element: Optional[Element], prop: str) -> Any:
-    """Value of an Avionics property on the element itself (None when it carries none).
-
-    Goes through ``engine.profiles.get_property_value``; a user-defined stereotype with a
-    property of the same name (a profile of their own with ``dal``) is read as a fallback.
-    """
-    if element is None or not stereotypes_on(element):
-        return None
+def _lookup(element: Element, prop: str, *, inherit: bool) -> Any:
+    """First readable path for ``prop``: ``Avionics.<Stereotype>.<prop>`` for each stereotype that
+    declares it, then the bare name (a user-defined stereotype with a property of that name)."""
     for path in (*_declaring(prop), prop):
         try:
-            return P.get_property_value(element, path)
+            return P.get_property_value(element, path, inherit=inherit)
         except ValueError:
             continue
     return None
 
 
+def read(element: Optional[Element], prop: str) -> Any:
+    """Value of an Avionics property stored on the element itself (None when it carries none).
+
+    ``engine.profiles.get_property_value(..., inherit=False)``: a component usage does not
+    report what it inherits from its definition (see :func:`effective`).
+    """
+    if element is None or not stereotypes_on(element):
+        return None
+    return _lookup(element, prop, inherit=False)
+
+
 def effective(element: Optional[Element], prop: str) -> Any:
-    """Like :func:`read`; a component usage without its own value takes its definition's."""
+    """The value the element has: its own, else what a component usage inherits from its
+    definition (the profiles feature's inheritance, plain ``get_property_value``)."""
+    if element is None:
+        return None
     value = read(element, prop)
-    if value is None and element is not None:
-        d = definition_of(element)
-        if d is not None and d is not element:
-            value = read(d, prop)
+    if value is None:
+        value = _lookup(element, prop, inherit=True)
     return value
 
 

@@ -118,7 +118,8 @@ class ProfileTests(unittest.TestCase):
         AP.apply(self.repo, u2, "LogicalItem", {"dal": "A"})     # its own value wins
         self.assertEqual((AP.effective_dal(u1), AP.effective_dal(u2)), ("B", "A"))
         self.assertEqual(AP.effective(u1, "mass"), 3.6)
-        self.assertIsNone(AP.read(u1, "mass"))
+        self.assertIsNone(AP.read(u1, "mass"))                                  # nothing stored on the usage
+        self.assertEqual(P.get_property_value(u1, "Avionics.Equipment.mass"), 3.6)   # the profiles feature inherits
         summary = AP.equipment_summary(self.repo, arch)
         self.assertEqual(summary[0]["items"], 2)
         self.assertAlmostEqual(summary[0]["mass_kg"], 7.2)
