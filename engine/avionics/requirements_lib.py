@@ -15,9 +15,8 @@ guidance for reviewers, not the text of the standards.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Optional
+from typing import Iterable, Iterator, Optional
 
-from engine import profiles as P
 import engine.requirements as rq
 from kerml.elements import Element
 from kerml.stereotypes import stereotypes_on

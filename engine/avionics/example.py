@@ -32,7 +32,6 @@ from engine import Repository
 from engine import allocation as AL
 from engine import architecture as A
 from engine import interfaces as I
-from engine import profiles as P
 from engine.hooks import notify_created
 from kerml.elements import Documentation, Element
 from kerml.namespaces import Package
@@ -1023,7 +1022,7 @@ def build_example(name: str = EXAMPLE_NAME, *, repo: Optional[Repository] = None
 
 def describe_example(repo: Repository) -> dict:
     """Counts of what the example holds (used by the template list, the HTTP API and the tests)."""
-    from engine.structure import component_tree, connectors_of, ports_of
+    from engine.structure import component_tree
     arch = next((e for e in repo.root_package.owned_elements
                  if isinstance(e, PartDefinition) and e.name == "PhysicalArchitecture"), None)
     sets = rq.requirement_sets(repo)

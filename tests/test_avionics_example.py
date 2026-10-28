@@ -2,24 +2,22 @@
 counts and invariants, saved / loaded, exchanged as XLSX, compared, reported and checked."""
 from __future__ import annotations
 
-import json
 import unittest
 
 import engine.requirements as rq
-from engine import Repository, from_json, to_json
+from engine import from_json, to_json
 from engine import allocation as AL
 from engine import architecture as A
 from engine import interfaces as I
-from engine import profiles as P
 from engine.avionics import example, safety as SF, templates
 from engine.avionics import profile as AP
 from engine.interop import export_tables_file, read_tables_file, tables_to_project
 from engine.interop.checks import run_model_check
 from engine.interop.diff import compare
 from engine.interop.report import generate_report
-from engine.structure import component_tree, components_of, connectors_of, definition_of, ports_of
+from engine.structure import components_of, connectors_of, definition_of, ports_of
 from kerml.stereotypes import stereotypes_on
-from sysmlv2.definitions import PartDefinition, PartUsage, PortUsage
+from sysmlv2.definitions import PartDefinition, PortUsage
 
 
 def top(repo, name):

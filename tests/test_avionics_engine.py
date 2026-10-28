@@ -12,7 +12,6 @@ from engine import profiles as P
 from engine.avionics import interfaces_lib, requirements_lib, safety as SF
 from engine.avionics import profile as AP
 from engine.interop.diff import compare
-from engine.structure import components_of
 from engine.validator import Severity
 from kerml.stereotypes import stereotypes_on
 
