@@ -40,7 +40,7 @@ from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications, stereotypes_on
 from kerml.types import Type
 from sysmlv2.definitions import (
     PORT_KINDS, ConnectionUsage, PartDefinition, PartUsage, PortUsage,
@@ -424,6 +424,11 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
             ends = connector_ends(conn)       # contexts resolved before the typing changes
             if any((retyped and ctx is c and p.owner is old) or id(p) in swap for ctx, p in ends):
                 affected.append((conn, ends))
+    if definition is None and old is not None:
+        try:      # the component keeps the stereotype values it read from the definition it leaves
+            _profiles().freeze_inherited(repo, c)
+        except ImportError:
+            pass
     c.feature_typings = []
     c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
     if definition is not None:
@@ -1082,7 +1087,7 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
             if isinstance(a, Documentation):
                 c.add_annotation(Documentation(body=a.body))
         for app in stereotypes_on(o):
-            apps.append((c, app.stereotype, dict(app.values)))
+            apps.append((c, app.stereotype, app.own_values()))      # not what it inherits
     return [mapping[id(r)] for r in roots], mapping, apps
 
 
@@ -1991,7 +1996,8 @@ def _ref(e: Optional[Element]) -> Optional[dict]:
 
 def _basic_decor(e: Element) -> dict:
     return {"badges": component_badges(e) + port_badges(e), "style": {},
-            "stereotypes": [{"name": a.stereotype.name, "values": a.values} for a in stereotypes_on(e)]}
+            "stereotypes": [{"name": a.stereotype.name, "values": a.values}
+                            for a in effective_applications(e)]}
 
 
 def _decor(decorate: Optional[Callable[[Element], dict]], e: Element) -> dict:
@@ -2236,15 +2242,22 @@ def common_stereotypes(repo, elements: list[Element]) -> dict:
             props = []
             for pi, p in enumerate(g["properties"]):
                 same = [v[app["id"]]["groups"][gi]["properties"][pi] for v in views]
+                # Reference components inherit values from their definition (SU-15): a value
+                # is "overridden" when it is for any of them, "inherited" only when for all.
+                origin = {"overridden": any(s.get("overridden") for s in same),
+                          "inherited": all(s.get("inherited") for s in same)}
                 if all(s["value"] == p["value"] for s in same):
                     bad = next((s for s in same if s.get("valid") is False), None)
-                    props.append({**p, "mixed": False, "valid": bad is None,
+                    props.append({**p, **origin, "mixed": False, "valid": bad is None,
                                   **({"problem": bad.get("problem")} if bad else {})})
                 else:
-                    props.append({**{k: v for k, v in p.items() if k != "problem"},
+                    props.append({**{k: v for k, v in p.items() if k != "problem"}, **origin,
                                   "value": None, "display": "", "valid": True, "mixed": True})
             groups.append({**g, "properties": props})
-        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups})
+        apps_of = [v[app["id"]] for v in views]
+        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups,
+                        "inherited": all(a["inherited"] for a in apps_of),
+                        "overridden": any(a["overridden"] for a in apps_of)})
     on_all = {a["id"] for a in applied}
     counts: dict[str, list] = {}
     for v in views:
@@ -2257,7 +2270,7 @@ def common_stereotypes(repo, elements: list[Element]) -> dict:
     possible = []
     for e in els:
         mine = {s.element_id: s for s in P.applicable_stereotypes(repo, e)}
-        possible.append(set(mine) | {a.stereotype.element_id for a in stereotypes_on(e)})
+        possible.append(set(mine) | {a.stereotype.element_id for a in effective_applications(e)})
         for sid, s in mine.items():
             offered.setdefault(sid, s)
     applicable = [{"id": s.element_id, "qualified_name": s.full_name, "name": s.name,
@@ -2317,6 +2330,24 @@ def set_stereotype_values(repo, elements: list[Element], values: dict) -> dict:
         except (P.StereotypeError, ValueError) as ex:     # checked above: should not happen
             raise _stereo_error(ex, e, many) from None
     return stored
+
+
+def reset_stereotype_values(repo, elements: list[Element], paths: list) -> dict:
+    """Take back the values set on each element (a reference component inherits its definition's
+    again), all or nothing: every path must resolve on every element before any is reset."""
+    P = _profiles()
+    els = list(elements)
+    paths = [p for p in (paths or []) if p]
+    if not paths:
+        raise ArchitectureError("send {ids, properties: ['Profile.Stereotype.property', ...]}")
+    many = len(els) > 1
+    for e in els:
+        for path in paths:
+            try:
+                P.resolve_value_path(e, path)
+            except (P.StereotypeError, ValueError) as ex:
+                raise _stereo_error(ex, e, many) from None
+    return {e.element_id: P.reset_property_values(repo, e, paths) for e in els}
 
 
 # ---------------------------------------------------------------------------

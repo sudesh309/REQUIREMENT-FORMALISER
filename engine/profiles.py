@@ -33,9 +33,10 @@ from kerml.elements import Element, Relationship
 from kerml.namespaces import Package
 from kerml.stereotypes import (
     CATEGORIES, DASH_PATTERNS, DEFAULT_SLOTS, ICONS, INT_RANGES, LINE_STYLES,
-    NUMERIC_TYPES, PROPERTY_TYPES, Profile, Stereotype, StereotypeApplication,
-    StereotypeError, StereotypeTag, UnknownPropertyError, application_of,
-    build_property, categories_of, check_name, format_value, kind_names,
+    NUMERIC_TYPES, PROPERTY_TYPES, InheritedApplication, Profile, Stereotype,
+    StereotypeApplication, StereotypeError, StereotypeTag, UnknownPropertyError,
+    application_of, build_property, categories_of, check_name, effective_application_of,
+    effective_applications, format_short, format_value, inheritance_source, kind_names,
     matches_category, normalize_literals, normalize_style, stereotypes_on,
 )
 
@@ -53,8 +54,10 @@ __all__ = [
     "add_stereotype", "update_stereotype", "delete_stereotype",
     "add_property", "update_property", "delete_property", "move_property",
     "apply_stereotype", "remove_stereotype", "remove_all_stereotypes",
-    "set_property_value", "set_property_values", "get_property_value",
-    "element_stereotypes", "applicable_stereotypes", "batch_apply",
+    "own_application", "freeze_inherited", "set_property_value", "set_property_values",
+    "reset_property_value", "reset_property_values", "get_property_value", "resolve_value_path",
+    "effective_applications", "inheritance_source",
+    "element_stereotypes", "applicable_stereotypes", "batch_apply", "plan_batch",
     "export_profile", "export_profile_json", "import_profile",
     "display_fields", "validate_profiles", "describe_profile", "meta",
 ]
@@ -644,6 +647,7 @@ def delete_property(repo, tag: StereotypeTag) -> dict:
         for _e, a in applications_of(repo, st, include_derived=True):
             if tag in a.raw_slots():
                 affected += 1
+            a.forget(tag)
     path = tag.path
     repo.remove(tag)
     return {"deleted": path, "values_removed": affected}
@@ -674,6 +678,12 @@ def _check_target(e: Element) -> None:
 
 def apply_stereotype(repo, element: Element, stereotype: Stereotype,
                      values: Optional[dict] = None) -> StereotypeApplication:
+    """Apply ``stereotype`` to ``element`` (409 when it already carries its own application).
+
+    On a reference component whose definition already carries the stereotype this is an
+    *override*, not a duplicate: the new application inherits every value the definition
+    has and overrides only the ``values`` given.
+    """
     _check_target(element)
     if application_of(element, stereotype) is not None:
         raise _conflict(f"«{stereotype.full_name}» is already applied to {element.qualified_name!r}")
@@ -695,29 +705,41 @@ def _local_values(st: Stereotype, values: dict) -> dict:
 
 
 def remove_stereotype(repo, element: Element, stereotype: Stereotype) -> bool:
+    """Remove the element's own application (an override, on a reference component)."""
     a = application_of(element, stereotype)
     if a is None:
+        inherited = effective_application_of(element, stereotype)
+        if inherited is not None:
+            raise _conflict(f"«{stereotype.full_name}» is inherited from "
+                            f"{inherited.definition.qualified_name!r}: remove it there")
         raise _not_found(f"«{stereotype.full_name}» on {element.qualified_name!r}")
     _strip(element, a)
     return True
 
 
 def remove_all_stereotypes(repo, element: Element) -> int:
+    """Remove the element's own applications; inherited ones stay with the definition."""
     apps = stereotypes_on(element)
     element.annotations = [x for x in element.annotations if not isinstance(x, StereotypeApplication)]
     return len(apps)
 
 
-def resolve_value_path(element: Element, path: str) -> tuple[StereotypeApplication, StereotypeTag]:
+def resolve_value_path(element: Element, path: str, *, inherit: bool = True
+                       ) -> tuple[StereotypeApplication, StereotypeTag]:
     """``Profile.Stereotype.property`` (or ``Stereotype.property`` / ``property``) on an element.
 
-    The stereotype part may also name a base of an applied stereotype.
+    The stereotype part may also name a base of an applied stereotype. The application is the
+    element's own or, for a stereotype a reference component inherits from its definition,
+    an inherited one (``.inherited``; reading it works, ``set_property_value`` overrides it).
+    When several applied stereotypes match (two derive from the base named), the element's own
+    win over inherited ones; several own ones are ambiguous. ``inherit=False`` looks at the
+    element's own applications only (what is stored on it).
     """
     if not isinstance(path, str) or not path.strip():
         raise ProfileError("property path must be 'Profile.Stereotype.property'")
     path = path.strip()
     prefix, _, prop = path.rpartition(".")
-    apps = stereotypes_on(element)
+    apps = effective_applications(element) if inherit else stereotypes_on(element)
     if not apps:
         raise _not_found(f"stereotype property {path!r}: {element.qualified_name!r} has no stereotypes")
     if prefix:
@@ -733,16 +755,37 @@ def resolve_value_path(element: Element, path: str) -> tuple[StereotypeApplicati
     if not cands:
         raise _not_found(f"stereotype property {path!r} on {element.qualified_name!r}")
     if len(cands) > 1:
+        # Inheritance must not make a path ambiguous that was not: the element's own stereotypes
+        # take precedence over the ones it only inherits from its definition.
+        own = [a for a in cands if not a.inherited]
+        if own:
+            cands = own
+    if len(cands) > 1:
         raise ProfileError(f"{path!r} is ambiguous on {element.qualified_name!r}; use one of "
                            f"{[a.stereotype.full_name + '.' + prop for a in cands]}")
     a = cands[0]
     return a, a.stereotype.find_tag(prop)  # type: ignore[return-value]
 
 
+def own_application(repo, element: Element, a) -> StereotypeApplication:
+    """The element's own application behind ``a``. A stereotype the element only inherits gets
+    an application of its own (no values set: everything is still inherited) to hold overrides."""
+    if not a.inherited:
+        return a
+    own = application_of(element, a.stereotype)
+    return own if own is not None else _wrap(a.stereotype.apply, element, {})
+
+
 def set_property_value(repo, element: Element, path: str, value: Any) -> Any:
-    """Check, convert and store one value; returns the stored form."""
+    """Check, convert and store one value; returns the stored form.
+
+    On a reference component this overrides the definition's value; ``reset_property_value``
+    inherits it again.
+    """
     a, tag = resolve_value_path(element, path)
-    return _wrap(a.set, tag.name, value)
+    stored = _wrap(tag.coerce, value, f"{a.stereotype.full_name}.{tag.name}")
+    own_application(repo, element, a).assign(tag, stored)
+    return stored
 
 
 def set_property_values(repo, element: Element, values: dict) -> dict:
@@ -753,21 +796,85 @@ def set_property_values(repo, element: Element, values: dict) -> dict:
         plan.append((a, tag, path, _wrap(tag.coerce, value, f"{a.stereotype.full_name}.{tag.name}")))
     out = {}
     for a, tag, path, stored in plan:
-        a.raw_slots()[tag] = stored
+        own_application(repo, element, a).assign(tag, stored)
         out[path] = stored
     return out
 
 
-def get_property_value(element: Element, path: str) -> Any:
-    a, tag = resolve_value_path(element, path)
-    return a.get(tag.name)
+def reset_property_values(repo, element: Element, paths: Iterable[str]) -> dict:
+    """Take back the values set on the element: they are inherited from the definition again
+    (the property default when there is none). All or nothing.
+
+    An override application that no longer sets anything is dropped. Returns
+    ``{"reset": [paths that had a value set], "unchanged": [paths already inherited],
+    "removed": [stereotypes whose empty override was dropped]}``.
+    """
+    plan = [(path, *resolve_value_path(element, path)) for path in paths or []]
+    if not plan:
+        raise ProfileError("name the properties to reset")
+    out: dict = {"reset": [], "unchanged": [], "removed": []}
+    touched: dict[int, StereotypeApplication] = {}
+    for path, a, tag in plan:
+        if not a.inherited and a.reset(tag.name):
+            out["reset"].append(path)
+            touched[id(a)] = a
+        else:
+            out["unchanged"].append(path)
+    for a in touched.values():
+        if a.parent() is not None and not a.explicit_tags():
+            _strip(element, a)
+            out["removed"].append(a.stereotype.full_name)
+    return out
 
 
-def _value_entry(a: StereotypeApplication, tag: StereotypeTag) -> dict:
+def freeze_inherited(repo, element: Element) -> int:
+    """Make what ``element`` reads from its definition its own: every inherited stereotype gets
+    an application of its own holding the values it reads, and the values an override
+    application still inherits are set on it. For the moment the typing goes away (an inlined
+    component keeps its stereotypes and values). Returns how many applications changed."""
+    changed = 0
+    for a in effective_applications(element):
+        if a.inherited:
+            _wrap(a.stereotype.apply, element, dict(a.values))
+            changed += 1
+        elif a.parent() is not None:
+            todo = [t for t in a.stereotype.all_tags() if not a.is_explicit(t)]
+            for t in todo:
+                a.assign(t, a.get(t.name))
+            changed += bool(todo)
+    return changed
+
+
+def reset_property_value(repo, element: Element, path: str) -> dict:
+    return reset_property_values(repo, element, [path])
+
+
+def get_property_value(element: Element, path: str, *, inherit: bool = True) -> Any:
+    """The value a property reads on ``element``: its own, else the definition's (reference
+    component), else the property default. ``inherit=False`` reads only what is applied to the
+    element itself (a reference component with no application of its own has no value then:
+    404), the stored value without the definition's."""
+    a, tag = resolve_value_path(element, path, inherit=inherit)
+    return a.get(tag.name) if inherit else a.stored(tag.name)
+
+
+def _value_entry(a, tag: StereotypeTag) -> dict:
     v = a.get(tag.name)
     d = tag.describe()
+    origin = a.origin(tag.name)
     d.update({"path": f"{a.stereotype.full_name}.{tag.name}", "value": v,
-              "display": format_value(v, tag.unit)})
+              "display": format_value(v, tag.unit),
+              # Rounded for compact displays (4.5359237 kg -> '4.54 kg'); `value` and
+              # `display` keep the full precision.
+              "short": format_short(v), "display_short": format_short(v, tag.unit),
+              # 'own' (set here), 'inherited' (the definition's) or 'default'.
+              "origin": origin, "inherited": origin == "inherited"})
+    parent = a.parent()
+    if parent is not None:
+        inherited = parent.get(tag.name)
+        d.update({"overridden": origin == "own", "inherited_value": inherited,
+                  "inherited_display": format_value(inherited, tag.unit),
+                  "inherited_short": format_short(inherited)})
     try:
         ok = tag.coerce(v) == v
     except StereotypeError as ex:
@@ -776,16 +883,31 @@ def _value_entry(a: StereotypeApplication, tag: StereotypeTag) -> dict:
     return d
 
 
+def _definition_ref(a) -> Optional[dict]:
+    parent = a.parent()
+    d = parent.annotated_element if parent is not None else None
+    return None if d is None else {"id": d.element_id, "name": d.name, "qualified_name": d.qualified_name}
+
+
 def element_stereotypes(element: Element) -> list[dict]:
-    """Applied stereotypes with their values grouped by declaring stereotype (base first)."""
+    """Applied stereotypes with their values grouped by declaring stereotype (base first).
+
+    Includes the stereotypes a reference component inherits from its definition. Per
+    stereotype: ``inherited`` (only through the definition), ``overridden`` (applied here
+    and on the definition), ``inherited_from`` (the definition) and, per property value,
+    ``origin`` / ``inherited`` / ``overridden`` / ``inherited_value`` (see ``_value_entry``).
+    """
     out = []
-    for a in stereotypes_on(element):
+    for a in effective_applications(element):
         st = a.stereotype
+        from_def = _definition_ref(a)
         out.append({
             "id": st.element_id, "name": st.name, "qualified_name": st.full_name,
             "profile": st.profile.name if st.profile else None,
             "description": st.description, "abstract": st.is_abstract,
             "style": st.effective_style(),
+            "inherited": bool(a.inherited), "overridden": bool(from_def and not a.inherited),
+            "inherited_from": from_def,
             "groups": [{"stereotype": s.full_name, "id": s.element_id, "name": s.name,
                         "properties": [_value_entry(a, t) for t in props]}
                        for s, props in st.property_groups()],
@@ -795,42 +917,41 @@ def element_stereotypes(element: Element) -> list[dict]:
 
 
 def applicable_stereotypes(repo, element: Element) -> list[Stereotype]:
+    """Stereotypes that can still be applied (not abstract, not already carried or inherited)."""
     if _in_profile_space(element) or isinstance(element, Relationship) or element is repo.root_package:
         return []
+    have = {id(a.stereotype) for a in effective_applications(element)}
     return [s for s in stereotypes_of(repo)
-            if not s.is_abstract and s.can_apply_to(element) and application_of(element, s) is None]
+            if not s.is_abstract and s.can_apply_to(element) and id(s) not in have]
 
 
 def _composition_elements(root: Element) -> list[Element]:
-    """``root`` and everything inside it, including reference components' definitions."""
-    out: list[Element] = []
-    seen: set[int] = set()
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        for e in node.walk():
-            if id(e) in seen:
-                continue
-            seen.add(id(e))
-            out.append(e)
-            if "PartUsage" in kind_names(e):
-                for t in getattr(e, "types", []) or []:
-                    if "PartDefinition" in kind_names(t) and id(t) not in seen:
-                        stack.append(t)
-    return out
+    """What the *composition* scope covers: everything ``root`` owns, ``root`` itself excluded.
+
+    The chosen composition is the container, not one of its elements, and the internals of the
+    definitions its reference components are typed by belong to those definitions (shared by
+    every usage of them): neither is part of the scope. Select them explicitly (scope
+    ``selection``) to stereotype them.
+    """
+    return [e for e in root.walk() if e is not root]
 
 
 SCOPES = ("selection", "composition", "model")
+PREVIEW_LIMIT = 200
 
 
-def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
-                elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
-                values: Optional[dict] = None) -> dict:
-    """Apply a stereotype to every matching element of a scope.
+def _brief(e: Element) -> dict:
+    return {"id": e.element_id, "name": e.qualified_name, "kind": e.kind}
 
-    ``scope``: 'selection' (``elements``), 'composition' (``root`` and everything
-    inside it) or 'model'. ``category`` narrows the candidates (defaults to the
-    stereotype's applies-to). Returns ``{"applied": [ids], "skipped": [...]}``.
+
+def plan_batch(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
+               elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
+               values: Optional[dict] = None) -> dict:
+    """Decide what a batch would do, changing nothing (``batch_apply`` runs it).
+
+    Returns ``{"stereotype", "scope", "category", "targets": [elements to stereotype],
+    "overrides": [ids of targets that override a value of their definition], "skipped": [...],
+    "values": the checked initial values}``; raises ProfileError like ``batch_apply``.
     """
     st = stereotype
     if scope not in SCOPES:
@@ -862,31 +983,88 @@ def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any
         else:
             cands = list(repo.root_package.walk())
         report_mismatch = False
-    applied: list[str] = []
     skipped: list[dict] = []
+
+    def skip(e: Element, reason: str) -> None:
+        skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": reason})
+
+    todo: list[Element] = []
+    seen: set[int] = set()
     for e in cands:
-        if e is repo.root_package and scope != "selection":
+        if id(e) in seen or (e is repo.root_package and scope != "selection"):
             continue
+        seen.add(id(e))
         if _in_profile_space(e) or isinstance(e, Relationship):
             if report_mismatch:
-                skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": "profile definition"})
+                skip(e, "profile definition")
             continue
         if category and not matches_category(e, category):
             if report_mismatch:
-                skipped.append({"id": e.element_id, "name": e.qualified_name,
-                                "reason": f"not a {category}"})
+                skip(e, f"not a {category}")
             continue
         if application_of(e, st) is not None:
-            skipped.append({"id": e.element_id, "name": e.qualified_name, "reason": "already applied"})
+            skip(e, "already applied")
             continue
         if not st.can_apply_to(e):
-            skipped.append({"id": e.element_id, "name": e.qualified_name,
-                            "reason": f"«{st.full_name}» does not apply to {e.kind}"})
+            skip(e, f"«{st.full_name}» does not apply to {e.kind}")
             continue
-        st.apply(e, local)
-        applied.append(e.element_id)
-    return {"stereotype": st.full_name, "scope": scope, "category": category,
-            "applied": applied, "skipped": skipped, "count": len(applied)}
+        todo.append(e)
+    # A reference component reads the stereotype from its definition (SU-15): when the definition
+    # carries it, or gets it in this very batch, the component needs no application of its own
+    # (it would repeat the definition's values) unless the batch sets values the definition
+    # does not have; those become an override.
+    in_batch = {id(e) for e in todo}
+    targets: list[Element] = []
+    overrides: list[str] = []
+    for e in todo:
+        d = inheritance_source(e) if st.profile is not None else None
+        if d is not None and id(d) in in_batch:
+            skip(e, f"inherited from {d.name}")
+        elif d is not None and application_of(d, st) is not None:
+            if local:
+                targets.append(e)
+                overrides.append(e.element_id)
+            else:
+                skip(e, f"inherited from {d.name}")
+        else:
+            targets.append(e)
+    return {"stereotype": st.full_name, "scope": scope, "category": category, "targets": targets,
+            "overrides": overrides, "skipped": skipped, "values": local}
+
+
+def batch_apply(repo, stereotype: Stereotype, *, scope: str = "model", root: Any = None,
+                elements: Optional[Iterable[Any]] = None, category: Optional[str] = None,
+                values: Optional[dict] = None, dry_run: bool = False) -> dict:
+    """Apply a stereotype to every matching element of a scope.
+
+    ``scope``: 'selection' (``elements``), 'composition' (everything ``root`` owns: its
+    components, ports and connectors; neither ``root`` itself nor the internals of the
+    definitions its reference components are typed by) or 'model'. ``category`` narrows
+    the candidates (defaults to the stereotype's applies-to). Elements that already carry the
+    stereotype, or inherit it from their definition, are skipped.
+
+    With ``dry_run`` nothing is changed: the result says what an application would do (the
+    count the Apply dialog shows before it applies). Returns ``{"applied": [ids], "count",
+    "skipped": [...], "overrides": [ids], "dry_run", "preview": [...]}``; ``preview`` (at most
+    ``PREVIEW_LIMIT`` elements) and ``skipped_by_reason`` summarise the plan.
+    """
+    plan = plan_batch(repo, stereotype, scope=scope, root=root, elements=elements,
+                      category=category, values=values)
+    targets = plan["targets"]
+    if not dry_run:
+        for e in targets:
+            stereotype.apply(e, plan["values"])
+    by_reason: dict[str, int] = {}
+    for x in plan["skipped"]:
+        key = "inherited from its definition" if x["reason"].startswith("inherited from ") else x["reason"]
+        by_reason[key] = by_reason.get(key, 0) + 1
+    out = {"stereotype": plan["stereotype"], "scope": scope, "category": plan["category"],
+           "applied": [e.element_id for e in targets], "skipped": plan["skipped"],
+           "count": len(targets), "overrides": plan["overrides"], "dry_run": bool(dry_run),
+           "skipped_by_reason": by_reason}
+    if dry_run:
+        out["preview"] = [_brief(e) for e in targets[:PREVIEW_LIMIT]]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1324,7 +1502,7 @@ def meta() -> dict:
 
 def display_fields(e: Element) -> tuple[list[str], dict]:
     """``(badges, style)`` for the element JSON display contract."""
-    apps = stereotypes_on(e)
+    apps = effective_applications(e)
     badges = [f"«{a.stereotype.name}»" for a in apps]
     style: dict = {}
     for a in apps:
@@ -1407,7 +1585,10 @@ def validate_profiles(repo) -> Iterator[ValidationIssue]:
                 yield ValidationIssue(E, "profile.application.applies_to",
                                       f"«{st.full_name}» applies to {st.effective_category() or 'other'} "
                                       f"elements, not to this {e.kind}", e)
+            parent = a.parent()
             for tag in st.all_tags():
+                if parent is not None and not a.is_explicit(tag):
+                    continue                  # inherited: checked once, on the definition
                 v = a.get(tag.name)
                 try:
                     ok = tag.coerce(v) == v
@@ -1481,6 +1662,11 @@ def _on_removed(repo, removed: set[int]) -> None:
 # Persistence
 # ---------------------------------------------------------------------------
 
+def _inheritance_capable(e: Element) -> bool:
+    """Can ``e`` inherit stereotype values (so the properties set on it are worth recording)?"""
+    return "PartUsage" in kind_names(e)
+
+
 def _encode(e: Element) -> Any:
     if isinstance(e, Profile):
         return {"description": e.description, "version": e.version,
@@ -1497,6 +1683,13 @@ def _encode(e: Element) -> Any:
             return None
         return {"type": e.prop_type, "unit": e.unit, "min": e.minimum, "max": e.maximum,
                 "literals": list(e.literals), "description": e.description}
+    apps = stereotypes_on(e)
+    if apps and _inheritance_capable(e):
+        # Which values were set on the element itself (the others are inherited from the
+        # definition it is typed by). `values` in the application records what is read.
+        return {"overrides": [{"stereotype": a.stereotype.element_id,
+                               "properties": [t.element_id for t in a.explicit_tags()]}
+                              for a in apps]}
     return None
 
 
@@ -1527,6 +1720,13 @@ def _decode(e: Element, data: Any, by_id: dict) -> None:
         e.minimum, e.maximum = data.get("min"), data.get("max")
         e.literals = list(data.get("literals") or [])
         e.description = data.get("description") or ""
+    elif isinstance(data.get("overrides"), list):
+        for entry in data["overrides"]:
+            st = by_id.get((entry or {}).get("stereotype") or "")
+            app = application_of(e, st) if isinstance(st, Stereotype) else None
+            if app is not None:
+                app.restore_explicit(by_id[i] for i in entry.get("properties") or []
+                                     if isinstance(by_id.get(i), StereotypeTag))
 
 
 def _encode_repo(repo) -> Any:

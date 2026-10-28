@@ -15,6 +15,12 @@ expose the friendlier System Composer vocabulary on top of it:
   property is converted, ``'2*0.75'`` is evaluated, out-of-range values and
   unknown enumeration literals are rejected with a clear message).
 
+- stereotype values are *inherited* by usages from the definition they are typed
+  by: a reference component (a ``PartUsage`` typed by a ``PartDefinition``) reads
+  the values of the stereotypes applied to its definition unless it overrides
+  them with an application of its own (:func:`inheritance_source`,
+  :func:`effective_applications`, :meth:`StereotypeApplication.get`);
+
 The pre-profile API keeps working: ``Stereotype(name, applies_to=[cls])``,
 ``define_tag(name, tag_type, default)`` (an untyped property that accepts any
 value), ``apply(target, values)`` and :func:`stereotypes_on`.
@@ -55,7 +61,7 @@ _SINGLE_MAX = 3.4028234663852886e38
 # Element categories a stereotype can be restricted to ('' = any element).
 CATEGORIES: tuple[str, ...] = (
     "", "Component", "Port", "Connector", "Interface", "InterfaceElement",
-    "Requirement", "Allocation", "Function", "Architecture",
+    "Requirement", "Allocation", "AllocationSet", "Function", "Architecture",
 )
 # Small fixed icon set for stereotype styling (rendered by the web UI).
 ICONS: tuple[str, ...] = (
@@ -132,6 +138,7 @@ def normalize_style(style: Optional[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 _KIND_CACHE: dict[type, frozenset[str]] = {}
+_ALLOCATION_CONTAINERS = ("AllocationSet", "AllocationScenario")
 
 
 def kind_names(e: Any) -> frozenset[str]:
@@ -175,7 +182,11 @@ def matches_category(e: Any, category: str) -> bool:
     if category == "Requirement":
         return bool(k & {"RequirementDefinition", "RequirementUsage"})
     if category == "Allocation":
-        return any(x.startswith("Allocation") for x in k)
+        # Allocations only (an allocation object, an AllocationUsage / AllocationDefinition):
+        # the sets and scenarios that group them have their own category / none.
+        return any(x.startswith("Allocation") and not x.startswith(_ALLOCATION_CONTAINERS) for x in k)
+    if category == "AllocationSet":
+        return any(x.startswith("AllocationSet") for x in k)
     if category == "Function":
         if "Function" in kind and "Element" not in kind:
             return True
@@ -214,6 +225,18 @@ def format_value(value: Any, unit: str = "") -> str:
         text = _units().format_number(value)
         return f"{text} {unit}" if unit else text
     return str(value)
+
+
+def format_short(value: Any, unit: str = "") -> str:
+    """Rounded human form for compact displays (``4.5359237 kg`` -> ``'4.54 kg'``); the
+    stored value keeps its full precision. Same as :func:`format_value` for anything but
+    non-integer numbers (see ``engine.units.format_short``)."""
+    if value is None:
+        return ""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return format_value(value, unit)
+    text = _units().format_short(value)
+    return f"{text} {unit}" if unit else text
 
 
 class StereotypeTag(Feature):
@@ -625,6 +648,10 @@ class Stereotype(Namespace):
                 app.raw_slots()[tag] = tag.coerce(v)
             except (StereotypeError, ValueError, TypeError):
                 app.raw_slots()[tag] = v
+            # Files saved before values were inherited do not say which were set: a value that
+            # differs from the default was (``engine.profiles`` restores the exact set otherwise).
+            if app.raw_slots()[tag] != tag.default_value:
+                app._explicit.add(tag)
         target.add_annotation(app)
         return app
 
@@ -711,14 +738,23 @@ class StereotypeApplication(Annotation):
     property of the stereotype (own and inherited); properties never set show
     their default. Values are keyed internally by the property *object*, so
     renaming a property never orphans a value and deleting one drops it.
+
+    **Inheritance.** On a usage typed by a definition that carries the same
+    stereotype, a value that was not set on the usage itself is read from the
+    definition's application (``parent()``); the values set on the usage
+    (``is_explicit``) override it, and :meth:`reset` goes back to inheriting.
+    Without such a definition the explicit / default distinction changes nothing:
+    a property reads its stored value or its default.
     """
 
     kind = "StereotypeApplication"
+    inherited = False          # a real application, not the view of a definition's
 
     def __init__(self, stereotype: Stereotype, values: Optional[dict[str, Any]] = None, **kwargs):
         self.stereotype = stereotype
         super().__init__(**kwargs)
         self._slots: dict[StereotypeTag, Any] = {}
+        self._explicit: set[StereotypeTag] = set()      # the properties set on this application
         declared = {t.name: t for t in stereotype.all_tags()}
         for k, v in (values or {}).items():
             tag = declared.get(k)
@@ -726,6 +762,7 @@ class StereotypeApplication(Annotation):
                 raise UnknownPropertyError(
                     f"Stereotype {stereotype.name!r} has no tag {k!r}; known: {sorted(declared)}")
             self._slots[tag] = tag.coerce(v, f"{stereotype.full_name}.{k}")
+            self._explicit.add(tag)
         # Fill in declared defaults so consumers don't have to.
         for tag in declared.values():
             self._slots.setdefault(tag, tag.default_value)
@@ -740,10 +777,39 @@ class StereotypeApplication(Annotation):
     def body(self, value: str) -> None:
         self.__dict__["_body"] = value
 
+    # --- inheritance ---------------------------------------------------------
+    def parent(self) -> Optional["StereotypeApplication"]:
+        """The same stereotype's application on the definition this element inherits from."""
+        if self.stereotype.profile is None:         # the legacy API (a plain package): no inheritance
+            return None
+        d = inheritance_source(self.annotated_element)
+        return None if d is None else application_of(d, self.stereotype)
+
+    def is_explicit(self, tag: "StereotypeTag") -> bool:
+        """Was ``tag`` set on this application (as opposed to inherited or defaulted)?"""
+        return tag in self._explicit
+
+    def explicit_tags(self) -> list["StereotypeTag"]:
+        """The properties set on this application, in declaration order."""
+        return [t for t in self.stereotype.all_tags() if t in self._explicit]
+
+    def origin(self, name: str) -> str:
+        """Where a value comes from: ``'own'`` (set here), ``'inherited'`` (the definition's)
+        or ``'default'``."""
+        tag = self.tag(name)
+        if tag in self._explicit:
+            return "own"
+        return "inherited" if self.parent() is not None else "default"
+
+    def _read(self, tag: "StereotypeTag", parent: Optional["StereotypeApplication"]) -> Any:
+        if tag not in self._explicit and parent is not None:
+            return parent._read(tag, None)
+        return self._slots[tag] if tag in self._slots else tag.default_value
+
     @property
     def values(self) -> dict[str, Any]:
-        return {t.name: (self._slots[t] if t in self._slots else t.default_value)
-                for t in self.stereotype.all_tags()}
+        parent = self.parent()
+        return {t.name: self._read(t, parent) for t in self.stereotype.all_tags()}
 
     @values.setter
     def values(self, new: dict[str, Any]) -> None:
@@ -755,6 +821,17 @@ class StereotypeApplication(Annotation):
                 raise UnknownPropertyError(f"«{self.stereotype.full_name}» has no property {k!r}")
             slots[tag] = tag.coerce(v, f"{self.stereotype.full_name}.{k}")
         self._slots = slots
+        self._explicit = set(slots)
+
+    def own_values(self) -> dict[str, Any]:
+        """Only the values set on this application (what copying it should carry over)."""
+        return {t.name: self._slots[t] for t in self.explicit_tags() if t in self._slots}
+
+    def stored(self, name: str) -> Any:
+        """The value stored on this application (its default when none was set), without what
+        the definition would supply: ``get`` is what the element reads."""
+        tag = self.tag(name)
+        return self._slots[tag] if tag in self._slots else tag.default_value
 
     def tag(self, name: str) -> StereotypeTag:
         tag = self.stereotype.find_tag(name)
@@ -765,21 +842,109 @@ class StereotypeApplication(Annotation):
         return tag
 
     def get(self, name: str) -> Any:
-        tag = self.tag(name)
-        return self._slots[tag] if tag in self._slots else tag.default_value
+        return self._read(self.tag(name), self.parent())
 
     def set(self, name: str, value: Any) -> Any:
-        """Check, coerce and store one value; returns the stored form."""
+        """Check, coerce and store one value (an override when the definition has one);
+        returns the stored form."""
         tag = self.tag(name)
         stored = tag.coerce(value, f"{self.stereotype.full_name}.{name}")
-        self._slots[tag] = stored
+        self.assign(tag, stored)
         return stored
+
+    def assign(self, tag: "StereotypeTag", stored: Any) -> None:
+        """Store an already checked value as this application's own."""
+        self._slots[tag] = stored
+        self._explicit.add(tag)
+
+    def reset(self, name: str) -> bool:
+        """Forget the value set here: inherit the definition's again (the default when there
+        is none). False when nothing was set."""
+        tag = self.tag(name)
+        had = tag in self._explicit
+        self._explicit.discard(tag)
+        self._slots[tag] = tag.default_value
+        return had
+
+    def forget(self, tag: "StereotypeTag") -> None:
+        """The property was deleted: drop what was recorded for it."""
+        self._slots.pop(tag, None)
+        self._explicit.discard(tag)
+
+    def restore_explicit(self, tags: Iterable["StereotypeTag"]) -> None:
+        """Loader: which properties were set here; every other value goes back to its default."""
+        declared = self.stereotype.all_tags()
+        keep = {t for t in tags if t in declared}
+        for t in declared:
+            if t not in keep:
+                self._slots[t] = t.default_value
+        self._explicit = keep
 
     def raw_slots(self) -> dict[StereotypeTag, Any]:
         return self._slots
 
     def __repr__(self) -> str:
         return f"<<{self.stereotype.name} {self.values}>>"
+
+
+class InheritedApplication:
+    """A definition's application of a stereotype, seen from a usage typed by that definition.
+
+    Not an element and not stored: :func:`effective_applications` builds it for a
+    stereotype the usage inherits and has no application of its own. It reads
+    through to the definition's application (``source``); changing a value
+    goes through ``engine.profiles``, which gives the usage an application of
+    its own that overrides it.
+    """
+
+    inherited = True
+
+    def __init__(self, element: Element, source: StereotypeApplication):
+        self.annotated_element = element
+        self.source = source
+        self.stereotype = source.stereotype
+
+    @property
+    def definition(self) -> Element:
+        return self.source.annotated_element        # type: ignore[return-value]
+
+    def parent(self) -> StereotypeApplication:
+        return self.source
+
+    @property
+    def values(self) -> dict[str, Any]:
+        return self.source.values
+
+    def own_values(self) -> dict[str, Any]:
+        return {}
+
+    def explicit_tags(self) -> list[StereotypeTag]:
+        return []
+
+    def is_explicit(self, tag: StereotypeTag) -> bool:
+        return False
+
+    def origin(self, name: str) -> str:
+        self.source.tag(name)
+        return "inherited"
+
+    def tag(self, name: str) -> StereotypeTag:
+        return self.source.tag(name)
+
+    def get(self, name: str) -> Any:
+        return self.source.get(name)
+
+    def raw_slots(self) -> dict[StereotypeTag, Any]:
+        return {}
+
+    def set(self, name: str, value: Any) -> Any:
+        raise StereotypeError(
+            f"«{self.stereotype.full_name}» on {self.annotated_element.qualified_name!r} is "
+            f"inherited from {self.definition.qualified_name!r}; override a value through the "
+            f"profiles API (engine.profiles.set_property_value)")
+
+    def __repr__(self) -> str:
+        return f"<<{self.stereotype.name} inherited from {self.definition.name} {self.values}>>"
 
 
 def _called_by_loader() -> bool:
@@ -797,6 +962,43 @@ def stereotypes_on(e: Element) -> list[StereotypeApplication]:
 
 def application_of(e: Element, stereotype: Stereotype) -> Optional[StereotypeApplication]:
     return next((a for a in stereotypes_on(e) if a.stereotype is stereotype), None)
+
+
+def inheritance_source(e: Optional[Element]) -> Optional[Element]:
+    """The definition whose stereotype values ``e`` inherits.
+
+    A reference component (a ``PartUsage`` typed by a ``PartDefinition``) inherits from
+    that definition; nothing else does (an inline component has no definition, and a
+    definition inherits from nowhere). Matched by kind name, like the categories.
+    """
+    if e is None or "PartUsage" not in kind_names(e):
+        return None
+    return next((t for t in getattr(e, "types", None) or [] if "PartDefinition" in kind_names(t)), None)
+
+
+def effective_applications(e: Element) -> list:
+    """The stereotypes ``e`` carries: its own applications, then the ones it inherits.
+
+    Each item has ``stereotype``, ``values``, ``get``, ``origin`` and ``inherited``:
+    False for a :class:`StereotypeApplication` of ``e`` itself, True for an
+    :class:`InheritedApplication` (a stereotype of the definition ``e`` is typed by, applicable
+    to ``e``, that ``e`` has no application of). Use :func:`stereotypes_on` for the stored ones.
+    Only stereotypes of a profile are inherited; the legacy API (a stereotype in a plain package,
+    untyped tags) keeps its values per element.
+    """
+    own = stereotypes_on(e)
+    d = inheritance_source(e)
+    if d is None:
+        return own
+    have = {id(a.stereotype) for a in own}
+    return own + [InheritedApplication(e, a) for a in stereotypes_on(d)
+                  if id(a.stereotype) not in have and a.stereotype.profile is not None
+                  and a.stereotype.can_apply_to(e)]
+
+
+def effective_application_of(e: Element, stereotype: Stereotype):
+    """``e``'s own application of ``stereotype``, else the inherited one, else None."""
+    return next((a for a in effective_applications(e) if a.stereotype is stereotype), None)
 
 
 # ---------------------------------------------------------------------------

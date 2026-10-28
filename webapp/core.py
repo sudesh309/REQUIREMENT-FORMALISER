@@ -32,7 +32,7 @@ from engine.properties import set_property
 from kerml.elements import Documentation, Element
 from kerml.features import Feature
 from kerml.namespaces import Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
     AttributeDefinition, AttributeUsage,
@@ -162,7 +162,7 @@ def summarize(e: Element) -> dict:
         "doc": next((a.body for a in e.annotations if isinstance(a, Documentation)), ""),
         "stereotypes": [
             {"name": app.stereotype.name, "values": app.values}
-            for app in stereotypes_on(e)
+            for app in effective_applications(e)       # own and inherited from the definition
         ],
         "tool_data": e.tool_data,
         # Cross-feature display contract: summary hooks append short labels to

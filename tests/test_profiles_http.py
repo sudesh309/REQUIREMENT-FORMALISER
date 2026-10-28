@@ -33,6 +33,41 @@ class ProfilesHttpTests(WebAppTestCase):
         self.assertAlmostEqual(conv["value"], 1.36077711)
         self.call("GET", "/api/units/convert?" + urllib.parse.urlencode({"value": "3 lb", "to": "W"}), expect=400)
 
+    def test_allocation_categories(self):
+        """PO-13: Allocation stereotypes apply to allocations only; sets have AllocationSet."""
+        meta = self.call("GET", "/api/profiles/meta")
+        self.assertEqual(meta["categories"][meta["categories"].index("Allocation") + 1], "AllocationSet")
+        prof = self.call("POST", "/api/profiles", {"name": "Alloc"})
+        binding = self.call("POST", f"/api/profiles/{prof['id']}/stereotypes",
+                            {"name": "Binding", "applies_to": "Allocation"})
+        plan = self.call("POST", f"/api/profiles/{prof['id']}/stereotypes",
+                         {"name": "Plan", "applies_to": "AllocationSet"})
+        self.assertEqual((binding["effective_applies_to"], plan["effective_applies_to"]),
+                         ("Allocation", "AllocationSet"))
+        self.call("POST", f"/api/profiles/{prof['id']}/stereotypes", {"name": "Bad", "applies_to": "Sets"},
+                  expect=400)
+        other = self.call("POST", "/api/element", {"kind": "PartDefinition", "name": "Other"})
+        aset = self.call("POST", "/api/allocation/sets", {"name": "L2P", "source": self.arch["id"],
+                                                          "target": other["id"]})
+        bus = self.call("POST", "/api/element", {"kind": "PartUsage", "name": "Bus", "parent": other["id"]})
+        alloc = self.call("POST", "/api/allocation/toggle", {"scenario": aset["scenarios"][0]["id"],
+                                                             "source": self.fmc["id"], "target": bus["id"]})
+        alloc_id = alloc["allocation"]["id"]
+        offered = lambda eid: {s["qualified_name"] for s in  # noqa: E731
+                               self.call("GET", f"/api/elements/{eid}/stereotypes")["applicable"]}
+        self.assertEqual(offered(alloc_id), {"Alloc.Binding"})
+        self.assertEqual(offered(aset["id"]), {"Alloc.Plan"})
+        err = self.call("POST", f"/api/elements/{aset['id']}/stereotypes", {"stereotype": "Alloc.Binding"},
+                        expect=400)
+        self.assertIn("cannot be applied", err["error"])
+        self.call("POST", f"/api/elements/{alloc_id}/stereotypes", {"stereotype": "Alloc.Plan"}, expect=400)
+        self.call("POST", f"/api/elements/{aset['id']}/stereotypes", {"stereotype": "Alloc.Plan"})
+        self.call("POST", f"/api/elements/{alloc_id}/stereotypes", {"stereotype": "Alloc.Binding"})
+        # a model-wide batch tags only the matching kind
+        self.call("DELETE", f"/api/elements/{alloc_id}/stereotypes")
+        out = self.call("POST", "/api/stereotypes/Alloc.Binding/batch", {"scope": "model"})
+        self.assertEqual(out["applied"], [alloc_id])
+
     def test_profile_editor_flow(self):
         prof, lru = self._profile()
         listed = self.call("GET", "/api/profiles")
@@ -141,7 +176,7 @@ class ProfilesHttpTests(WebAppTestCase):
         self.assertEqual(out["applied"], [self.fmc["id"]])
         out = self.call("POST", f"/api/stereotypes/{lru['id']}/batch",
                         {"scope": "composition", "root": self.arch["id"]})
-        self.assertEqual(set(out["applied"]), {self.arch["id"], other["id"]})
+        self.assertEqual(set(out["applied"]), {other["id"]})      # not the composition itself (SU-7)
         self.assertEqual(out["skipped"][0]["reason"], "already applied")
         self.call("POST", f"/api/stereotypes/{lru['id']}/batch", {"scope": "selection", "ids": []}, expect=400)
 

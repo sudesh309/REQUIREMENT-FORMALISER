@@ -38,6 +38,7 @@ Stereotypes of a multi-selection (Property Inspector; engine/profiles.py checks 
     POST   /api/arch/stereotypes               {ids, stereotype}     apply to those without it
     PATCH  /api/arch/stereotypes               {ids, values: {path: value}} or {ids, property, value}
     DELETE /api/arch/stereotypes               {ids, stereotype}     remove from those with it
+    POST   /api/arch/stereotypes/reset         {ids, properties}     inherit the definition's values again
     (each answers the GET view; one request is one undo step, nothing changes if a value is refused)
 """
 from __future__ import annotations
@@ -470,6 +471,17 @@ def api_set_stereotype_values(req):
         values[b["property"]] = b.get("value")
     stored = A.set_stereotype_values(_repo(), els, values)
     return ok({**A.common_stereotypes(_repo(), els), "stored": stored})
+
+
+@arch_route("POST", r"^/api/arch/stereotypes/reset$")
+def api_reset_stereotype_values(req):
+    b = _body(req)
+    els = _elements(b.get("ids"))
+    paths = list(b.get("properties") or [])
+    if b.get("property"):
+        paths.append(b["property"])
+    done = A.reset_stereotype_values(_repo(), els, paths)
+    return ok({**A.common_stereotypes(_repo(), els), "reset": done})
 
 
 @arch_route("DELETE", r"^/api/arch/stereotypes$")
