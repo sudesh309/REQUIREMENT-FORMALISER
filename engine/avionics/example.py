@@ -835,7 +835,8 @@ def _build_requirements(b: _Builder, targets: dict) -> dict:
     pending: list[tuple[str, Element]] = []
 
     def add(parent: Element, entry: dict, level: str) -> None:
-        fields = {"summary": entry["summary"], "description": entry["text"], "type": entry["kind"]}
+        fields = {"summary": entry["summary"], "description": entry["text"], "type": entry["kind"],
+                  "status": "approved"}
         if entry["rationale"]:
             fields["rationale"] = entry["rationale"]
         if entry["method"]:

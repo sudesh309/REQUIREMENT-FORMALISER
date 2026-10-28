@@ -607,6 +607,19 @@ class RequirementRuleTests(unittest.TestCase):
         self.assertEqual(self.issues("avionics.req.unverified"), [])
         self.assertEqual(self.issues("avionics.req.unimplemented"), [])
 
+    def test_draft_requirements_are_not_reported_for_coverage(self):
+        r = self.req("a", "System", "A", "test")
+        self.assertEqual(len(self.issues("avionics.req.unverified")), 1)
+        rq.update_requirement(self.repo, r, {"status": "draft"})
+        self.assertEqual(self.issues("avionics.req.unverified"), [])
+        self.assertEqual(self.issues("avionics.req.unimplemented"), [])
+
+    def test_skeleton_sets_are_drafts_and_quiet(self):
+        repo = Repository("Skel")
+        requirements_lib.import_requirement_library(repo)
+        self.assertEqual({x.req_status for x in rq.all_requirements(repo)}, {"draft"})
+        self.assertEqual(SF.safety_check(repo)["issues"], [])
+
     def test_a_parent_verification_counts(self):
         parent = self.req("parent", "System", "B", "test")
         self.req("child", "System", "B", "test", parent=parent)

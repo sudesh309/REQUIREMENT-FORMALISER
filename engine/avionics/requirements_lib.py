@@ -157,7 +157,7 @@ _HLR = [
     ]),
     group("Timing and resources", "", [
         R("Worst-case execution time", "The worst-case execution time of <function> shall not exceed "
-          "<ms> ms.", "performance", "analysis", "C"),
+          "<ms> ms.", "performance", "test", "C"),
         R("Memory budget", "The <CSCI> shall use no more than <kB> kB of memory in its partition.",
           "design-constraint", "analysis", "C"),
         R("No dynamic allocation", "The <CSCI> shall not allocate memory dynamically after initialisation.",
@@ -263,15 +263,17 @@ VERIFICATION_GUIDANCE: dict[str, dict] = {
 RULES: dict[str, dict] = {
     "avionics.req.verification": {
         "title": "Verification method for the DAL", "severity": "warning",
-        "description": "A DAL A-D software requirement (HLR / LLR) is verified by test; DAL A / B system and "
+        "description": "A DAL A-D functional, performance, interface or safety software requirement (HLR / "
+                       "LLR) is verified by test (design constraints may be reviewed); DAL A / B system and "
                        "item requirements by test, analysis or demonstration, not by inspection alone."},
     "avionics.req.unverified": {
         "title": "Requirement without verification", "severity": "warning",
-        "description": "A DAL A-C requirement that no test case verifies (directly or through a parent)."},
+        "description": "A DAL A-C requirement that no test case verifies (directly or through a parent); "
+                       "draft requirements are not reported."},
     "avionics.req.unimplemented": {
         "title": "Requirement not implemented", "severity": "warning",
         "description": "A DAL A-C requirement that no design element implements (directly or through a "
-                       "parent)."},
+                       "parent); draft requirements are not reported."},
     "avionics.req.derived": {
         "title": "Derived requirement without rationale", "severity": "info",
         "description": "A derived requirement needs a rationale and feedback to the safety assessment."},
@@ -328,7 +330,7 @@ def import_requirement_set(repo, key: str, *, name: Optional[str] = None, prefix
     def add(parent: Element, entry: dict) -> None:
         nonlocal count
         fields = {"summary": entry["summary"], "description": entry["text"], "type": entry["type"],
-                  "rationale": entry["rationale"] or None}
+                  "status": "draft", "rationale": entry["rationale"] or None}
         if entry["method"]:
             fields["verification_method"] = entry["method"]
         req = rq.add_requirement(repo, parent, fields)
@@ -408,7 +410,8 @@ def check_requirements(repo) -> Iterator[tuple]:
             continue
         software = level in ("HLR", "LLR")
         if method:
-            if software and rank <= 3 and method != "Test":
+            if software and rank <= 3 and method != "Test" and \
+                    getattr(req, "req_type", None) not in ("design-constraint", "other"):
                 yield ("warning", "avionics.req.verification",
                        f"{tag} is a software {level} verified by {method.lower()} only: DO-178C requires "
                        f"requirements-based tests for levels A to D", req, ())
@@ -416,8 +419,8 @@ def check_requirements(repo) -> Iterator[tuple]:
                 yield ("warning", "avionics.req.verification",
                        f"{tag} is verified by {method.lower()} only: levels A and B need test, analysis or "
                        f"demonstration", req, ())
-        if rank > 2:                      # unverified / unimplemented are reported for levels A to C
-            continue
+        if rank > 2 or getattr(req, "req_status", None) == "draft":
+            continue          # coverage gaps are reported for levels A to C, once past draft
         tests = _verifying_tests(index, req)
         if not tests:
             yield ("warning", "avionics.req.unverified",
