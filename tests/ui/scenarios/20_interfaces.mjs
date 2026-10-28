@@ -58,7 +58,11 @@ export default async function ({ page, api, fresh, waitReady, expect }) {
   // 3. Assign AirData to both ports from Properties > Interface.
   await page.click('.tab[data-tab="properties"]');
   for (const port of [out, inp]) {
+    // The inspector of the previous port must be gone before the list is used: on a slow machine
+    // the old list is still there right after the click and the choice went to the wrong port.
+    const previous = await page.$('[data-ifc="port-interface"]');
     await page.click(treeRow(port.id));
+    if (previous) await page.waitForFunction((el) => !el.isConnected, previous);
     await page.waitForSelector('[data-ifc="port-interface"]');
     await idle();
     await page.selectOption('[data-ifc="port-interface"]', { label: "AirData" });
