@@ -425,7 +425,28 @@ Phases 2 to 4, and the Phase 4 streams run in parallel with each other.
 | M4 | Phase 5 | Standard JSON, XMI and `.kpar`; API with commits and branches |
 | M5 | Streams 4b, 4d, 4f, 4g, Phases 6–7 | Behavior, analysis, views and variants in the standard views: the full application |
 
-### 5.5 Risks
+### 5.5 Effort
+
+The estimate is calibrated on wave 1 of this project. Six parallel streams
+added about 37,000 lines, about 6,200 per stream including tests. They were
+built in about two days and accepted after about a week of integration and
+fixes, so integration and acceptance added roughly 30–40% on top of the build.
+
+| Tier | Phases | Stream-equivalents (with overhead) | Elapsed time, 6 parallel agents |
+|---|---|---|---|
+| 1. Standard text in and out (M1–M2) | 0, 1, 2 | about 8 | 3–4 weeks (mostly serial) |
+| 2. Spec-accurate core for today's features, plus interchange and API (M3–M4) | Tier 1 + 3, 4a, 4c, 4e, 4h, 5 | about 18 in total | 7–8 weeks in total |
+| 3. Full application (M5) | Tier 2 + 4b, 4d, 4f, 4g, 6, 7 | about 33 in total (range 28–38) | 11–14 weeks in total |
+
+That is roughly 150,000–200,000 lines of code and tests, two to three times
+the current codebase of about 65,000 lines. Phases 1 and 2 are the least
+parallel part, which is why tier 1 takes proportionally longer.
+
+The estimate assumes usage limits like those during wave 1 and a Project Owner
+and System User review at each milestone. The largest uncertainty is the long
+tail of making every library file and example model parse and validate.
+
+### 5.6 Risks
 
 | Risk | Mitigation |
 |---|---|
