@@ -1,0 +1,38 @@
+{
+  "_doc": "Exit targets per phase of docs/SPEC_GAP_ANALYSIS.md. A stage is ready when `python -m tools.gate --phase <id>` passes: unit tests, JavaScript syntax, no regression against baseline.json, and these targets. Ratios are 0..1.",
+  "0": {
+    "_doc": "Foundations: vendored spec artifacts, metric runner, baseline recorded.",
+    "legacy_parser.collector_ok": {"min": 1.0}
+  },
+  "1": {
+    "_doc": "KerML/SysML abstract syntax: every metaclass exists with the spec's supertypes and owned (non-derived) properties; relationships are first-class.",
+    "metamodel.collector_ok": {"min": 1.0},
+    "metamodel.kerml.metaclasses_present": {"min": 1.0},
+    "metamodel.sysml.metaclasses_present": {"min": 1.0},
+    "metamodel.supertypes_consistent": {"min": 1.0},
+    "metamodel.kerml.attributes_present": {"min": 1.0},
+    "metamodel.sysml.attributes_present": {"min": 1.0},
+    "metamodel.kerml.derived_present": {"min": 0.9},
+    "metamodel.sysml.derived_present": {"min": 0.5}
+  },
+  "2a": {
+    "_doc": "Full textual notation to AST: every library and example file parses with no diagnostics, within the time budget.",
+    "parse.collector_ok": {"min": 1.0},
+    "parse.library.files_ok": {"min": 1.0},
+    "parse.examples.files_ok": {"min": 1.0},
+    "parse.seconds": {"max": 60}
+  },
+  "2b": {
+    "_doc": "AST to model, standard libraries loaded by parsing, printer round trip.",
+    "build.library.files_ok": {"min": 1.0},
+    "build.library.unresolved_names": {"max": 0},
+    "build.examples.files_ok": {"min": 1.0},
+    "roundtrip.library.files_ok": {"min": 1.0},
+    "roundtrip.examples.files_ok": {"min": 1.0}
+  },
+  "3": {
+    "_doc": "Semantics: implied relationships and spec validation constraints with no false errors on the corpus.",
+    "validate.library.spec_errors": {"max": 0},
+    "validate.examples.spec_errors": {"max": 0}
+  }
+}

@@ -284,14 +284,14 @@ to three streams, **XL** ≈ more than three.
   confirm their licences, and vendor them under `spec/`.
 - Conformance harness in `tests/conformance/` with a report script; record
   today's baseline.
-- Quick wins in the current parser and exporter: `:>`/`specializes`, short
-  names `<'R1'>`, `import`, `abstract`, `ref`, `:>>` redefinition, requirement
-  text from `doc`, attribute values with units (`= 2.5 [kg]`). Make the
-  exporter write only standard syntax.
-- Record the decisions in section 6 as architecture decision records.
+- Record the decisions in section 6 as architecture decision records
+  (`docs/adr/`).
 
-**Exit:** the harness runs in CI; the exported avionics example uses only
-standard syntax for what it writes.
+The quick wins once planned for the old parser and exporter were dropped: the
+new parser (Phase 2a) is built in parallel with Phase 1 and replaces them.
+
+**Exit:** `python -m tools.gate --phase 0` passes; the baseline is recorded
+(the old parser reads 0 of 94 library files and 0 of 310 example models).
 
 #### Phase 1: KerML core rebuilt (L, critical path)
 
@@ -311,6 +311,10 @@ standard syntax for what it writes.
 resolution.
 
 #### Phase 2: full textual notation and libraries (L)
+
+Split in two: **2a**, the parser to a spec-shaped AST (ADR 0003), runs in
+parallel with Phase 1 because it does not depend on the model classes; **2b**,
+building models from the AST, the printer and library loading, follows Phase 1.
 
 - Recursive-descent parser for the full KerML and SysML grammars, with a Pratt
   parser for expressions, source ranges on every element, and error recovery
@@ -412,8 +416,13 @@ flowchart LR
   P6 --> P7
 ```
 
-The critical path is Phase 0 → 1 → 2 → 3 → 4b → 6 → 7. Phase 5a runs alongside
-Phases 2 to 4, and the Phase 4 streams run in parallel with each other.
+The critical path is Phase 0 → 1 → 2b → 3 → 4b → 6 → 7. Phase 2a (the parser)
+runs alongside Phase 1, Phase 5a alongside Phases 2 to 4, and the Phase 4 streams
+in parallel with each other.
+
+Each stage is ready when `python -m tools.gate --phase <id>` passes: unit tests,
+JavaScript syntax, no conformance regression, and the phase's targets in
+`tools/conformance/targets.json` (see ADR 0001).
 
 ### 5.4 Milestones
 

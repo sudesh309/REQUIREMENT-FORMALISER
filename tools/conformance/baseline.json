@@ -1,0 +1,14 @@
+{
+  "legacy_parser.collector_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "legacy_parser.examples.files_ok": {
+    "value": 0.0,
+    "better": "higher"
+  },
+  "legacy_parser.library.files_ok": {
+    "value": 0.0,
+    "better": "higher"
+  }
+}
