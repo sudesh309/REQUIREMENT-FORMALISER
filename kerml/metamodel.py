@@ -109,7 +109,7 @@ def register(data: ModuleType) -> None:
     metas = []
     for m in data.METACLASSES:
         props = tuple(PropertySpec(owner=m["name"], **p) for p in m["properties"])
-        metas.append(MetaclassSpec(m["name"], language, m["package"], m["abstract"],
+        metas.append(MetaclassSpec(m["name"], language, m["package"], m["is_abstract"],
                                    tuple(m["supertypes"]), props))
     known = set(_METACLASSES) | {m.name for m in metas}
     for m in metas:

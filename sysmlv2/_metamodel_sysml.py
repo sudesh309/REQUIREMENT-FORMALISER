@@ -20,7 +20,7 @@ SOURCE = "sysml_spec/library/Systems Library/SysML.sysml"
 
 METACLASSES = (
     {
-        "name": "AcceptActionUsage", "package": "Systems", "abstract": False,
+        "name": "AcceptActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "receiverArgument", "type": "Expression", "lower": 0, "upper": 1,
@@ -32,7 +32,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ActionDefinition", "package": "Systems", "abstract": False,
+        "name": "ActionDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Behavior", "OccurrenceDefinition"),
         "properties": (
             {"name": "action", "type": "ActionUsage", "lower": 0, "upper": None, "ordered": True,
@@ -40,7 +40,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ActionUsage", "package": "Systems", "abstract": False,
+        "name": "ActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Step", "OccurrenceUsage"),
         "properties": (
             {"name": "actionDefinition", "type": "Behavior", "lower": 0, "upper": None,
@@ -49,7 +49,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ActorMembership", "package": "Systems", "abstract": False,
+        "name": "ActorMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("ParameterMembership",),
         "properties": (
             {"name": "ownedActorParameter", "type": "PartUsage", "lower": 1, "upper": 1,
@@ -58,7 +58,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AllocationDefinition", "package": "Systems", "abstract": False,
+        "name": "AllocationDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectionDefinition",),
         "properties": (
             {"name": "allocation", "type": "AllocationUsage", "lower": 0, "upper": None,
@@ -66,7 +66,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AllocationUsage", "package": "Systems", "abstract": False,
+        "name": "AllocationUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectionUsage",),
         "properties": (
             {"name": "allocationDefinition", "type": "AllocationDefinition", "lower": 0,
@@ -75,7 +75,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AnalysisCaseDefinition", "package": "Systems", "abstract": False,
+        "name": "AnalysisCaseDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseDefinition",),
         "properties": (
             {"name": "resultExpression", "type": "Expression", "lower": 0, "upper": 1,
@@ -83,7 +83,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AnalysisCaseUsage", "package": "Systems", "abstract": False,
+        "name": "AnalysisCaseUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseUsage",),
         "properties": (
             {"name": "analysisCaseDefinition", "type": "AnalysisCaseDefinition", "lower": 0,
@@ -93,7 +93,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AssertConstraintUsage", "package": "Systems", "abstract": False,
+        "name": "AssertConstraintUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConstraintUsage", "Invariant"),
         "properties": (
             {"name": "assertedConstraint", "type": "ConstraintUsage", "lower": 1, "upper": 1,
@@ -101,7 +101,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AssignmentActionUsage", "package": "Systems", "abstract": False,
+        "name": "AssignmentActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "targetArgument", "type": "Expression", "lower": 0, "upper": 1,
@@ -113,12 +113,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AttributeDefinition", "package": "Systems", "abstract": False,
+        "name": "AttributeDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("DataType", "Definition"),
         "properties": (),
     },
     {
-        "name": "AttributeUsage", "package": "Systems", "abstract": False,
+        "name": "AttributeUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Usage",),
         "properties": (
             {"name": "isReference", "type": "Boolean", "lower": 1, "upper": 1, "derived": True,
@@ -128,12 +128,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "BindingConnectorAsUsage", "package": "Systems", "abstract": False,
+        "name": "BindingConnectorAsUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("BindingConnector", "ConnectorAsUsage"),
         "properties": (),
     },
     {
-        "name": "CalculationDefinition", "package": "Systems", "abstract": False,
+        "name": "CalculationDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Function", "ActionDefinition"),
         "properties": (
             {"name": "calculation", "type": "CalculationUsage", "lower": 0, "upper": None,
@@ -142,7 +142,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "CalculationUsage", "package": "Systems", "abstract": False,
+        "name": "CalculationUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Expression", "ActionUsage"),
         "properties": (
             {"name": "calculationDefinition", "type": "Function", "lower": 0, "upper": 1,
@@ -151,7 +151,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "CaseDefinition", "package": "Systems", "abstract": False,
+        "name": "CaseDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("CalculationDefinition",),
         "properties": (
             {"name": "objectiveRequirement", "type": "RequirementUsage", "lower": 0, "upper": 1,
@@ -164,7 +164,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "CaseUsage", "package": "Systems", "abstract": False,
+        "name": "CaseUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("CalculationUsage",),
         "properties": (
             {"name": "objectiveRequirement", "type": "RequirementUsage", "lower": 0, "upper": 1,
@@ -178,12 +178,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConcernDefinition", "package": "Systems", "abstract": False,
+        "name": "ConcernDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementDefinition",),
         "properties": (),
     },
     {
-        "name": "ConcernUsage", "package": "Systems", "abstract": False,
+        "name": "ConcernUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementUsage",),
         "properties": (
             {"name": "concernDefinition", "type": "ConcernDefinition", "lower": 0, "upper": 1,
@@ -191,7 +191,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConjugatedPortDefinition", "package": "Systems", "abstract": False,
+        "name": "ConjugatedPortDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("PortDefinition",),
         "properties": (
             {"name": "originalPortDefinition", "type": "PortDefinition", "lower": 1, "upper": 1,
@@ -201,7 +201,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConjugatedPortTyping", "package": "Systems", "abstract": False,
+        "name": "ConjugatedPortTyping", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureTyping",),
         "properties": (
             {"name": "conjugatedPortDefinition", "type": "ConjugatedPortDefinition", "lower": 1,
@@ -211,7 +211,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConnectionDefinition", "package": "Systems", "abstract": False,
+        "name": "ConnectionDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("AssociationStructure", "PartDefinition"),
         "properties": (
             {"name": "isSufficient", "type": "Boolean", "lower": 1, "upper": 1,
@@ -221,7 +221,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConnectionUsage", "package": "Systems", "abstract": False,
+        "name": "ConnectionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectorAsUsage", "PartUsage"),
         "properties": (
             {"name": "connectionDefinition", "type": "AssociationStructure", "lower": 0,
@@ -230,17 +230,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConnectorAsUsage", "package": "Systems", "abstract": True,
+        "name": "ConnectorAsUsage", "package": "Systems", "is_abstract": True,
         "supertypes": ("Usage", "Connector"),
         "properties": (),
     },
     {
-        "name": "ConstraintDefinition", "package": "Systems", "abstract": False,
+        "name": "ConstraintDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("OccurrenceDefinition", "Predicate"),
         "properties": (),
     },
     {
-        "name": "ConstraintUsage", "package": "Systems", "abstract": False,
+        "name": "ConstraintUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("BooleanExpression", "OccurrenceUsage"),
         "properties": (
             {"name": "constraintDefinition", "type": "Predicate", "lower": 0, "upper": 1,
@@ -248,17 +248,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ControlNode", "package": "Systems", "abstract": True,
+        "name": "ControlNode", "package": "Systems", "is_abstract": True,
         "supertypes": ("ActionUsage",),
         "properties": (),
     },
     {
-        "name": "DecisionNode", "package": "Systems", "abstract": False,
+        "name": "DecisionNode", "package": "Systems", "is_abstract": False,
         "supertypes": ("ControlNode",),
         "properties": (),
     },
     {
-        "name": "Definition", "package": "Systems", "abstract": False,
+        "name": "Definition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Classifier",),
         "properties": (
             {"name": "isVariation", "type": "Boolean", "lower": 1, "upper": 1},
@@ -328,7 +328,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "EnumerationDefinition", "package": "Systems", "abstract": False,
+        "name": "EnumerationDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("AttributeDefinition",),
         "properties": (
             {"name": "isVariation", "type": "Boolean", "lower": 1, "upper": 1,
@@ -338,7 +338,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "EnumerationUsage", "package": "Systems", "abstract": False,
+        "name": "EnumerationUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("AttributeUsage",),
         "properties": (
             {"name": "enumerationDefinition", "type": "EnumerationDefinition", "lower": 1,
@@ -346,7 +346,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "EventOccurrenceUsage", "package": "Systems", "abstract": False,
+        "name": "EventOccurrenceUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("OccurrenceUsage",),
         "properties": (
             {"name": "isReference", "type": "Boolean", "lower": 1, "upper": 1, "derived": True,
@@ -356,7 +356,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ExhibitStateUsage", "package": "Systems", "abstract": False,
+        "name": "ExhibitStateUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("StateUsage", "PerformActionUsage"),
         "properties": (
             {"name": "exhibitedState", "type": "StateUsage", "lower": 1, "upper": 1,
@@ -364,7 +364,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Expose", "package": "Systems", "abstract": True,
+        "name": "Expose", "package": "Systems", "is_abstract": True,
         "supertypes": ("Import",),
         "properties": (
             {"name": "visibility", "type": "VisibilityKind", "lower": 1, "upper": 1,
@@ -374,7 +374,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FlowDefinition", "package": "Systems", "abstract": False,
+        "name": "FlowDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Interaction", "ActionDefinition"),
         "properties": (
             {"name": "flowEnd", "type": "Usage", "lower": 0, "upper": None, "derived": True,
@@ -382,7 +382,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FlowUsage", "package": "Systems", "abstract": False,
+        "name": "FlowUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectorAsUsage", "Flow", "ActionUsage"),
         "properties": (
             {"name": "flowDefinition", "type": "Interaction", "lower": 0, "upper": None,
@@ -391,7 +391,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ForLoopActionUsage", "package": "Systems", "abstract": False,
+        "name": "ForLoopActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("LoopActionUsage",),
         "properties": (
             {"name": "seqArgument", "type": "Expression", "lower": 1, "upper": 1, "derived": True},
@@ -400,12 +400,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ForkNode", "package": "Systems", "abstract": False,
+        "name": "ForkNode", "package": "Systems", "is_abstract": False,
         "supertypes": ("ControlNode",),
         "properties": (),
     },
     {
-        "name": "FramedConcernMembership", "package": "Systems", "abstract": False,
+        "name": "FramedConcernMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementConstraintMembership",),
         "properties": (
             {"name": "kind", "type": "RequirementConstraintKind", "lower": 1, "upper": 1,
@@ -419,7 +419,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "IfActionUsage", "package": "Systems", "abstract": False,
+        "name": "IfActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "elseAction", "type": "ActionUsage", "lower": 0, "upper": 1, "derived": True},
@@ -428,7 +428,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "IncludeUseCaseUsage", "package": "Systems", "abstract": False,
+        "name": "IncludeUseCaseUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("UseCaseUsage", "PerformActionUsage"),
         "properties": (
             {"name": "useCaseIncluded", "type": "UseCaseUsage", "lower": 1, "upper": 1,
@@ -436,7 +436,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "InterfaceDefinition", "package": "Systems", "abstract": False,
+        "name": "InterfaceDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectionDefinition",),
         "properties": (
             {"name": "interfaceEnd", "type": "PortUsage", "lower": 0, "upper": None,
@@ -445,7 +445,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "InterfaceUsage", "package": "Systems", "abstract": False,
+        "name": "InterfaceUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectionUsage",),
         "properties": (
             {"name": "interfaceDefinition", "type": "InterfaceDefinition", "lower": 0,
@@ -454,12 +454,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ItemDefinition", "package": "Systems", "abstract": False,
+        "name": "ItemDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Structure", "OccurrenceDefinition"),
         "properties": (),
     },
     {
-        "name": "ItemUsage", "package": "Systems", "abstract": False,
+        "name": "ItemUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("OccurrenceUsage",),
         "properties": (
             {"name": "itemDefinition", "type": "Structure", "lower": 0, "upper": None,
@@ -468,34 +468,34 @@ METACLASSES = (
         ),
     },
     {
-        "name": "JoinNode", "package": "Systems", "abstract": False,
+        "name": "JoinNode", "package": "Systems", "is_abstract": False,
         "supertypes": ("ControlNode",),
         "properties": (),
     },
     {
-        "name": "LoopActionUsage", "package": "Systems", "abstract": True,
+        "name": "LoopActionUsage", "package": "Systems", "is_abstract": True,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "bodyAction", "type": "ActionUsage", "lower": 1, "upper": 1, "derived": True},
         ),
     },
     {
-        "name": "MembershipExpose", "package": "Systems", "abstract": False,
+        "name": "MembershipExpose", "package": "Systems", "is_abstract": False,
         "supertypes": ("MembershipImport", "Expose"),
         "properties": (),
     },
     {
-        "name": "MergeNode", "package": "Systems", "abstract": False,
+        "name": "MergeNode", "package": "Systems", "is_abstract": False,
         "supertypes": ("ControlNode",),
         "properties": (),
     },
     {
-        "name": "MetadataDefinition", "package": "Systems", "abstract": False,
+        "name": "MetadataDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ItemDefinition", "Metaclass"),
         "properties": (),
     },
     {
-        "name": "MetadataUsage", "package": "Systems", "abstract": False,
+        "name": "MetadataUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ItemUsage", "MetadataFeature"),
         "properties": (
             {"name": "metadataDefinition", "type": "Metaclass", "lower": 0, "upper": 1,
@@ -504,12 +504,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "NamespaceExpose", "package": "Systems", "abstract": False,
+        "name": "NamespaceExpose", "package": "Systems", "is_abstract": False,
         "supertypes": ("Expose", "NamespaceImport"),
         "properties": (),
     },
     {
-        "name": "ObjectiveMembership", "package": "Systems", "abstract": False,
+        "name": "ObjectiveMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "ownedObjectiveRequirement", "type": "RequirementUsage", "lower": 1,
@@ -518,14 +518,14 @@ METACLASSES = (
         ),
     },
     {
-        "name": "OccurrenceDefinition", "package": "Systems", "abstract": False,
+        "name": "OccurrenceDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("Definition", "Class"),
         "properties": (
             {"name": "isIndividual", "type": "Boolean", "lower": 1, "upper": 1},
         ),
     },
     {
-        "name": "OccurrenceUsage", "package": "Systems", "abstract": False,
+        "name": "OccurrenceUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Usage",),
         "properties": (
             {"name": "isIndividual", "type": "Boolean", "lower": 1, "upper": 1},
@@ -537,12 +537,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PartDefinition", "package": "Systems", "abstract": False,
+        "name": "PartDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ItemDefinition",),
         "properties": (),
     },
     {
-        "name": "PartUsage", "package": "Systems", "abstract": False,
+        "name": "PartUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ItemUsage",),
         "properties": (
             {"name": "partDefinition", "type": "PartDefinition", "lower": 0, "upper": None,
@@ -550,7 +550,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PerformActionUsage", "package": "Systems", "abstract": False,
+        "name": "PerformActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage", "EventOccurrenceUsage"),
         "properties": (
             {"name": "performedAction", "type": "ActionUsage", "lower": 1, "upper": 1,
@@ -558,7 +558,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PortConjugation", "package": "Systems", "abstract": False,
+        "name": "PortConjugation", "package": "Systems", "is_abstract": False,
         "supertypes": ("Conjugation",),
         "properties": (
             {"name": "originalPortDefinition", "type": "PortDefinition", "lower": 1, "upper": 1,
@@ -568,7 +568,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PortDefinition", "package": "Systems", "abstract": False,
+        "name": "PortDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("OccurrenceDefinition", "Structure"),
         "properties": (
             {"name": "conjugatedPortDefinition", "type": "ConjugatedPortDefinition", "lower": 0,
@@ -576,7 +576,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PortUsage", "package": "Systems", "abstract": False,
+        "name": "PortUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("OccurrenceUsage",),
         "properties": (
             {"name": "portDefinition", "type": "PortDefinition", "lower": 0, "upper": None,
@@ -585,7 +585,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ReferenceUsage", "package": "Systems", "abstract": False,
+        "name": "ReferenceUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Usage",),
         "properties": (
             {"name": "isReference", "type": "Boolean", "lower": 1, "upper": 1, "derived": True,
@@ -593,7 +593,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RenderingDefinition", "package": "Systems", "abstract": False,
+        "name": "RenderingDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("PartDefinition",),
         "properties": (
             {"name": "rendering", "type": "RenderingUsage", "lower": 0, "upper": None,
@@ -601,7 +601,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RenderingUsage", "package": "Systems", "abstract": False,
+        "name": "RenderingUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("PartUsage",),
         "properties": (
             {"name": "renderingDefinition", "type": "RenderingDefinition", "lower": 0, "upper": 1,
@@ -609,7 +609,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RequirementConstraintMembership", "package": "Systems", "abstract": False,
+        "name": "RequirementConstraintMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "kind", "type": "RequirementConstraintKind", "lower": 1, "upper": 1},
@@ -621,7 +621,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RequirementDefinition", "package": "Systems", "abstract": False,
+        "name": "RequirementDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConstraintDefinition",),
         "properties": (
             {"name": "reqId", "type": "String", "lower": 0, "upper": 1,
@@ -645,7 +645,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RequirementUsage", "package": "Systems", "abstract": False,
+        "name": "RequirementUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConstraintUsage",),
         "properties": (
             {"name": "reqId", "type": "String", "lower": 0, "upper": 1,
@@ -669,7 +669,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "RequirementVerificationMembership", "package": "Systems", "abstract": False,
+        "name": "RequirementVerificationMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementConstraintMembership",),
         "properties": (
             {"name": "kind", "type": "RequirementConstraintKind", "lower": 1, "upper": 1,
@@ -683,7 +683,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "SatisfyRequirementUsage", "package": "Systems", "abstract": False,
+        "name": "SatisfyRequirementUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementUsage", "AssertConstraintUsage"),
         "properties": (
             {"name": "satisfiedRequirement", "type": "RequirementUsage", "lower": 1, "upper": 1,
@@ -693,7 +693,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "SendActionUsage", "package": "Systems", "abstract": False,
+        "name": "SendActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "receiverArgument", "type": "Expression", "lower": 0, "upper": 1,
@@ -705,7 +705,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "StakeholderMembership", "package": "Systems", "abstract": False,
+        "name": "StakeholderMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("ParameterMembership",),
         "properties": (
             {"name": "ownedStakeholderParameter", "type": "PartUsage", "lower": 1, "upper": 1,
@@ -714,7 +714,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "StateDefinition", "package": "Systems", "abstract": False,
+        "name": "StateDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionDefinition",),
         "properties": (
             {"name": "isParallel", "type": "Boolean", "lower": 1, "upper": 1},
@@ -727,7 +727,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "StateSubactionMembership", "package": "Systems", "abstract": False,
+        "name": "StateSubactionMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "kind", "type": "StateSubactionKind", "lower": 1, "upper": 1},
@@ -736,7 +736,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "StateUsage", "package": "Systems", "abstract": False,
+        "name": "StateUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "isParallel", "type": "Boolean", "lower": 1, "upper": 1},
@@ -749,7 +749,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "SubjectMembership", "package": "Systems", "abstract": False,
+        "name": "SubjectMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("ParameterMembership",),
         "properties": (
             {"name": "ownedSubjectParameter", "type": "Usage", "lower": 1, "upper": 1,
@@ -758,17 +758,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "SuccessionAsUsage", "package": "Systems", "abstract": False,
+        "name": "SuccessionAsUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ConnectorAsUsage", "Succession"),
         "properties": (),
     },
     {
-        "name": "SuccessionFlowUsage", "package": "Systems", "abstract": False,
+        "name": "SuccessionFlowUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("SuccessionFlow", "FlowUsage"),
         "properties": (),
     },
     {
-        "name": "TerminateActionUsage", "package": "Systems", "abstract": False,
+        "name": "TerminateActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "terminatedOccurrenceArgument", "type": "Expression", "lower": 0, "upper": 1,
@@ -776,7 +776,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "TransitionFeatureMembership", "package": "Systems", "abstract": False,
+        "name": "TransitionFeatureMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "kind", "type": "TransitionFeatureKind", "lower": 1, "upper": 1},
@@ -785,7 +785,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "TransitionUsage", "package": "Systems", "abstract": False,
+        "name": "TransitionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("ActionUsage",),
         "properties": (
             {"name": "source", "type": "ActionUsage", "lower": 1, "upper": 1, "derived": True},
@@ -801,14 +801,14 @@ METACLASSES = (
         ),
     },
     {
-        "name": "TriggerInvocationExpression", "package": "Systems", "abstract": False,
+        "name": "TriggerInvocationExpression", "package": "Systems", "is_abstract": False,
         "supertypes": ("InvocationExpression",),
         "properties": (
             {"name": "kind", "type": "TriggerKind", "lower": 1, "upper": 1},
         ),
     },
     {
-        "name": "Usage", "package": "Systems", "abstract": False,
+        "name": "Usage", "package": "Systems", "is_abstract": False,
         "supertypes": ("Feature",),
         "properties": (
             {"name": "isVariation", "type": "Boolean", "lower": 1, "upper": 1},
@@ -886,7 +886,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "UseCaseDefinition", "package": "Systems", "abstract": False,
+        "name": "UseCaseDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseDefinition",),
         "properties": (
             {"name": "includedUseCase", "type": "UseCaseUsage", "lower": 0, "upper": None,
@@ -894,7 +894,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "UseCaseUsage", "package": "Systems", "abstract": False,
+        "name": "UseCaseUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseUsage",),
         "properties": (
             {"name": "useCaseDefinition", "type": "UseCaseDefinition", "lower": 0, "upper": 1,
@@ -904,7 +904,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "VariantMembership", "package": "Systems", "abstract": False,
+        "name": "VariantMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("OwningMembership",),
         "properties": (
             {"name": "ownedVariantUsage", "type": "Usage", "lower": 1, "upper": 1, "derived": True,
@@ -912,7 +912,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "VerificationCaseDefinition", "package": "Systems", "abstract": False,
+        "name": "VerificationCaseDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseDefinition",),
         "properties": (
             {"name": "verifiedRequirement", "type": "RequirementUsage", "lower": 0, "upper": None,
@@ -920,7 +920,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "VerificationCaseUsage", "package": "Systems", "abstract": False,
+        "name": "VerificationCaseUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("CaseUsage",),
         "properties": (
             {"name": "verificationCaseDefinition", "type": "VerificationCaseDefinition",
@@ -930,7 +930,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ViewDefinition", "package": "Systems", "abstract": False,
+        "name": "ViewDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("PartDefinition",),
         "properties": (
             {"name": "view", "type": "ViewUsage", "lower": 0, "upper": None, "ordered": True,
@@ -944,7 +944,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ViewRenderingMembership", "package": "Systems", "abstract": False,
+        "name": "ViewRenderingMembership", "package": "Systems", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "ownedRendering", "type": "RenderingUsage", "lower": 1, "upper": 1,
@@ -955,7 +955,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ViewUsage", "package": "Systems", "abstract": False,
+        "name": "ViewUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("PartUsage",),
         "properties": (
             {"name": "viewDefinition", "type": "ViewDefinition", "lower": 0, "upper": 1,
@@ -971,7 +971,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ViewpointDefinition", "package": "Systems", "abstract": False,
+        "name": "ViewpointDefinition", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementDefinition",),
         "properties": (
             {"name": "viewpointStakeholder", "type": "PartUsage", "lower": 0, "upper": None,
@@ -979,7 +979,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ViewpointUsage", "package": "Systems", "abstract": False,
+        "name": "ViewpointUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("RequirementUsage",),
         "properties": (
             {"name": "viewpointDefinition", "type": "ViewpointDefinition", "lower": 0, "upper": 1,
@@ -989,7 +989,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "WhileLoopActionUsage", "package": "Systems", "abstract": False,
+        "name": "WhileLoopActionUsage", "package": "Systems", "is_abstract": False,
         "supertypes": ("LoopActionUsage",),
         "properties": (
             {"name": "whileArgument", "type": "Expression", "lower": 1, "upper": 1,

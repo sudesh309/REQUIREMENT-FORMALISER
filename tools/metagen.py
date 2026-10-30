@@ -515,7 +515,7 @@ def render(model: Model) -> str:
     for m in model.metaclasses:
         out.append("    {")
         out.append(f'        "name": {_q(m.name)}, "package": {_q(m.package)}, '
-                   f'"abstract": {m.abstract!r},')
+                   f'"is_abstract": {m.abstract!r},')
         if m.supertypes:
             out.extend(_pack([_q(s) for s in m.supertypes], '        "supertypes": (',
                              "                       ",

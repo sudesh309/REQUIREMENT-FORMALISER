@@ -20,7 +20,7 @@ SOURCE = "sysml_spec/library/Kernel Libraries/Kernel Semantic Library/KerML.kerm
 
 METACLASSES = (
     {
-        "name": "AnnotatingElement", "package": "Root", "abstract": False,
+        "name": "AnnotatingElement", "package": "Root", "is_abstract": False,
         "supertypes": ("Element",),
         "properties": (
             {"name": "annotatedElement", "type": "Element", "lower": 1, "upper": None,
@@ -36,7 +36,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Annotation", "package": "Root", "abstract": False,
+        "name": "Annotation", "package": "Root", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "annotatedElement", "type": "Element", "lower": 1, "upper": 1, "var": True,
@@ -55,7 +55,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Comment", "package": "Root", "abstract": False,
+        "name": "Comment", "package": "Root", "is_abstract": False,
         "supertypes": ("AnnotatingElement",),
         "properties": (
             {"name": "locale", "type": "String", "lower": 0, "upper": 1, "var": True},
@@ -63,7 +63,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Dependency", "package": "Root", "abstract": False,
+        "name": "Dependency", "package": "Root", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "client", "type": "Element", "lower": 1, "upper": None, "ordered": True,
@@ -73,7 +73,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Documentation", "package": "Root", "abstract": False,
+        "name": "Documentation", "package": "Root", "is_abstract": False,
         "supertypes": ("Comment",),
         "properties": (
             {"name": "documentedElement", "type": "Element", "lower": 1, "upper": 1,
@@ -82,7 +82,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Element", "package": "Root", "abstract": True,
+        "name": "Element", "package": "Root", "is_abstract": True,
         "supertypes": (),
         "properties": (
             {"name": "elementId", "type": "String", "lower": 1, "upper": 1, "var": True},
@@ -122,7 +122,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Import", "package": "Root", "abstract": True,
+        "name": "Import", "package": "Root", "is_abstract": True,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "visibility", "type": "VisibilityKind", "lower": 1, "upper": 1, "var": True},
@@ -136,7 +136,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Membership", "package": "Root", "abstract": False,
+        "name": "Membership", "package": "Root", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "memberShortName", "type": "String", "lower": 0, "upper": 1, "var": True},
@@ -152,7 +152,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "MembershipImport", "package": "Root", "abstract": False,
+        "name": "MembershipImport", "package": "Root", "is_abstract": False,
         "supertypes": ("Import",),
         "properties": (
             {"name": "importedMembership", "type": "Membership", "lower": 1, "upper": 1,
@@ -160,7 +160,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Namespace", "package": "Root", "abstract": False,
+        "name": "Namespace", "package": "Root", "is_abstract": False,
         "supertypes": ("Element",),
         "properties": (
             {"name": "membership", "type": "Membership", "lower": 0, "upper": None,
@@ -180,7 +180,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "NamespaceImport", "package": "Root", "abstract": False,
+        "name": "NamespaceImport", "package": "Root", "is_abstract": False,
         "supertypes": ("Import",),
         "properties": (
             {"name": "importedNamespace", "type": "Namespace", "lower": 1, "upper": 1, "var": True,
@@ -188,7 +188,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "OwningMembership", "package": "Root", "abstract": False,
+        "name": "OwningMembership", "package": "Root", "is_abstract": False,
         "supertypes": ("Membership",),
         "properties": (
             {"name": "ownedMemberElementId", "type": "String", "lower": 1, "upper": 1,
@@ -204,7 +204,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Relationship", "package": "Root", "abstract": True,
+        "name": "Relationship", "package": "Root", "is_abstract": True,
         "supertypes": ("Element",),
         "properties": (
             {"name": "isImplied", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
@@ -222,7 +222,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "TextualRepresentation", "package": "Root", "abstract": False,
+        "name": "TextualRepresentation", "package": "Root", "is_abstract": False,
         "supertypes": ("AnnotatingElement",),
         "properties": (
             {"name": "language", "type": "String", "lower": 1, "upper": 1, "var": True},
@@ -233,7 +233,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Classifier", "package": "Core", "abstract": False,
+        "name": "Classifier", "package": "Core", "is_abstract": False,
         "supertypes": ("Type",),
         "properties": (
             {"name": "ownedSubclassification", "type": "Subclassification", "lower": 0,
@@ -242,7 +242,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Conjugation", "package": "Core", "abstract": False,
+        "name": "Conjugation", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "originalType", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -255,7 +255,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "CrossSubsetting", "package": "Core", "abstract": False,
+        "name": "CrossSubsetting", "package": "Core", "is_abstract": False,
         "supertypes": ("Subsetting",),
         "properties": (
             {"name": "crossedFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -266,7 +266,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Differencing", "package": "Core", "abstract": False,
+        "name": "Differencing", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "differencingType", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -277,7 +277,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Disjoining", "package": "Core", "abstract": False,
+        "name": "Disjoining", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "typeDisjoined", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -290,7 +290,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "EndFeatureMembership", "package": "Core", "abstract": False,
+        "name": "EndFeatureMembership", "package": "Core", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "ownedMemberFeature", "type": "Feature", "lower": 1, "upper": 1,
@@ -299,7 +299,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Feature", "package": "Core", "abstract": False,
+        "name": "Feature", "package": "Core", "is_abstract": False,
         "supertypes": ("Type",),
         "properties": (
             {"name": "isUnique", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
@@ -355,7 +355,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureChaining", "package": "Core", "abstract": False,
+        "name": "FeatureChaining", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "chainingFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -366,7 +366,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureInverting", "package": "Core", "abstract": False,
+        "name": "FeatureInverting", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "featureInverted", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -379,7 +379,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureMembership", "package": "Core", "abstract": False,
+        "name": "FeatureMembership", "package": "Core", "is_abstract": False,
         "supertypes": ("OwningMembership",),
         "properties": (
             {"name": "owningType", "type": "Type", "lower": 1, "upper": 1, "derived": True,
@@ -390,7 +390,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureTyping", "package": "Core", "abstract": False,
+        "name": "FeatureTyping", "package": "Core", "is_abstract": False,
         "supertypes": ("Specialization",),
         "properties": (
             {"name": "typedFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -403,7 +403,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Intersecting", "package": "Core", "abstract": False,
+        "name": "Intersecting", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "intersectingType", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -414,12 +414,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Multiplicity", "package": "Core", "abstract": False,
+        "name": "Multiplicity", "package": "Core", "is_abstract": False,
         "supertypes": ("Feature",),
         "properties": (),
     },
     {
-        "name": "Redefinition", "package": "Core", "abstract": False,
+        "name": "Redefinition", "package": "Core", "is_abstract": False,
         "supertypes": ("Subsetting",),
         "properties": (
             {"name": "redefiningFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -429,7 +429,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ReferenceSubsetting", "package": "Core", "abstract": False,
+        "name": "ReferenceSubsetting", "package": "Core", "is_abstract": False,
         "supertypes": ("Subsetting",),
         "properties": (
             {"name": "referencedFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -440,7 +440,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Specialization", "package": "Core", "abstract": False,
+        "name": "Specialization", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "general", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -453,7 +453,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Subclassification", "package": "Core", "abstract": False,
+        "name": "Subclassification", "package": "Core", "is_abstract": False,
         "supertypes": ("Specialization",),
         "properties": (
             {"name": "superclassifier", "type": "Classifier", "lower": 1, "upper": 1, "var": True,
@@ -465,7 +465,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Subsetting", "package": "Core", "abstract": False,
+        "name": "Subsetting", "package": "Core", "is_abstract": False,
         "supertypes": ("Specialization",),
         "properties": (
             {"name": "subsettedFeature", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -478,7 +478,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Type", "package": "Core", "abstract": False,
+        "name": "Type", "package": "Core", "is_abstract": False,
         "supertypes": ("Namespace",),
         "properties": (
             {"name": "isAbstract", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
@@ -538,7 +538,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "TypeFeaturing", "package": "Core", "abstract": False,
+        "name": "TypeFeaturing", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "featureOfType", "type": "Feature", "lower": 1, "upper": 1, "var": True,
@@ -551,7 +551,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Unioning", "package": "Core", "abstract": False,
+        "name": "Unioning", "package": "Core", "is_abstract": False,
         "supertypes": ("Relationship",),
         "properties": (
             {"name": "unioningType", "type": "Type", "lower": 1, "upper": 1, "var": True,
@@ -562,7 +562,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Association", "package": "Kernel", "abstract": False,
+        "name": "Association", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Classifier", "Relationship"),
         "properties": (
             {"name": "relatedType", "type": "Type", "lower": 0, "upper": None, "ordered": True,
@@ -579,12 +579,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "AssociationStructure", "package": "Kernel", "abstract": False,
+        "name": "AssociationStructure", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Association", "Structure"),
         "properties": (),
     },
     {
-        "name": "Behavior", "package": "Kernel", "abstract": False,
+        "name": "Behavior", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Class",),
         "properties": (
             {"name": "step", "type": "Step", "lower": 0, "upper": None, "derived": True,
@@ -594,12 +594,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "BindingConnector", "package": "Kernel", "abstract": False,
+        "name": "BindingConnector", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Connector",),
         "properties": (),
     },
     {
-        "name": "BooleanExpression", "package": "Kernel", "abstract": False,
+        "name": "BooleanExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Expression",),
         "properties": (
             {"name": "predicate", "type": "Predicate", "lower": 0, "upper": 1, "derived": True,
@@ -607,12 +607,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Class", "package": "Kernel", "abstract": False,
+        "name": "Class", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Classifier",),
         "properties": (),
     },
     {
-        "name": "CollectExpression", "package": "Kernel", "abstract": False,
+        "name": "CollectExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OperatorExpression",),
         "properties": (
             {"name": "operator", "type": "String", "lower": 1, "upper": 1, "var": True,
@@ -620,7 +620,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Connector", "package": "Kernel", "abstract": False,
+        "name": "Connector", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Feature", "Relationship"),
         "properties": (
             {"name": "relatedFeature", "type": "Feature", "lower": 0, "upper": None,
@@ -641,17 +641,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ConstructorExpression", "package": "Kernel", "abstract": False,
+        "name": "ConstructorExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("InstantiationExpression",),
         "properties": (),
     },
     {
-        "name": "DataType", "package": "Kernel", "abstract": False,
+        "name": "DataType", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Classifier",),
         "properties": (),
     },
     {
-        "name": "ElementFilterMembership", "package": "Kernel", "abstract": False,
+        "name": "ElementFilterMembership", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OwningMembership",),
         "properties": (
             {"name": "condition", "type": "Expression", "lower": 1, "upper": 1, "derived": True,
@@ -660,7 +660,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Expression", "package": "Kernel", "abstract": False,
+        "name": "Expression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Step",),
         "properties": (
             {"name": "isModelLevelEvaluable", "type": "Boolean", "lower": 1, "upper": 1,
@@ -672,7 +672,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureChainExpression", "package": "Kernel", "abstract": False,
+        "name": "FeatureChainExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OperatorExpression",),
         "properties": (
             {"name": "operator", "type": "String", "lower": 1, "upper": 1, "var": True,
@@ -682,7 +682,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureReferenceExpression", "package": "Kernel", "abstract": False,
+        "name": "FeatureReferenceExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Expression",),
         "properties": (
             {"name": "referent", "type": "Feature", "lower": 1, "upper": 1, "derived": True,
@@ -690,7 +690,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FeatureValue", "package": "Kernel", "abstract": False,
+        "name": "FeatureValue", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OwningMembership",),
         "properties": (
             {"name": "isInitial", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
@@ -703,7 +703,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Flow", "package": "Kernel", "abstract": False,
+        "name": "Flow", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Connector", "Step"),
         "properties": (
             {"name": "payloadType", "type": "Classifier", "lower": 0, "upper": None,
@@ -722,12 +722,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "FlowEnd", "package": "Kernel", "abstract": False,
+        "name": "FlowEnd", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Feature",),
         "properties": (),
     },
     {
-        "name": "Function", "package": "Kernel", "abstract": False,
+        "name": "Function", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Behavior",),
         "properties": (
             {"name": "isModelLevelEvaluable", "type": "Boolean", "lower": 1, "upper": 1,
@@ -739,7 +739,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "IndexExpression", "package": "Kernel", "abstract": False,
+        "name": "IndexExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OperatorExpression",),
         "properties": (
             {"name": "operator", "type": "String", "lower": 1, "upper": 1, "var": True,
@@ -747,7 +747,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "InstantiationExpression", "package": "Kernel", "abstract": True,
+        "name": "InstantiationExpression", "package": "Kernel", "is_abstract": True,
         "supertypes": ("Expression",),
         "properties": (
             {"name": "argument", "type": "Expression", "lower": 0, "upper": None, "ordered": True,
@@ -757,74 +757,74 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Interaction", "package": "Kernel", "abstract": False,
+        "name": "Interaction", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Association", "Behavior"),
         "properties": (),
     },
     {
-        "name": "Invariant", "package": "Kernel", "abstract": False,
+        "name": "Invariant", "package": "Kernel", "is_abstract": False,
         "supertypes": ("BooleanExpression",),
         "properties": (
             {"name": "isNegated", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "InvocationExpression", "package": "Kernel", "abstract": False,
+        "name": "InvocationExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("InstantiationExpression",),
         "properties": (),
     },
     {
-        "name": "LibraryPackage", "package": "Kernel", "abstract": False,
+        "name": "LibraryPackage", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Package",),
         "properties": (
             {"name": "isStandard", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "LiteralBoolean", "package": "Kernel", "abstract": False,
+        "name": "LiteralBoolean", "package": "Kernel", "is_abstract": False,
         "supertypes": ("LiteralExpression",),
         "properties": (
             {"name": "value", "type": "Boolean", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "LiteralExpression", "package": "Kernel", "abstract": False,
+        "name": "LiteralExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Expression",),
         "properties": (),
     },
     {
-        "name": "LiteralInfinity", "package": "Kernel", "abstract": False,
+        "name": "LiteralInfinity", "package": "Kernel", "is_abstract": False,
         "supertypes": ("LiteralExpression",),
         "properties": (),
     },
     {
-        "name": "LiteralInteger", "package": "Kernel", "abstract": False,
+        "name": "LiteralInteger", "package": "Kernel", "is_abstract": False,
         "supertypes": ("LiteralExpression",),
         "properties": (
             {"name": "value", "type": "Integer", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "LiteralRational", "package": "Kernel", "abstract": False,
+        "name": "LiteralRational", "package": "Kernel", "is_abstract": False,
         "supertypes": ("LiteralExpression",),
         "properties": (
             {"name": "value", "type": "Rational", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "LiteralString", "package": "Kernel", "abstract": False,
+        "name": "LiteralString", "package": "Kernel", "is_abstract": False,
         "supertypes": ("LiteralExpression",),
         "properties": (
             {"name": "value", "type": "String", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "Metaclass", "package": "Kernel", "abstract": False,
+        "name": "Metaclass", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Structure",),
         "properties": (),
     },
     {
-        "name": "MetadataAccessExpression", "package": "Kernel", "abstract": False,
+        "name": "MetadataAccessExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Expression",),
         "properties": (
             {"name": "referencedElement", "type": "Element", "lower": 1, "upper": 1,
@@ -832,7 +832,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "MetadataFeature", "package": "Kernel", "abstract": False,
+        "name": "MetadataFeature", "package": "Kernel", "is_abstract": False,
         "supertypes": ("AnnotatingElement", "Feature"),
         "properties": (
             {"name": "metaclass", "type": "Metaclass", "lower": 0, "upper": 1, "derived": True,
@@ -840,7 +840,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "MultiplicityRange", "package": "Kernel", "abstract": False,
+        "name": "MultiplicityRange", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Multiplicity",),
         "properties": (
             {"name": "lowerBound", "type": "Expression", "lower": 0, "upper": 1, "derived": True,
@@ -852,19 +852,19 @@ METACLASSES = (
         ),
     },
     {
-        "name": "NullExpression", "package": "Kernel", "abstract": False,
+        "name": "NullExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Expression",),
         "properties": (),
     },
     {
-        "name": "OperatorExpression", "package": "Kernel", "abstract": False,
+        "name": "OperatorExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("InvocationExpression",),
         "properties": (
             {"name": "operator", "type": "String", "lower": 1, "upper": 1, "var": True},
         ),
     },
     {
-        "name": "Package", "package": "Kernel", "abstract": False,
+        "name": "Package", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Namespace",),
         "properties": (
             {"name": "filterCondition", "type": "Expression", "lower": 0, "upper": None,
@@ -873,7 +873,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ParameterMembership", "package": "Kernel", "abstract": False,
+        "name": "ParameterMembership", "package": "Kernel", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "ownedMemberParameter", "type": "Feature", "lower": 1, "upper": 1,
@@ -882,17 +882,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "PayloadFeature", "package": "Kernel", "abstract": False,
+        "name": "PayloadFeature", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Feature",),
         "properties": (),
     },
     {
-        "name": "Predicate", "package": "Kernel", "abstract": False,
+        "name": "Predicate", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Function",),
         "properties": (),
     },
     {
-        "name": "ResultExpressionMembership", "package": "Kernel", "abstract": False,
+        "name": "ResultExpressionMembership", "package": "Kernel", "is_abstract": False,
         "supertypes": ("FeatureMembership",),
         "properties": (
             {"name": "ownedResultExpression", "type": "Expression", "lower": 1, "upper": 1,
@@ -901,12 +901,12 @@ METACLASSES = (
         ),
     },
     {
-        "name": "ReturnParameterMembership", "package": "Kernel", "abstract": False,
+        "name": "ReturnParameterMembership", "package": "Kernel", "is_abstract": False,
         "supertypes": ("ParameterMembership",),
         "properties": (),
     },
     {
-        "name": "SelectExpression", "package": "Kernel", "abstract": False,
+        "name": "SelectExpression", "package": "Kernel", "is_abstract": False,
         "supertypes": ("OperatorExpression",),
         "properties": (
             {"name": "operator", "type": "String", "lower": 1, "upper": 1, "var": True,
@@ -914,7 +914,7 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Step", "package": "Kernel", "abstract": False,
+        "name": "Step", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Feature",),
         "properties": (
             {"name": "behavior", "type": "Behavior", "lower": 0, "upper": None, "ordered": True,
@@ -924,17 +924,17 @@ METACLASSES = (
         ),
     },
     {
-        "name": "Structure", "package": "Kernel", "abstract": False,
+        "name": "Structure", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Class",),
         "properties": (),
     },
     {
-        "name": "Succession", "package": "Kernel", "abstract": False,
+        "name": "Succession", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Connector",),
         "properties": (),
     },
     {
-        "name": "SuccessionFlow", "package": "Kernel", "abstract": False,
+        "name": "SuccessionFlow", "package": "Kernel", "is_abstract": False,
         "supertypes": ("Succession", "Flow"),
         "properties": (),
     },
