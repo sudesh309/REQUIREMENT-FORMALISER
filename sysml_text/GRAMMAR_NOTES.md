@@ -179,7 +179,39 @@ The grammar is not LL(1); these are resolved deterministically:
 - **Spans** are character offsets into the source; `line`/`col` are computed
   on demand.
 
-## 6. Known limitations
+## 6. Printer (`printer.py`)
+
+`print_tree` is the inverse of the parser: for every corpus file
+`parse(print_tree(parse(text).root))` gives the same tree (`ast.diff` is None;
+metric `print.*.ast_roundtrip_ok`). Where several spellings parse to the same
+tree, it writes one canonical form:
+
+- symbols for keyword forms: `:>` (`specializes`, `subsets`), `:>>`
+  (`redefines`), `:` (`typed by`, `defined by`), `::>` (`references`), `=>`
+  (`crosses`), `~` (`conjugates`);
+- names plain unless they need quotes (not a basic name, or a reserved word of
+  the language); references exactly as written (`Ref.text`);
+- leading plain metadata usages of an element as `#X` prefixes (`part p { @X; }`
+  and `#X part p;` are the same tree); a named metadata usage as
+  `metadata m : X`, an unnamed one as `@X`;
+- `satisfy` without `assert` unless negated (`assert not satisfy`); `message`
+  for an abstract flow without flow ends; `enum` before enumerated values;
+  `individual x` / `snapshot x` without `occurrence`;
+- KerML features without the `feature` keyword when they have a direction, are
+  an end without cross feature, or are a return parameter;
+- in state bodies, `transition` before a target transition only when it is
+  needed (an effect without trigger or guard, or right after an `entry`
+  member, where a bare `then x;` is an entry transition);
+- sequences flattened (`(1, (2, 3))` is `(1, 2, 3)`), the fewest parentheses
+  operator precedence allows, real literals as Python writes the float
+  (`2.5e3` is `2500.0`);
+- comment bodies on one line when they are one line without leading white
+  space, otherwise as a `/*` block with ` * ` prefixes;
+- implied elements (empty result members, empty parameters and usages, a port
+  definition's conjugate, the empty multiplicity of individuals) are not
+  written; the parser rebuilds them.
+
+## 7. Known limitations
 
 - Body contexts are enforced for keyword-introduced members (`subject`,
   `actor`, `objective`, `require`, `frame`, `verify`, `entry`/`do`/`exit`,

@@ -49,11 +49,32 @@ other element-valued end is a reference and printed through ``view.ref``.
 :class:`AstView` implements the view for :class:`~sysml_text.ast.Node` and
 :class:`~sysml_text.ast.Ref`. A model adapter implements the same three methods
 over model elements, which use the same metaclass and property names
-(ADR 0002, decision 7). Such an adapter should return ``None`` for properties
-at their default value (``False`` flags, ``isUnique`` true, the default
-visibility of memberships), leave out relationships with ``isImplied`` true,
-give an import's visibility always (the notation requires it), and make
-``ref`` return a name that resolves from the owner's namespace.
+(ADR 0002, decision 7), for instance with the metamodel registry::
+
+    class ModelView:
+        def type(self, el):
+            return spec_metaclass_of(el)
+        def get(self, el, name, default=None):
+            value = getattr(el, python_name(<the property `name` of the element's metaclass>), None)
+            return default if value is None or value == <the property's default> else value
+        def ref(self, target, owner):
+            return <a qualified name of target that resolves from owner's namespace, names quoted as needed>
+
+The adapter must:
+
+- return ``None`` for properties at their default value (``False`` flags,
+  ``isUnique`` true, the default visibility of memberships) so the text stays
+  minimal, but always give an import's visibility (the notation requires it);
+- leave out relationships whose ``isImplied`` is true, and present only the
+  owned, non-derived properties under their spec names;
+- present value-like sub-elements kept as Python values (ADR 0002, decision 5:
+  literal multiplicities and feature values) as the ``OwningMembership`` /
+  ``MultiplicityRange`` and ``FeatureValue`` elements the grammar builds, at
+  their place in ``ownedRelationship``, and expressions with the grammar's
+  argument wrappers (``GRAMMAR_NOTES.md`` section 5);
+- give a ``ConjugatedPortTyping`` the ``originalPortDefinition`` property of
+  the parser's tree (the original ``PortDefinition``, printed ``~P``) rather
+  than its ``conjugatedPortDefinition``.
 """
 from __future__ import annotations
 
