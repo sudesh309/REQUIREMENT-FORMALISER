@@ -65,13 +65,14 @@ _TOKEN = re.compile(r"""
     (?P<ws>[ \t\f\r\n]+)
   | (?P<note>//\*.*?\*/|//[^\r\n]*)
   | (?P<comment>/\*.*?\*/)
+  | (?P<unclosed>/\*)
   | (?P<name>[A-Za-z_][A-Za-z_0-9]*)
-  | (?P<qname>'(?:[^'\\]|\\.)*')
+  | (?P<qname>'(?:[^'\\\r\n]|\\.)*')
   | (?P<real>[0-9]+\.[0-9]+(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)
   | (?P<int>[0-9]+)
-  | (?P<string>"(?:[^"\\]|\\.)*")
+  | (?P<string>"(?:[^"\\\r\n]|\\.)*")
   | (?P<sym>""" + "|".join(re.escape(s) for s in SYMBOLS) + r""")
-  | (?P<unclosed>/\*|'|")
+  | (?P<unclosed_line>['"])
   | (?P<error>.)
 """, re.S | re.X)
 
@@ -156,14 +157,19 @@ class Tokens:
                 ka("COMMENT")
                 va(m.group())
             elif group == "unclosed":
-                what = {"/*": "comment", "'": "name", '"': "string"}[m.group()]
-                errors.append((s, len(text), f"unterminated {what}"))
-                e = len(text)
+                # an unterminated comment runs to the end of the text
+                errors.append((s, len(text), "unterminated comment"))
                 ka("ERROR")
                 va(m.group())
                 sa(s)
-                ea(e)
+                ea(len(text))
                 break
+            elif group == "unclosed_line":
+                # an unterminated name or string (no closing quote on its line): report the
+                # quote and go on lexing after it
+                errors.append((s, e, f"unterminated {'name' if text[s] == chr(39) else 'string'}"))
+                ka("ERROR")
+                va(m.group())
             else:
                 errors.append((s, e, f"unexpected character {m.group()!r}"))
                 ka("ERROR")

@@ -137,6 +137,8 @@ class BaseParser:
 
     def report(self, err: ParseError) -> None:
         pos = min(err.pos, len(self.k) - 1)
+        if self.k[pos] == "ERROR":
+            return  # the lexer has reported this token
         if self.k[pos] == "EOF":
             if self.eof_reported:
                 return
