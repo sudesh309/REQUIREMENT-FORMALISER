@@ -21,7 +21,7 @@ sysml-mcp = "mcp_server.server:main"
 sysml-gui = "gui.app:main"
 
 [tool.setuptools.packages.find]
-include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*", "sysml_spec"]
+include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*", "sysml_spec", "sysml_text*"]
 
 [tool.setuptools.package-data]
 webapp = ["static/*", "static/**/*"]
