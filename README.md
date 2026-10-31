@@ -52,7 +52,8 @@ specifications.
   [profiles & stereotypes](docs/features/profiles.md) ·
   [requirements & traceability](docs/features/requirements.md) ·
   [allocation](docs/features/allocation.md) ·
-  [interop, Model Check & reports](docs/features/interop.md).
+  [interop, Model Check & reports](docs/features/interop.md) ·
+  [avionics pack](docs/features/avionics.md).
 - **[docs/EXTENDING.md](docs/EXTENDING.md)** — how features plug in
   (registries, cross-feature contracts, tests and the wave gate).
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 11 Mermaid diagrams
@@ -61,6 +62,9 @@ specifications.
   MCP protocol, KG export, persistence format, module dependencies.
 - **[docs/LOCAL_LLM_VSCODE.md](docs/LOCAL_LLM_VSCODE.md)** — connect
   Ollama / Continue / Cline / Copilot Chat to the MCP server.
+- **[docs/SPEC_GAP_ANALYSIS.md](docs/SPEC_GAP_ANALYSIS.md)** — what is
+  missing against the KerML 1.0, SysML 2.0 and Systems Modeling API
+  specifications, and the phased plan to close it.
 
 ## Quick start
 
@@ -271,6 +275,9 @@ Features (toolstrip by task: Modeling · Views · Requirements · Analysis · In
   ([docs/features/allocation.md](docs/features/allocation.md))
 - **Interop**: Model Check, HTML report, Excel / CSV tables, SysML v2 text, XMI
   import, compare and merge ([docs/features/interop.md](docs/features/interop.md))
+- **Avionics pack**: Avionics profile, ARINC 429 / AFDX / MIL-STD-1553B interface library, ARP4754A / DO-178C
+  requirement skeletons, FHA table, safety / DAL rules and a complete IMA avionics example, from
+  *New from template…* ([docs/features/avionics.md](docs/features/avionics.md))
 - One undo history for every edit (Ctrl+Z / Ctrl+Y, named steps)
 - **Advanced ▾**: every generic SysML v2 element kind, typed links (Ctrl+L),
   stereotype and state-machine commands, the Links and Parser tabs

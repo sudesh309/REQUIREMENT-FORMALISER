@@ -118,7 +118,9 @@ exported in the CSV.
 * **Coverage** (toolstrip or panel tab): percentage of source elements that
   are allocated (leaf elements of the row kinds, untick *leaf elements only*
   for all), the list of unallocated sources (click one to select its row) and
-  a bar per target element with its allocation count.
+  a bar per target element with its allocation count. With nothing to allocate
+  (a set without source architecture, or no element of the row kinds in it)
+  coverage reads **n/a** (`ratio` is `null` in the coverage report), not 100 %.
 * **Chain**: for the selected row, column or allocation, follows allocations
   through every set (function -> logical component -> LRU, and back) and draws
   the path as a Mermaid flowchart grouped by architecture, with the steps
@@ -282,7 +284,10 @@ components. Targets with nothing allocated are absent.
   `source → target`; sets carry `allocation_set` and a `source → target` badge;
   scenarios a `N alloc` badge; allocatable elements an `allocation_category`.
 * `Allocation` is registered as a creatable kind so stereotypes can be limited
-  to allocations with `applies_to: ["Allocation"]`.
+  to allocations with `applies_to: ["Allocation"]`. Profile stereotypes use the
+  *Applies to* categories of the [profiles feature](profiles.md): `Allocation`
+  applies to allocations only, allocation sets have their own `AllocationSet`
+  category (a scenario takes neither).
 
 ## System Composer parity
 

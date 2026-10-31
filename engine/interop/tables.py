@@ -35,6 +35,7 @@ incrementally from Python and then the model.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -46,7 +47,8 @@ from kerml.features import Feature, FeatureDirection
 from kerml.namespaces import Package
 from kerml.stereotypes import (
     CATEGORIES, DEFAULT_SLOTS, NUMERIC_TYPES, STYLE_KEYS, Profile, Stereotype, StereotypeError,
-    StereotypeTag, build_property, normalize_style, stereotypes_on,
+    StereotypeTag, build_property, effective_applications, inheritance_source, normalize_style,
+    stereotypes_on,
 )
 from sysmlv2.definitions import (
     ConnectionUsage, Definition, InterfaceDefinition, PartDefinition, PartUsage,
@@ -62,14 +64,28 @@ from .common import (
 )
 
 FORMAT = "sysml-studio-tables/1"
+TOOL_DATA = "Tool Data"
 TABLE_ORDER = ["Model", "Profiles", "Components", "Ports", "Interfaces", "Connections",
-               "Requirements", "Elements", "Links"]
+               "Requirements", "Elements", "Links", TOOL_DATA]
 ELEMENT_TABLES = ["Components", "Ports", "Interfaces", "Connections", "Requirements", "Elements"]
+# Tool Data sheet: one row per Element.tool_data entry (canvas layout, port sides, connector
+# waypoints, ...), the value as JSON.
+TOOL_DATA_COLUMNS = ["ID", "Name", "Kind", "Key", "Value"]
+# Model sheet rows carrying project-level feature state (engine.register_repo_codec data,
+# e.g. suspect-link baselines or the architecture type) as JSON, split over several rows
+# with the same Property when longer than one spreadsheet cell holds.
+PROJECT_DATA_PREFIX = "Data: "
+_CELL_CHUNK = 32000            # below Excel's 32767 characters per cell
+# An attribute column cell meaning "no value" where the attribute has a non-empty
+# default (an empty cell keeps the default).
+NULL_CELL = "null"
 
 # Element-valued attributes exported as "<attr> ID" columns (features may add theirs).
 REFERENCE_ATTRIBUTES: list[str] = [
     "transition_source", "transition_target", "initial_state", "final_states",
     "allocate_from", "allocate_to", "payload_type", "flow_source", "flow_target",
+    # Allocation sets (source / target architecture) and allocations (source / target).
+    "source_architecture", "target_architecture", "source", "target",
 ]
 
 
@@ -213,7 +229,9 @@ def _element_row(repo, e: Element, table: str) -> dict[str, Any]:
         others = [x for x in e.ends if x is not None][2:]  # type: ignore[attr-defined]
         if others:
             row["Other End IDs"] = _ref_ids(repo, others)
-    apps = stereotypes_on(e)
+    # What the element reads: its own stereotypes, then the ones a reference component inherits
+    # from its definition (SU-15), with the values it reads (an override or the definition's).
+    apps = effective_applications(e)
     row["Stereotypes"] = ";".join(a.stereotype.full_name for a in apps)
     for a in apps:
         # Stored (canonical) values: numbers are in the property's unit (Profiles sheet).
@@ -224,14 +242,22 @@ def _element_row(repo, e: Element, table: str) -> dict[str, Any]:
             continue
         v = getattr(e, attr)
         if isinstance(v, Element):
-            row[f"{attr} ID"] = v.element_id
+            row[f"{attr} ID"] = _reference_cell(v)
         elif isinstance(v, list) and v and all(isinstance(x, Element) for x in v):
-            row[f"{attr} ID"] = ";".join(x.element_id for x in v)
+            row[f"{attr} ID"] = ";".join(_reference_cell(x) for x in v)
     allowed = set(BASE_COLUMNS[table]) | ({"Other End IDs"} if table == "Connections" else set())
     row = {k: v for k, v in row.items() if k in allowed or k not in _ALL_BASE}
     for k, v in extra_attributes(e).items():
-        row.setdefault(k, v)
+        # None only appears here when the attribute's default is a value (a DataElement
+        # typed by a value type has no primitive type): say so, an empty cell keeps the default.
+        row.setdefault(k, NULL_CELL if v is None else v)
     return row
+
+
+def _reference_cell(e: Element) -> str:
+    """An element in a ``<attr> ID`` cell: its id, or the qualified name of a library element
+    (library ids change in every process)."""
+    return e.qualified_name if in_library(e) else e.element_id
 
 
 _ALL_BASE = {c for cols in BASE_COLUMNS.values() for c in cols} | {"Other End IDs"}
@@ -329,7 +355,8 @@ def export_tables(repo) -> Sheets:
         "Model": [["Property", "Value"], ["Format", FORMAT], ["Name", repo.name],
                   ["Root ID", repo.root_package.element_id]]
                  + ([["Documentation", documentation(repo.root_package)]]
-                    if documentation(repo.root_package) else []),
+                    if documentation(repo.root_package) else [])
+                 + _project_data_rows(repo),
         "Profiles": _sheet(PROFILE_COLUMNS, _profile_rows(repo)),
     }
     for t in ELEMENT_TABLES:
@@ -342,7 +369,37 @@ def export_tables(repo) -> Sheets:
                       "Target ID": _ref_ids(repo, [rel.target]),
                       "Target": _ref_names(repo, [rel.target])})
     sheets["Links"] = _sheet(LINK_COLUMNS, links)
+    sheets[TOOL_DATA] = _sheet(TOOL_DATA_COLUMNS, _tool_data_rows(repo))
     return sheets
+
+
+def _json_cell(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _project_data_rows(repo) -> list[list[Any]]:
+    """Model sheet rows with the project-level state features persist through
+    ``register_repo_codec`` (``Data: requirements-links`` -> JSON), so a project rebuilt
+    from the tables keeps it (suspect-link baselines, the architecture type, ...)."""
+    from engine.serializer import _REPO_CODECS, _encode_ext
+    rows: list[list[Any]] = []
+    for name, entry in sorted(_encode_ext(_REPO_CODECS, repo).items()):
+        text = _json_cell(entry["data"])
+        for i in range(0, len(text), _CELL_CHUNK):
+            rows.append([f"{PROJECT_DATA_PREFIX}{name}", text[i:i + _CELL_CHUNK]])
+    return rows
+
+
+def _tool_data_rows(repo) -> list[dict]:
+    """``Element.tool_data`` (canvas layout, port sides, waypoints, ...), one row per entry."""
+    from engine.serializer import _json_safe
+    rows: list[dict] = []
+    for e in [repo.root_package] + project_elements(repo):
+        for key, value in sorted(e.tool_data.items()):
+            if _json_safe(value):
+                rows.append({"ID": e.element_id, "Name": e.name or "", "Kind": e.kind,
+                             "Key": key, "Value": _json_cell(value)})
+    return rows
 
 
 def export_tables_file(repo, fmt: str = "xlsx") -> tuple[bytes, str, str]:
@@ -510,22 +567,23 @@ def normalize_sheets(sheets: Any) -> dict[str, list[tuple[int, dict]]]:
 
 
 def _canonical_table(name: str) -> Optional[str]:
-    key = name.lower().replace(" ", "")
+    key = name.lower().replace(" ", "").replace("_", "")
     for t in TABLE_ORDER:
-        if t.lower() == key or t.lower() == key.rstrip("s") + "s":
+        low = t.lower().replace(" ", "")
+        if low == key or low == key.rstrip("s") + "s":
             return t
     aliases = {"component": "Components", "port": "Ports", "connection": "Connections",
                "connectors": "Connections", "interface": "Interfaces",
                "portinterfaces": "Interfaces", "requirement": "Requirements",
                "element": "Elements", "link": "Links", "requirementlinks": "Links",
-               "stereotypes": "Profiles", "profile": "Profiles"}
+               "stereotypes": "Profiles", "profile": "Profiles", "layout": TOOL_DATA}
     return aliases.get(key)
 
 
 def _canonical_columns(table: str, row: dict) -> dict:
     """Column names in their canonical case, against the columns of *this* table only
     (so an extra attribute column such as ``style`` is not taken for the Profiles one)."""
-    known = {"Profiles": PROFILE_COLUMNS, "Links": LINK_COLUMNS,
+    known = {"Profiles": PROFILE_COLUMNS, "Links": LINK_COLUMNS, TOOL_DATA: TOOL_DATA_COLUMNS,
              "Model": ["Property", "Value"]}.get(table, BASE_COLUMNS.get(table, []))
     by_low = {c.lower(): c for c in known}
     return {by_low.get(k.lower(), k): v for k, v in row.items()}
@@ -557,7 +615,7 @@ class _Importer:
         self.report = ImportReport(warnings=self.warnings)
         self._warned: set[str] = set()
         self._orig: dict[tuple[int, str], Any] = {}     # see _wants
-        self._orig_values: dict[tuple[int, int], Any] = {}
+        self._orig_values: dict[tuple[int, int, int], Any] = {}
         self._names_before: dict[str, Stereotype] = {}
         self._props_before: dict[tuple[int, str], StereotypeTag] = {}
         self._filled: set[tuple[str, str]] = set()      # see import_profiles
@@ -1088,7 +1146,9 @@ class _Importer:
         if value in (None, "") and (spec.created or not isinstance(current, (str, int, float, bool,
                                                                             list, dict))):
             return
-        if value in (None, ""):
+        if isinstance(value, str) and value.strip() == NULL_CELL:
+            new = None          # no value (an empty cell keeps the default)
+        elif value in (None, ""):
             new = class_default(type(e), attr)
         else:
             try:
@@ -1121,10 +1181,14 @@ class _Importer:
             col = f"{attr} ID"
             if col not in spec.row or not hasattr(e, attr):
                 continue
+            current = getattr(e, attr)
+            if not (current is None or isinstance(current, (Element, list))):
+                continue            # same name, not a reference here (Profile.source is a dict)
             ids = _split(spec.row[col])
             targets = []
             for ident in ids:
-                hit = self.lookup(ident, allow_root=False)
+                # An id, or the qualified name of a library element (see _reference_cell).
+                hit = self.lookup(ident, ident if "::" in ident else "", allow_root=False)
                 if hit is None:
                     raise InteropError(f"{spec.where}: {col} {ident!r} not found")
                 targets.append(hit)
@@ -1188,13 +1252,24 @@ class _Importer:
                     if not any(app.stereotype is st for st in wanted):
                         P.remove_stereotype(self.repo, e, app.stereotype)
                 for st in wanted:
-                    if not any(a.stereotype is st for a in stereotypes_on(e)):
+                    if not any(a.stereotype is st for a in effective_applications(e)):
                         P.apply_stereotype(self.repo, e, st)
                         self.report.stereotypes_applied += 1
+                for a in effective_applications(e):
+                    if a.inherited and not any(a.stereotype is st for st in wanted):
+                        self.warn_once(f"{spec.where}:inherit:{a.stereotype.element_id}",
+                                       f"{spec.where}: «{a.stereotype.full_name}» is inherited from "
+                                       f"{a.definition.qualified_name} and stays; remove it there")
                 _order_applications(e, wanted)
             # Every value is checked (and converted) by the profiles metamodel when set.
             for app, prop, value in self._stereotype_values(spec):
-                app.set(prop, value)
+                # A cell that shows what the element reads anyway (a value inherited from the
+                # definition, or the default) sets nothing: only a changed value is an override.
+                tag = app.tag(prop)
+                stored = tag.coerce(value, f"{app.stereotype.full_name}.{prop}")
+                if not app.is_explicit(tag) and stored == app.get(prop):
+                    continue
+                P.own_application(self.repo, e, app).assign(tag, stored)
 
     def _stereotype_values(self, spec: _Spec) -> list[tuple[Any, str, Any]]:
         """``Profile.Stereotype.property`` columns of a row as ``(application, property, value)``.
@@ -1211,8 +1286,8 @@ class _Importer:
                 continue
             st_ref, prop = col.rsplit(".", 1)
             st = self.stereotype(st_ref)
-            app = next((a for a in stereotypes_on(e) if st is not None and a.stereotype.is_kind_of(st)),
-                       None)
+            app = next((a for a in effective_applications(e)
+                        if st is not None and a.stereotype.is_kind_of(st)), None)
             if app is None:
                 if st is None:
                     self.warn_once(f"col:{col}", f"column {col!r}: stereotype {st_ref!r} "
@@ -1229,7 +1304,7 @@ class _Importer:
             # A cell still showing the value from before the import is left alone, so a
             # unit or type change made in the Profiles sheet (which converts the stored
             # values) is not undone by the old numbers in an unedited value column.
-            before = self._orig_values.get((id(app), id(tag)), _MISSING)
+            before = self._orig_values.get((id(e), id(app.stereotype), id(tag)), _MISSING)
             if before is not _MISSING and (_same(value, before) or (
                     isinstance(value, str) and value.strip() == cell_text(before))):
                 continue
@@ -1277,6 +1352,73 @@ class _Importer:
                 rel.element_id = ident
             self.repo.registry.register(rel)
             self.report.links_created += 1
+
+    # --- phase 7: tool data and project data -------------------------------------
+    def import_tool_data(self) -> None:
+        """``Tool Data`` rows set ``Element.tool_data`` (layout, port sides, waypoints, ...).
+
+        A project rebuilt from tables (``restore``) takes every row, and elements without
+        rows get none; an import into the current project only gives tool data to the
+        elements it creates, so a workbook exported earlier does not move existing blocks
+        back to where they were then.
+        """
+        rows = self.tables.get(TOOL_DATA)
+        if rows is None:
+            return
+        created = {id(s.element) for s in self.specs if s.created and s.element is not None}
+        data: dict[int, tuple[Element, dict]] = {}
+        for rownum, row in rows:
+            where = f"{TOOL_DATA} row {rownum}"
+            ident, key = _text(row.get("ID")), _text(row.get("Key"))
+            if not ident or not key:
+                raise InteropError(f"{where}: needs an ID and a Key")
+            e = self.lookup(ident)
+            if e is None:
+                self.warn_once(f"tool:{ident}", f"{where}: element {ident!r} not found; "
+                                                "its tool data was ignored")
+                continue
+            raw = row.get("Value")
+            try:
+                value = json.loads(raw) if isinstance(raw, str) else raw
+            except ValueError:
+                raise InteropError(f"{where} ({key}): Value is not valid JSON") from None
+            data.setdefault(id(e), (e, {}))[1][key] = value
+        if self.restore:
+            # The sheet lists all tool data of the project: elements without rows have none.
+            for e in self.repo.root_package.walk():
+                if not isinstance(e, Relationship):
+                    e.tool_data = dict(data[id(e)][1]) if id(e) in data else {}
+            return
+        for key, (e, values) in data.items():
+            if key in created:
+                e.tool_data = dict(values)
+
+    def import_project_data(self) -> None:
+        """Model sheet ``Data: <codec>`` rows: project-level feature state (suspect-link
+        baselines, the architecture type, ...) of a project rebuilt from tables."""
+        from engine.serializer import _REPO_CODECS, _library_index
+        chunks: dict[str, list[str]] = {}
+        for _rownum, row in self.tables.get("Model", []):
+            prop = _text(row.get("Property"))
+            if prop.startswith(PROJECT_DATA_PREFIX):
+                chunks.setdefault(prop[len(PROJECT_DATA_PREFIX):].strip(), []).append(
+                    cell_text(row.get("Value")))
+        if not chunks:
+            return
+        by_id = _library_index()
+        by_id.update({e.element_id: e for e in self.repo.root_package.walk()})
+        for name, parts in chunks.items():
+            try:
+                data = json.loads("".join(parts))
+            except ValueError:
+                raise InteropError(f"Model sheet: {PROJECT_DATA_PREFIX}{name} is not valid JSON") \
+                    from None
+            codec = _REPO_CODECS.get(name)
+            if codec is None:
+                self.warnings.append(f"Model sheet: project data {name!r} was ignored "
+                                     "(no feature of this studio stores it)")
+                continue
+            codec[2](self.repo, data, by_id)
 
     # --- sibling order --------------------------------------------------------------
     def restore_order(self) -> None:
@@ -1339,18 +1481,16 @@ class _Importer:
                             heapq.heappush(heap, (pos[b], b))
             if len(ordered) != len(children) or ordered == children:
                 continue                      # inconsistent rows (cycle) or already in order
-            owner.owned_elements[:] = ordered
-            rank = {id(c): n for n, c in enumerate(ordered)}
-            if isinstance(getattr(owner, "memberships", None), list):
-                owner.memberships.sort(key=lambda m: rank.get(id(m.member), len(rank)))
+            owner.owned_elements = ordered
 
     # --- driver -----------------------------------------------------------------
     def run(self) -> ImportReport:
         from engine.hooks import notify_created
         self.parse_rows()
         # Stereotype values and names before the import (see _stereotype_values, stereotype).
-        self._orig_values = {(id(a), id(t)): v for e in P.model_elements(self.repo)
-                             for a in stereotypes_on(e) for t, v in a.raw_slots().items()}
+        self._orig_values = {(id(e), id(a.stereotype), id(t)): a.get(t.name)
+                             for e in P.model_elements(self.repo)
+                             for a in effective_applications(e) for t in a.stereotype.all_tags()}
         names: dict[str, list[Stereotype]] = {}
         for st in P.stereotypes_of(self.repo):
             names.setdefault(st.full_name, []).append(st)
@@ -1365,11 +1505,16 @@ class _Importer:
         for spec in self.specs:
             if spec.created:
                 notify_created(spec.element, self.repo)  # type: ignore[arg-type]
-        for spec in self.specs:
+        # Definitions before the usages typed by them: a reference component reads (and a cell
+        # equal to it leaves inherited) the values its definition gets in this very import.
+        for spec in sorted(self.specs, key=lambda sp: inheritance_source(sp.element) is not None):
             self.apply_stereotypes(spec)
         self.import_links()
         self.restore_order()
         self.repo.registry.register_tree(self.repo.root_package)
+        self.import_tool_data()
+        if self.restore:
+            self.import_project_data()
         for spec in self.specs:
             eid = spec.element.element_id  # type: ignore[union-attr]
             if spec.created:
@@ -1619,6 +1764,8 @@ class ModelBuilder:
                                     ["Name", self.name], ["Root ID", self.root_id]]}
         for t in TABLE_ORDER[1:]:
             rows = self.rows[t]
+            if t == TOOL_DATA:
+                continue                    # the builder makes no layout
             if t == "Profiles":
                 # Only the columns the builder filled: a blank profile / stereotype cell would
                 # clear that setting of a profile that already exists in the target project.

@@ -38,9 +38,11 @@ from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 
 from kerml.elements import Documentation, Element
-from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
+from kerml.features import (
+    CrossSubsetting, Feature, FeatureDirection, MultiplicityRange, Redefinition, ReferenceSubsetting,
+)
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications, stereotypes_on
 from kerml.types import Type
 from sysmlv2.definitions import (
     PORT_KINDS, ConnectionUsage, PartDefinition, PartUsage, PortUsage,
@@ -52,8 +54,8 @@ from engine.hooks import notify_created
 from engine.repository import register_removal_hook
 from engine.serializer import register_codec, register_repo_codec
 from engine.structure import (
-    component_tree, components_of, connector_ends, connectors_of, definition_of,
-    internal_owners, is_component, ports_of,
+    component_tree, components_of, connector_ends, connector_warnings, connectors_of,
+    connectors_touching, definition_of, internal_owners, is_component, ports_of,
 )
 from engine.validator import Severity, ValidationIssue, register_repo_rule
 
@@ -220,20 +222,12 @@ def edit_owner(composition: Element) -> Element:
 
 def _detach(e: Element, repo=None) -> None:
     """Remove `e` from its owner (owned_elements, memberships) without deleting it."""
-    old = e.owner
-    if old is None:
+    m = e.owning_relationship
+    if m is None:
         return
-    old.owned_elements = [x for x in old.owned_elements if x is not e]
-    if isinstance(old, Namespace):
-        dead = [m for m in old.memberships if m.member is e]
-        if dead:
-            old.memberships = [m for m in old.memberships if m.member is not e]
-            old.owned_relationships = [r for r in old.owned_relationships
-                                       if not any(r is m for m in dead)]
-            if repo is not None:
-                for m in dead:
-                    repo.registry.unregister(m)
-    e.owner = None
+    e.detach()
+    if repo is not None and m.owning_related_element is None:
+        repo.registry.unregister(m)
 
 
 def reparent(e: Element, new_owner: Element, repo=None) -> Element:
@@ -424,8 +418,12 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
             ends = connector_ends(conn)       # contexts resolved before the typing changes
             if any((retyped and ctx is c and p.owner is old) or id(p) in swap for ctx, p in ends):
                 affected.append((conn, ends))
-    c.feature_typings = []
-    c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
+    if definition is None and old is not None:
+        try:      # the component keeps the stereotype values it read from the definition it leaves
+            _profiles().freeze_inherited(repo, c)
+        except ImportError:
+            pass
+    c.remove_types()
     if definition is not None:
         c.add_type(definition)
     for conn, ends in affected:
@@ -526,11 +524,6 @@ def add_port(repo, owner: Element, name: Optional[str] = None, direction: Option
 _UNSET: Any = object()
 
 
-def connectors_touching(repo, port: Element) -> list[ConnectionUsage]:
-    return [c for c in repo.root_package.walk()
-            if isinstance(c, ConnectionUsage) and any(x is port for x in c.ends)]
-
-
 def update_port(repo, port: Element, *, name: Optional[str] = None, direction: Optional[str] = None,
                 kind: Optional[str] = None, interface: Any = _UNSET, force: bool = False) -> PortUsage:
     """Change a port; refuses (409) when that would break existing connectors unless ``force``."""
@@ -575,8 +568,7 @@ def update_port(repo, port: Element, *, name: Optional[str] = None, direction: O
 def _set_types(f: Feature, types: list[Type]) -> None:
     if [t for t in f.types] == types:
         return
-    f.feature_typings = []
-    f.owned_relationships = [r for r in f.owned_relationships if r.kind != "FeatureTyping"]
+    f.remove_types()
     for t in types:
         f.add_type(t)
 
@@ -1028,9 +1020,7 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
     for r in roots:
         originals.extend(r.walk())
     for o in originals:
-        c = copy.copy(o)
-        c.element_id = str(uuid.uuid4())
-        mapping[id(o)] = c
+        mapping[id(o)] = o.clone_bare()
 
     def remap(v):
         return mapping.get(id(v), v) if isinstance(v, Element) else v
@@ -1038,17 +1028,11 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
     apps = []
     for o in originals:
         c = mapping[id(o)]
-        c.owner = None
-        c.owned_elements = []
-        for attr in _REL_LISTS:
-            if attr in vars(c):
-                setattr(c, attr, [])
-        c.annotations = []
         c.tool_data = _json_copy(o.tool_data)
         if isinstance(o, Feature):
             c.multiplicity = MultiplicityRange(o.multiplicity.lower, o.multiplicity.upper)
         for attr, value in list(vars(c).items()):
-            if attr in _SKIP_ATTRS:
+            if attr in _SKIP_ATTRS or attr.startswith("_"):
                 continue
             if isinstance(value, Element):
                 setattr(c, attr, remap(value))
@@ -1060,16 +1044,21 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
                 setattr(c, attr, copy.copy(value))
     for o in originals:
         c = mapping[id(o)]
-        for child in o.owned_elements:
-            c.own(mapping[id(child)])
+        for child in o.children:
+            c.own(mapping[id(child)], membership=type(child.owning_relationship))
         if isinstance(o, Feature):
-            for t in o.types:
-                c.add_type(remap(t))
-            for s in o.subsettings:
+            for ft in o.owned_typings:
+                if ft.type is not None:
+                    c.add_type(remap(ft.type))
+            for s in o.owned_subsettings:
                 if s.target is None:
                     continue
                 if isinstance(s, Redefinition):
                     c.redefine(remap(s.target))
+                elif isinstance(s, ReferenceSubsetting):
+                    c.reference_subset(remap(s.target))
+                elif isinstance(s, CrossSubsetting):
+                    c.cross_subset(remap(s.target))
                 else:
                     c.subset(remap(s.target))
         if isinstance(o, Type):
@@ -1085,9 +1074,9 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
                     c.add_import(remap(imp.target), recursive=imp.recursive)
         for a in o.annotations:
             if isinstance(a, Documentation):
-                c.add_annotation(Documentation(body=a.body))
+                c.add_annotation(Documentation(body=a.body, locale=a.locale))
         for app in stereotypes_on(o):
-            apps.append((c, app.stereotype, dict(app.values)))
+            apps.append((c, app.stereotype, app.own_values()))      # not what it inherits
     return [mapping[id(r)] for r in roots], mapping, apps
 
 
@@ -1996,7 +1985,8 @@ def _ref(e: Optional[Element]) -> Optional[dict]:
 
 def _basic_decor(e: Element) -> dict:
     return {"badges": component_badges(e) + port_badges(e), "style": {},
-            "stereotypes": [{"name": a.stereotype.name, "values": a.values} for a in stereotypes_on(e)]}
+            "stereotypes": [{"name": a.stereotype.name, "values": a.values}
+                            for a in effective_applications(e)]}
 
 
 def _decor(decorate: Optional[Callable[[Element], dict]], e: Element) -> dict:
@@ -2084,7 +2074,9 @@ def connector_view(conn: ConnectionUsage, composition: Element,
         "interfaces": ifaces,
         "points": pts if isinstance(pts, list) else None,
         "owner_id": conn.owner.element_id if conn.owner else None,
-        "issues": [msg for _rule, msg in connector_problems(conn)],
+        # Structural problems, then warnings other features have about the connector
+        # (e.g. incompatible interfaces): both draw the connector with a warning style.
+        "issues": [msg for _rule, msg in connector_problems(conn)] + connector_warnings(conn),
         **_decor(decorate, conn),
     }
 
@@ -2239,15 +2231,22 @@ def common_stereotypes(repo, elements: list[Element]) -> dict:
             props = []
             for pi, p in enumerate(g["properties"]):
                 same = [v[app["id"]]["groups"][gi]["properties"][pi] for v in views]
+                # Reference components inherit values from their definition (SU-15): a value
+                # is "overridden" when it is for any of them, "inherited" only when for all.
+                origin = {"overridden": any(s.get("overridden") for s in same),
+                          "inherited": all(s.get("inherited") for s in same)}
                 if all(s["value"] == p["value"] for s in same):
                     bad = next((s for s in same if s.get("valid") is False), None)
-                    props.append({**p, "mixed": False, "valid": bad is None,
+                    props.append({**p, **origin, "mixed": False, "valid": bad is None,
                                   **({"problem": bad.get("problem")} if bad else {})})
                 else:
-                    props.append({**{k: v for k, v in p.items() if k != "problem"},
+                    props.append({**{k: v for k, v in p.items() if k != "problem"}, **origin,
                                   "value": None, "display": "", "valid": True, "mixed": True})
             groups.append({**g, "properties": props})
-        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups})
+        apps_of = [v[app["id"]] for v in views]
+        applied.append({**{k: v for k, v in app.items() if k != "values"}, "groups": groups,
+                        "inherited": all(a["inherited"] for a in apps_of),
+                        "overridden": any(a["overridden"] for a in apps_of)})
     on_all = {a["id"] for a in applied}
     counts: dict[str, list] = {}
     for v in views:
@@ -2260,7 +2259,7 @@ def common_stereotypes(repo, elements: list[Element]) -> dict:
     possible = []
     for e in els:
         mine = {s.element_id: s for s in P.applicable_stereotypes(repo, e)}
-        possible.append(set(mine) | {a.stereotype.element_id for a in stereotypes_on(e)})
+        possible.append(set(mine) | {a.stereotype.element_id for a in effective_applications(e)})
         for sid, s in mine.items():
             offered.setdefault(sid, s)
     applicable = [{"id": s.element_id, "qualified_name": s.full_name, "name": s.name,
@@ -2320,6 +2319,24 @@ def set_stereotype_values(repo, elements: list[Element], values: dict) -> dict:
         except (P.StereotypeError, ValueError) as ex:     # checked above: should not happen
             raise _stereo_error(ex, e, many) from None
     return stored
+
+
+def reset_stereotype_values(repo, elements: list[Element], paths: list) -> dict:
+    """Take back the values set on each element (a reference component inherits its definition's
+    again), all or nothing: every path must resolve on every element before any is reset."""
+    P = _profiles()
+    els = list(elements)
+    paths = [p for p in (paths or []) if p]
+    if not paths:
+        raise ArchitectureError("send {ids, properties: ['Profile.Stereotype.property', ...]}")
+    many = len(els) > 1
+    for e in els:
+        for path in paths:
+            try:
+                P.resolve_value_path(e, path)
+            except (P.StereotypeError, ValueError) as ex:
+                raise _stereo_error(ex, e, many) from None
+    return {e.element_id: P.reset_property_values(repo, e, paths) for e in els}
 
 
 # ---------------------------------------------------------------------------

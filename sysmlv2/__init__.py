@@ -40,6 +40,7 @@ from .state_machines import (
     StateMachineRunner, attach_state_machine, state_machines_of,
 )
 from .library import SYSML_LIBRARY, build_sysml_library
+from . import metamodel  # noqa: F401,E402 - registers the SysML metaclasses
 
 __all__ = [
     "Definition", "Usage",

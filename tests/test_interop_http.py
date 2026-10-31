@@ -155,9 +155,12 @@ class InteropHttpTests(WebAppTestCase):
         self.assertIn("DOCTYPE", r["error"])
 
     def test_snapshot_compare(self):
-        self.load_avionics()
+        self.call("POST", "/api/new", {"name": "Empty"})
         self.assertIn("no snapshot", self.call("POST", "/api/interop/compare",
                                                {"against": "snapshot"}, expect=400)["error"])
+        self.load_avionics()          # the loaded file is the baseline (PO-12)
+        self.assertEqual(self.call("GET", "/api/interop/snapshot")["label"],
+                         "Last saved (loaded file)")
         snap = self.call("POST", "/api/interop/snapshot", {"label": "Last saved"})
         self.assertEqual(snap["label"], "Last saved")
         self.assertEqual(self.call("GET", "/api/interop/snapshot")["name"], "FlightDeck")

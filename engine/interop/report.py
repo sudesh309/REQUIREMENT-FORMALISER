@@ -26,11 +26,14 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from engine.architecture import connector_label
 from engine.profiles import element_stereotypes
-from engine.structure import component_tree, components_of, connectors_of, definition_of, ports_of
+from engine.structure import (
+    component_tree, components_of, connector_ends, connectors_of, definition_of, ports_of,
+)
 from kerml.elements import Element
 from kerml.features import Feature, FeatureDirection
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications, stereotypes_on
 from sysmlv2.definitions import (
     ConnectionUsage, PartDefinition, PartUsage, PortUsage, RequirementDefinition,
     RequirementUsage,
@@ -110,7 +113,9 @@ def _label(text: Any) -> str:
 
 
 def _stereo_names(e: Element) -> str:
-    return ", ".join(a.stereotype.full_name for a in stereotypes_on(e))
+    """The stereotypes ``e`` carries, those a reference component inherits from its definition
+    included (they are what its values are read from)."""
+    return ", ".join(a.stereotype.full_name for a in effective_applications(e))
 
 
 def _type_names(e: Element, repo) -> str:
@@ -253,25 +258,37 @@ class _Report:
             lines.append(f'    {nid(p)}(("{_label(p.name)}"))')
         lines.append("  end")
         for conn in connectors_of(root):
-            ends = [x for x in conn.ends if x is not None]
+            ends = connector_ends(conn, root)
             if len(ends) < 2:
                 continue
-            nodes = []
-            for i in range(2):
-                comp, port = _connection_end(conn, i)
-                if port in boundary:
-                    nodes.append(nid(port))
-                else:
-                    target = next((c for c in subs if comp is c or definition_of(c) is comp
-                                   or port.owner is c or port.owner is definition_of(c)), None)
-                    nodes.append(nid(target) if target is not None else None)
+            nodes = [self._end_node(root, subs, boundary, ctx, end, nid) for ctx, end in ends[:2]]
             if None in nodes:
                 continue
-            label = f"{ends[0].name} to {ends[1].name}"
-            arrow = "-->" if ends[0].direction is FeatureDirection.OUT or \
-                ends[1].direction is FeatureDirection.IN else "---"
-            lines.append(f'  {nodes[0]} {arrow}|"{_label(label)}"| {nodes[1]}')
+            src, dst = ends[0][1], ends[1][1]
+            arrow = "-->" if getattr(src, "direction", None) is FeatureDirection.OUT or \
+                getattr(dst, "direction", None) is FeatureDirection.IN else "---"
+            # The text the canvas draws on the connector (interface names, or the name the
+            # user gave it); an unnamed, untyped connector has no label, as on the canvas.
+            label = connector_label(conn, root)
+            lines.append(f'  {nodes[0]} {arrow}|"{_label(label)}"| {nodes[1]}' if label
+                         else f"  {nodes[0]} {arrow} {nodes[1]}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _end_node(root: Element, subs: list[Element], boundary: list[Element],
+                  ctx: Optional[Element], end: Element, nid) -> Optional[str]:
+        """Diagram node of one connector end: the sub-component usage it is reached
+        through (its ``end_contexts`` entry, so two usages of one definition get their own
+        edges), the boundary port node, or the component a connector wires directly."""
+        if ctx is None and any(end is p for p in boundary):
+            return nid(end)
+        if ctx is not None:
+            hit = next((c for c in subs if c is ctx), None)
+            return nid(hit) if hit is not None else None
+        # No stored or inferable context: the end is a sub-component itself, or a port
+        # owned by one (inline component).
+        hit = next((c for c in subs if end is c or end.owner is c), None)
+        return nid(hit) if hit is not None else None
 
     def trace_mermaid(self, reqs: list[Element]) -> Optional[str]:
         rel = [l for l in self.links if l.source is not None and l.target is not None]
@@ -346,13 +363,24 @@ class _Report:
         doc = documentation(comp) or (documentation(d) if d is not None else "")
         if doc:
             self.w(f'<p class="doc">{_e(doc)}</p>')
-        # Values as the profiles feature displays them (with units), base properties first.
-        values = [[_e(st["qualified_name"]), _e(p["name"]), _e(p["display"])]
-                  for st in element_stereotypes(comp)
-                  for group in st["groups"] for p in group["properties"]]
+        # Values as the profiles feature displays them (with units), base properties first. A
+        # reference component also lists what it inherits from its definition, with its source.
+        values, sourced = [], False
+        for st in element_stereotypes(comp):
+            for group in st["groups"]:
+                for p in group["properties"]:
+                    src = ""
+                    if p.get("overridden"):
+                        src = f"set here (the definition has {p['inherited_display']})"
+                    elif p.get("inherited"):
+                        src = f"inherited from {st['inherited_from']['name']}"
+                    sourced = sourced or bool(src)
+                    values.append([_e(st["qualified_name"]), _e(p["name"]), _e(p["display"]), _e(src)])
         if values:
             self.w("<h4>Stereotype properties</h4>")
-            self.table(["Stereotype", "Property", "Value"], values)
+            self.table(["Stereotype", "Property", "Value", "Source"] if sourced
+                       else ["Stereotype", "Property", "Value"],
+                       values if sourced else [r[:3] for r in values])
         ports = ports_of(comp)
         self.w("<h4>Ports</h4>")
         self.table(["Port", "Direction", "Kind", "Interface", "Description"], [

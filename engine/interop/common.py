@@ -15,10 +15,11 @@ import pkgutil
 import re
 from typing import Any, Iterator, Optional
 
-from kerml.elements import Annotation, Documentation, Element, Relationship
+from kerml.elements import AnnotatingElement, Documentation, Element, Relationship, is_pure_relationship
 from kerml.features import Feature, FeatureDirection, MultiplicityRange
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
+from kerml.types import Type
 from kerml.stereotypes import Profile, Stereotype
 from sysmlv2.library import SYSML_LIBRARY
 
@@ -44,7 +45,8 @@ def in_library(e: Element) -> bool:
 def project_elements(repo) -> list[Element]:
     """Project elements in containment pre-order (root excluded, no relationships)."""
     return [e for e in repo.root_package.walk()
-            if e is not repo.root_package and not isinstance(e, (Relationship, Annotation))]
+            if e is not repo.root_package and not is_pure_relationship(e)
+            and not isinstance(e, AnnotatingElement)]
 
 
 def relative_qname(e: Element, repo=None) -> str:
@@ -148,7 +150,8 @@ def kind_classes() -> dict[str, type]:
     later: dict[str, type] = {}
     for sub in _walk_subclasses(Element):
         k = sub.__dict__.get("kind")
-        if not k or issubclass(sub, (Relationship, Annotation)):
+        if not k or issubclass(sub, AnnotatingElement) or (
+                issubclass(sub, Relationship) and not issubclass(sub, Type)):
             continue
         core = sub.__module__.split(".")[0] in ("kerml", "sysmlv2")
         target = out if core else later
@@ -239,6 +242,9 @@ CORE_ATTRS = {
     "conjugations", "feature_typings", "subsettings", "redefinitions", "multiplicity",
     "direction", "featuring_type", "ends", "end_contexts", "req_id", "text", "body",
     "annotated_element", "kind",
+    # KerML core storage and spec identity properties (Phase 1)
+    "declared_name", "declared_short_name", "owning_relationship", "alias_ids",
+    "is_implied_included", "is_constant", "is_readonly",
 }
 
 _DEFAULTS: dict[type, Optional[dict]] = {}
@@ -466,14 +472,8 @@ def namespace_ancestor(e: Element) -> Optional[Namespace]:
 
 def move_element(e: Element, new_owner: Element) -> None:
     """Re-own `e`, dropping the stale membership in its previous namespace."""
-    old = e.owner
-    if old is new_owner:
+    if e.owner is new_owner:
         return
-    if isinstance(old, Namespace):
-        stale = [m for m in old.memberships if m.member is e]
-        old.memberships = [m for m in old.memberships if m.member is not e]
-        old.owned_relationships = [r for r in old.owned_relationships
-                                   if not any(r is m for m in stale)]
     new_owner.own(e)
 
 
@@ -485,9 +485,7 @@ def set_feature_types(e: Feature, types: list[Element]) -> bool:
     """Replace the types of `e`; returns True if they changed."""
     if [id(t) for t in e.types] == [id(t) for t in types]:
         return False
-    from kerml.features import FeatureTyping
-    e.feature_typings = []
-    e.owned_relationships = [r for r in e.owned_relationships if not isinstance(r, FeatureTyping)]
+    e.remove_types()
     for t in types:
         e.add_type(t)
     return True
@@ -497,9 +495,7 @@ def set_specializations(e: Element, generals: list[Element]) -> bool:
     current = [s.target for s in getattr(e, "specializations", [])]
     if [id(t) for t in current] == [id(t) for t in generals]:
         return False
-    from kerml.types import Specialization
-    e.specializations = []
-    e.owned_relationships = [r for r in e.owned_relationships if not isinstance(r, Specialization)]
+    e.remove_specializations()
     for g in generals:
         e.specialize(g)
     return True

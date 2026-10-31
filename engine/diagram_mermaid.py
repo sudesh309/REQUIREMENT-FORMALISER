@@ -9,7 +9,7 @@ from __future__ import annotations
 from kerml.elements import Element
 from kerml.features import Feature
 from kerml.namespaces import Namespace
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications
 from sysmlv2.definitions import (
     ConnectionUsage, Definition, PartDefinition, PortUsage,
     RequirementDefinition, StateUsage, TransitionUsage,
@@ -29,7 +29,7 @@ def _safe(text: str) -> str:
 
 
 def _stereo(e: Element) -> str:
-    apps = stereotypes_on(e)
+    apps = effective_applications(e)      # a reference component shows its definition's too
     if not apps:
         return ""
     return "«" + ", ".join(a.stereotype.name for a in apps) + "» "

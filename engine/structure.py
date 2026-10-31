@@ -145,3 +145,66 @@ def connector_ends(conn: ConnectionUsage,
     if comp is None:
         return [(None, e) for e in ends]
     return [(context_of(comp, e), e) for e in ends]
+
+
+# ---------------------------------------------------------------------------
+# Connector warnings (extension point)
+# ---------------------------------------------------------------------------
+#
+# A connector can be structurally valid (the architecture rules allow it) and still be
+# worth a warning, e.g. the interfaces of its two ports are incompatible. System Composer
+# lets the engineer draw such a connector; the studio draws it with a warning style and
+# says so when it is created or when a port edit breaks it. A feature supplies its
+# findings with ``register_connector_warning_source``; the canvas shows them as connector
+# ``issues`` and the routes that edit ports or create connectors report them to the user.
+
+_CONNECTOR_WARNING_SOURCES: list = []
+
+
+def register_connector_warning_source(fn) -> None:
+    """``fn(connector) -> list[str]``: readable problems with a connector (empty when fine)."""
+    if fn not in _CONNECTOR_WARNING_SOURCES:
+        _CONNECTOR_WARNING_SOURCES.append(fn)
+
+
+def connector_warnings(conn: ConnectionUsage) -> list[str]:
+    """Warnings registered features have about a connector (see above)."""
+    out: list[str] = []
+    for source in _CONNECTOR_WARNING_SOURCES:
+        for text in source(conn) or ():
+            if text and text not in out:
+                out.append(text)
+    return out
+
+
+def connectors_touching(repo, port: Element) -> list[ConnectionUsage]:
+    """Every connector in the project that has `port` as one of its ends."""
+    return [c for c in repo.root_package.walk()
+            if isinstance(c, ConnectionUsage) and any(x is port for x in c.ends)]
+
+
+def connector_title(conn: ConnectionUsage) -> str:
+    """``ADC.airData → FMS.air`` for a port-to-port connector (else its name)."""
+    def end(p: Optional[Element]) -> str:
+        owner = owning_component(p) if isinstance(p, PortUsage) else None
+        return f"{owner.name}.{p.name}" if owner is not None and owner.name else (getattr(p, "name", None) or "?")
+    ends = [e for e in conn.ends if e is not None]
+    return f"{end(ends[0])} → {end(ends[1])}" if len(ends) >= 2 else (conn.name or "connector")
+
+
+def connector_warning_snapshot(repo, port: Element) -> dict[str, list[str]]:
+    """``{connector id: warnings}`` of the connectors on `port`; take one before editing the
+    port and hand it to :func:`new_connector_warnings` afterwards."""
+    return {c.element_id: connector_warnings(c) for c in connectors_touching(repo, port)}
+
+
+def new_connector_warnings(repo, port: Element, before: dict[str, list[str]]) -> list[str]:
+    """Messages naming each connector on `port` that has a warning it did not have before
+    (``Connector ADC.airData → FMS.air: Incompatible interfaces …``)."""
+    out: list[str] = []
+    for c in connectors_touching(repo, port):
+        known = before.get(c.element_id, ())
+        for text in connector_warnings(c):
+            if text not in known:
+                out.append(f"Connector {connector_title(c)}: {text}")
+    return out

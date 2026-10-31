@@ -12,6 +12,9 @@ Extension points
 - ``register_prop_hook(fn)``          ``fn(element, key, value) -> bool`` handles a PATCH prop
 - ``register_undo_label(m, pat, l)``  human-readable undo step name of a route (str or fn(ctx))
 - ``register_mutation_hook(fn)``      runs around every non-GET request (undo snapshots)
+- ``add_notice(text, severity)``      tell the user something now (a request that succeeded but
+  broke or left something worth a look); the browser logs it and the canvas shows a toast
+- ``warn_user(payload, messages)``    ``add_notice`` for each message and ``payload["warnings"]``
 - ``session()`` / ``reset_session()`` the single shared Session
 
 Handlers receive ``request = {"body": dict|None, "query": dict}`` plus any
@@ -29,7 +32,7 @@ from engine.properties import set_property
 from kerml.elements import Documentation, Element
 from kerml.features import Feature
 from kerml.namespaces import Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
     AttributeDefinition, AttributeUsage,
@@ -98,8 +101,14 @@ class Session:
         self.revision = 0
 
     def find(self, ref: str) -> Optional[Element]:
-        if not ref:
+        """By id or qualified name, root-relative or with the project root in front as
+        element JSON gives it (``Repository.resolve``). A percent-encoded name (a URL path
+        segment such as ``Avionics%3A%3AADIRU``) is decoded."""
+        if not ref or not isinstance(ref, str):
             return None
+        if "%" in ref and self.repo.by_id(ref) is None and self.repo.resolve(ref) is None:
+            from urllib.parse import unquote
+            ref = unquote(ref)
         return self.repo.by_id(ref) or self.repo.resolve(ref)
 
     def touch(self) -> None:
@@ -153,7 +162,7 @@ def summarize(e: Element) -> dict:
         "doc": next((a.body for a in e.annotations if isinstance(a, Documentation)), ""),
         "stereotypes": [
             {"name": app.stereotype.name, "values": app.values}
-            for app in stereotypes_on(e)
+            for app in effective_applications(e)       # own and inherited from the definition
         ],
         "tool_data": e.tool_data,
         # Cross-feature display contract: summary hooks append short labels to
@@ -376,6 +385,57 @@ def undo_label(m: Mutation, before: Optional[dict] = None) -> tuple[str, Callabl
         return compute(), compute
     text = generic_label(m.method, m.path)
     return text, lambda: text
+
+
+# --- notices: tell the user now -----------------------------------------
+#
+# A request can succeed and still deserve a word: assigning an interface that leaves a
+# connector incompatible, drawing a connector between incompatible ports. The handler calls
+# ``add_notice``; the server sends the notices of that request in the ``X-Studio-Notices``
+# header (percent-encoded JSON) and ``studio.api`` shows each one (Output log line, plus a
+# toast on the architecture canvas) whichever view or feature sent the request.
+
+_NOTICES = threading.local()
+NOTICE_LIMIT = 6              # notices per request
+NOTICE_CHARS = 600            # characters per notice
+
+
+def start_notices() -> None:
+    """Forget the notices of the previous request served by this thread."""
+    _NOTICES.items = []
+
+
+def add_notice(text: str, severity: str = "warning") -> None:
+    """Queue a message for the user, to be sent with the answer of the current request."""
+    items = getattr(_NOTICES, "items", None)
+    if items is None:
+        items = _NOTICES.items = []
+    text = " ".join(str(text).split())
+    if text and len(items) < NOTICE_LIMIT and all(n["message"] != text[:NOTICE_CHARS] for n in items):
+        items.append({"message": text[:NOTICE_CHARS], "severity": severity})
+
+
+def take_notices() -> list[dict]:
+    items = getattr(_NOTICES, "items", None) or []
+    _NOTICES.items = []
+    return items
+
+
+def encode_notices(items: list[dict]) -> str:
+    """The ``X-Studio-Notices`` header value for ``items``."""
+    import json
+    return urllib.parse.quote(json.dumps(items, separators=(",", ":")), safe="")
+
+
+def warn_user(payload: Any, messages: list[str]) -> Any:
+    """Report `messages` as warnings: notices for the browser and, for a JSON object answer,
+    its ``warnings`` list (what a script or MCP client reads)."""
+    if messages:
+        for m in messages:
+            add_notice(m, "warning")
+        if isinstance(payload, dict):
+            payload["warnings"] = list(messages)
+    return payload
 
 
 # --- plugin routes ------------------------------------------------------

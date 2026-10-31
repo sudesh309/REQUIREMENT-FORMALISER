@@ -7,7 +7,7 @@ and is itself rooted in the corresponding KerML library type.
 from __future__ import annotations
 
 from kerml.library import KERML_LIBRARY
-from kerml.namespaces import Package
+from kerml.namespaces import LibraryPackage, Package, register_global_root
 
 from .definitions import (
     AllocationDefinition,
@@ -41,7 +41,7 @@ def _kerml(qn: str):
 
 
 def build_sysml_library() -> Package:
-    root = Package(name="SysML")
+    root = LibraryPackage(name="SysML", is_standard=True)
 
     # Sub-packages mirroring SysML v2 standard library layout.
     sub = {n: Package(name=n) for n in [
@@ -127,3 +127,4 @@ def build_sysml_library() -> Package:
 
 
 SYSML_LIBRARY: Package = build_sysml_library()
+register_global_root(SYSML_LIBRARY)
