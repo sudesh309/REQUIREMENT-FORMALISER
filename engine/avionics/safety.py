@@ -51,6 +51,7 @@ from engine.validator import Severity, ValidationIssue, _REPO_RULES, register_re
 from kerml.elements import Documentation, Element
 from kerml.namespaces import Package
 from sysmlv2.definitions import PartDefinition, PartUsage, PortUsage
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from . import profile as AP
 from . import requirements_lib as RL
@@ -189,7 +190,7 @@ def fha_table(repo, *, create: bool = False) -> Optional[FhaTable]:
     hit = next((e for e in repo.root_package.walk() if isinstance(e, FhaTable)), None)
     if hit is not None or not create:
         return hit
-    taken = {c.name for c in repo.root_package.owned_elements}
+    taken = {c.name for c in repo.root_package.children}
     name = TABLE_NAME if TABLE_NAME not in taken else next(
         f"{TABLE_NAME}_{i}" for i in range(2, 100) if f"{TABLE_NAME}_{i}" not in taken)
     table = FhaTable(name=name)
@@ -201,7 +202,7 @@ def fha_table(repo, *, create: bool = False) -> Optional[FhaTable]:
 
 def fha_rows(repo) -> list[FhaEntry]:
     table = fha_table(repo)
-    return [e for e in table.owned_elements if isinstance(e, FhaEntry)] if table is not None else []
+    return [e for e in table.children if isinstance(e, FhaEntry)] if table is not None else []
 
 
 def find_row(repo, ref: Any) -> FhaEntry:
@@ -219,7 +220,7 @@ def find_row(repo, ref: Any) -> FhaEntry:
 
 def _next_id(table: FhaTable) -> str:
     highest = 0
-    for e in table.owned_elements:
+    for e in table.children:
         name = e.name or ""
         if name.startswith(ID_PREFIX) and name[len(ID_PREFIX):].isdigit():
             highest = max(highest, int(name[len(ID_PREFIX):]))
@@ -253,7 +254,7 @@ def add_fha_row(repo, *, failure_condition: str, function: Any = None, flight_ph
     ident = _clean_text(fha_id, "id") if fha_id else _next_id(table)
     if not ident:
         ident = _next_id(table)
-    if any(c.name == ident for c in table.owned_elements):
+    if any(c.name == ident for c in table.children):
         raise FhaError(f"{ident} already exists in {table.name}", 409)
     row = FhaEntry(name=ident)
     row.failure_condition, row.flight_phase, row.classification = text, phases, cls
@@ -292,7 +293,7 @@ def update_fha_row(repo, row: Any, *, failure_condition: Any = _UNSET, function:
         ident = _clean_text(fha_id, "id")
         if not ident:
             raise FhaError("an FHA id cannot be empty")
-        if any(c is not r and c.name == ident for c in (r.owner.owned_elements if r.owner else [])):
+        if any(c is not r and c.name == ident for c in (r.owner.children if r.owner else [])):
             raise FhaError(f"{ident} already exists in {r.owner.name}", 409)
         changes["name"] = ident
     for attr, value in changes.items():
@@ -359,11 +360,11 @@ def function_choices(repo) -> list[dict]:
             add(e)
     for arch in sources:
         for c in arch.walk():
-            if isinstance(c, PartUsage) and c is not arch:
+            if is_part_usage(c) and c is not arch:
                 add(c)
     if not out:
         for arch in repo.root_package.walk():
-            if isinstance(arch, PartDefinition) and "function" in (arch.name or "").lower():
+            if is_part_definition(arch) and "function" in (arch.name or "").lower():
                 for c in components_of(arch):
                     add(c)
     return [_ref(e) | {"category": AL.category_of(e)} for e in out]
@@ -471,9 +472,9 @@ def _name(e: Optional[Element]) -> str:
 
 def _item_for(source: Element) -> Optional[Element]:
     """The component whose DAL counts for something that implements a requirement."""
-    if isinstance(source, (PartUsage, PartDefinition)):
+    if (is_part_usage(source) or is_part_definition(source)):
         return source
-    if isinstance(source, PortUsage) and isinstance(source.owner, (PartUsage, PartDefinition)):
+    if isinstance(source, PortUsage) and (is_part_usage(source.owner) or is_part_definition(source.owner)):
         return source.owner
     return None
 
@@ -504,7 +505,7 @@ def _compositions(repo) -> Iterator[Element]:
     """Definitions and inline components: where hosted items are owned (usages of a definition
     share the definition's)."""
     for e in repo.root_package.walk():
-        if isinstance(e, PartDefinition) or (isinstance(e, PartUsage) and definition_of(e) is None):
+        if is_part_definition(e) or (is_part_usage(e) and definition_of(e) is None):
             yield e
 
 

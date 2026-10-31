@@ -133,7 +133,7 @@ class Session:
 
     def tree(self, e: Element) -> dict[str, Any]:
         node = self.element_summary(e)
-        node["children"] = [self.tree(c) for c in e.owned_elements]
+        node["children"] = [self.tree(c) for c in e.children]
         return node
 
 

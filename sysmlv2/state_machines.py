@@ -51,12 +51,14 @@ from .definitions import (
 # --- new metamodel elements --------------------------------------------------
 
 class StateMachineDefinition(StateDefinition):
-    """A StateDefinition acting as a top-level state-machine container.
+    """A StateDefinition acting as a top-level state-machine container (application class,
+    interchanged as a StateDefinition).
 
     Owns its states, events and transitions. The ``is_parallel`` flag
     (inherited from StateDefinition) enables AND-state semantics.
     """
     kind = "StateMachineDefinition"
+    spec_metaclass = "StateDefinition"
 
     def __init__(self, name: Optional[str] = None, **kwargs):
         super().__init__(name=name, **kwargs)
@@ -103,12 +105,12 @@ class StateMachineDefinition(StateDefinition):
     # --- queries ---------------------------------------------------------
     @property
     def states(self) -> list[StateUsage]:
-        return [s for s in self.owned_elements
+        return [s for s in self.children
                 if isinstance(s, StateUsage) and not isinstance(s, TransitionUsage)]
 
     @property
     def transitions(self) -> list[TransitionUsage]:
-        return [t for t in self.owned_elements if isinstance(t, TransitionUsage)]
+        return [t for t in self.children if isinstance(t, TransitionUsage)]
 
     def transitions_from(self, state: StateUsage) -> list[TransitionUsage]:
         return [t for t in self.transitions if t.transition_source is state]
@@ -119,13 +121,15 @@ class StateMachineDefinition(StateDefinition):
 
 
 class EventDefinition(Definition):
-    """A signal / event that can trigger transitions."""
+    """A signal / event that can trigger transitions (application class)."""
     kind = "EventDefinition"
+    spec_metaclass = "OccurrenceDefinition"
 
 
 class EventUsage(Usage):
-    """A usage of an EventDefinition (e.g. a typed slot on a port)."""
+    """A usage of an EventDefinition (e.g. a typed slot on a port; application class)."""
     kind = "EventUsage"
+    spec_metaclass = "EventOccurrenceUsage"
 
 
 # --- guard expressions -------------------------------------------------------
@@ -281,7 +285,7 @@ def attach_state_machine(part: PartDefinition, name: str,
 
 def state_machines_of(part: PartDefinition) -> list[StateMachineDefinition]:
     """Return every state machine owned (directly) by `part`."""
-    return [e for e in part.owned_elements if isinstance(e, StateMachineDefinition)]
+    return [e for e in part.children if isinstance(e, StateMachineDefinition)]
 
 
 # Patch PartDefinition with convenience methods so callers can write
@@ -295,14 +299,6 @@ PartDefinition.state_machines = (        # type: ignore[attr-defined]
 )
 
 
-# --- patch StateUsage / TransitionUsage with the new attributes -------------
-# These attributes are optional; tests/users may set them directly.
-def _ensure_attr(cls: type, name: str, default: Any = None) -> None:
-    if not hasattr(cls, name):
-        setattr(cls, name, default)
-
-
-for attr in ("entry_action", "do_action", "exit_action", "is_final"):
-    _ensure_attr(StateUsage, attr, None if attr != "is_final" else False)
-for attr in ("trigger_event", "guard", "effect"):
-    _ensure_attr(TransitionUsage, attr, None)
+# StateUsage.entry_action / do_action / exit_action and TransitionUsage.trigger_event /
+# guard / effect are compatibility properties over the spec structure
+# (StateSubactionMembership, TransitionFeatureMembership): see sysmlv2.definitions.

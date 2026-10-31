@@ -155,6 +155,21 @@ def kind_names(e: Any) -> frozenset[str]:
     return hit | {getattr(e, "kind", "")}
 
 
+# In the spec connections and views are part usages / definitions; for the application's
+# categories (Component, Architecture) and value inheritance they are not components.
+_NOT_COMPONENT_KINDS = frozenset({"ConnectorAsUsage", "ViewUsage", "ConnectionDefinition",
+                                  "ViewDefinition"})
+
+
+def is_component_usage_kind(k: frozenset) -> bool:
+    """Kind names (:func:`kind_names`) of a component: a part usage, not a connection or view."""
+    return "PartUsage" in k and not (k & _NOT_COMPONENT_KINDS)
+
+
+def is_component_definition_kind(k: frozenset) -> bool:
+    return "PartDefinition" in k and not (k & _NOT_COMPONENT_KINDS)
+
+
 def _is_interface(e: Any) -> bool:
     if e is None:
         return False
@@ -169,11 +184,11 @@ def matches_category(e: Any, category: str) -> bool:
     k = kind_names(e)
     kind = getattr(e, "kind", "")
     if category == "Component":
-        return bool(k & {"PartUsage", "PartDefinition"})
+        return is_component_usage_kind(k) or is_component_definition_kind(k)
     if category == "Port":
         return "PortUsage" in k
     if category == "Connector":
-        return "ConnectionUsage" in k
+        return "ConnectionUsage" in k and "AllocationUsage" not in k
     if category == "Interface":
         return _is_interface(e)
     if category == "InterfaceElement":
@@ -195,8 +210,9 @@ def matches_category(e: Any, category: str) -> bool:
                  "StateUsage", "TransitionUsage"})
     if category == "Architecture":
         owner = getattr(e, "owner", None)
-        return "PartDefinition" in k and (
-            owner is None or not (kind_names(owner) & {"PartDefinition", "PartUsage"}))
+        return is_component_definition_kind(k) and (
+            owner is None or not (is_component_usage_kind(kind_names(owner))
+                                  or is_component_definition_kind(kind_names(owner))))
     return False
 
 
@@ -975,9 +991,10 @@ def inheritance_source(e: Optional[Element]) -> Optional[Element]:
     that definition; nothing else does (an inline component has no definition, and a
     definition inherits from nowhere). Matched by kind name, like the categories.
     """
-    if e is None or "PartUsage" not in kind_names(e):
+    if e is None or not is_component_usage_kind(kind_names(e)):
         return None
-    return next((t for t in getattr(e, "types", None) or [] if "PartDefinition" in kind_names(t)), None)
+    return next((t for t in getattr(e, "types", None) or []
+                 if is_component_definition_kind(kind_names(t))), None)
 
 
 def effective_applications(e: Element) -> list:

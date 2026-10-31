@@ -8,6 +8,7 @@ from engine.interop.xmi_import import import_xmi, xmi_to_project
 from kerml.elements import Documentation
 from kerml.features import FeatureDirection
 from kerml.stereotypes import stereotypes_on
+from sysmlv2.definitions import is_part_usage
 from sysmlv2 import (
     AttributeDefinition, AttributeUsage, ConnectionUsage, EnumerationDefinition, PartDefinition,
     PartUsage, PortDefinition, PortUsage, RequirementDefinition, VerificationCaseDefinition,
@@ -66,7 +67,7 @@ class XmiImportTests(unittest.TestCase):
 
     def test_parts_values_and_connectors(self):
         fd = self.repo.resolve("Structure::FlightDeck")
-        parts = {p.name: p for p in fd.owned_elements if isinstance(p, PartUsage)}
+        parts = {p.name: p for p in fd.owned_elements if is_part_usage(p)}
         self.assertEqual(set(parts), {"gps", "fmc", "pfd"})
         self.assertEqual(parts["pfd"].types[0].name, "PrimaryFlightDisplay")
         self.assertEqual((parts["pfd"].multiplicity.lower, parts["pfd"].multiplicity.upper), (2, 2))

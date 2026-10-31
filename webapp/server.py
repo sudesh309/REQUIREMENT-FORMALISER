@@ -95,6 +95,7 @@ from sysmlv2 import (
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.state_machines import (
     StateMachineDefinition, StateMachineRunner,
     attach_state_machine, state_machines_of,
@@ -343,7 +344,7 @@ def api_apply_stereotype(req: dict) -> Body:
 def api_sm_attach(req: dict) -> Body:
     body = req.get("body") or {}
     p = SESSION.find(body.get("part") or "")
-    if not isinstance(p, PartDefinition):
+    if not is_part_definition(p):
         return _err("part must be a PartDefinition", 400)
     sm = attach_state_machine(p, body.get("name") or "SM")
     SESSION.repo.registry.register_tree(sm)
@@ -354,7 +355,7 @@ def _resolve_sm(ref: str) -> StateMachineDefinition | None:
     e = SESSION.find(ref)
     if isinstance(e, StateMachineDefinition):
         return e
-    if isinstance(e, PartDefinition):
+    if is_part_definition(e):
         sms = state_machines_of(e)
         return sms[0] if sms else None
     return None

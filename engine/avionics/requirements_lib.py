@@ -299,7 +299,7 @@ def catalog() -> dict:
 
 
 def _unique_set_name(repo, base: str) -> str:
-    taken = {c.name for c in repo.root_package.owned_elements}
+    taken = {c.name for c in repo.root_package.children}
     name, i = base, 1
     while name in taken:
         i += 1

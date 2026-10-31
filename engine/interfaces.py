@@ -46,6 +46,7 @@ from sysmlv2.definitions import (
     EnumerationDefinition, EnumerationUsage, PartDefinition, PartUsage,
     PortDefinition, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .hooks import notify_created, register_created_hook
 from .properties import register_scalar_property
@@ -421,7 +422,7 @@ def _check_name(name: Any, what: str = "Name") -> str:
 def _sibling(owner: Optional[Element], name: str, exclude: Optional[Element] = None) -> Optional[Element]:
     if owner is None:
         return None
-    return next((c for c in owner.owned_elements if c.name == name and c is not exclude), None)
+    return next((c for c in owner.children if c.name == name and c is not exclude), None)
 
 
 def _unique_name(owner: Element, base: str, start: int = 0, *, always_number: bool = True) -> str:
@@ -458,7 +459,7 @@ def _reparent(child: Element, new_owner: Namespace, repo=None) -> None:
 def _reorder(ns: Element, ordered: list[Element]) -> None:
     """Put `ordered` (a subset of ns' children) first, in that order, then the rest."""
     ids = {id(e) for e in ordered}
-    ns.owned_elements = list(ordered) + [c for c in ns.owned_elements if id(c) not in ids]
+    ns.owned_elements = list(ordered) + [c for c in ns.children if id(c) not in ids]
 
 
 def parse_dimensions(text: Any) -> tuple[int, ...]:
@@ -595,7 +596,7 @@ def is_owned(iface: Optional[Element]) -> bool:
 def get_dictionary(repo, create: bool = True) -> Optional[InterfaceDictionary]:
     """The project's interface dictionary package (created on first use)."""
     root = repo.root_package
-    hit = next((c for c in root.owned_elements if isinstance(c, InterfaceDictionary)), None)
+    hit = next((c for c in root.children if isinstance(c, InterfaceDictionary)), None)
     if hit is None:
         hit = next((e for e in root.walk() if isinstance(e, InterfaceDictionary)), None)
     if hit is not None or not create:
@@ -611,7 +612,7 @@ def get_dictionary(repo, create: bool = True) -> Optional[InterfaceDictionary]:
 def shared_items(repo) -> list[Element]:
     """Dictionary items that are not owned by a port, dictionary first."""
     dic = get_dictionary(repo, create=False)
-    first = [c for c in (dic.owned_elements if dic else []) if isinstance(c, ITEM_CLASSES)]
+    first = [c for c in (dic.children if dic else []) if isinstance(c, ITEM_CLASSES)]
     seen = {id(e) for e in first}
     rest = [e for e in repo.root_package.walk()
             if isinstance(e, ITEM_CLASSES) and id(e) not in seen and not is_owned(e)]
@@ -660,11 +661,11 @@ def elements_of(iface: Optional[Element]) -> list[Element]:
     if iface is None:
         return []
     if isinstance(iface, EnumerationDefinition):
-        return [c for c in iface.owned_elements if isinstance(c, EnumerationUsage)]
+        return [c for c in iface.children if isinstance(c, EnumerationUsage)]
     if isinstance(iface, INTERFACE_CLASSES):
-        return [c for c in iface.owned_elements if isinstance(c, ELEMENT_CLASSES)]
+        return [c for c in iface.children if isinstance(c, ELEMENT_CLASSES)]
     if isinstance(iface, PortDefinition):
-        return [c for c in iface.owned_elements if isinstance(c, AttributeUsage)]
+        return [c for c in iface.children if isinstance(c, AttributeUsage)]
     return []
 
 
@@ -1234,7 +1235,7 @@ def move_element(el: Element, delta: Optional[int] = None, *, index: Optional[in
 # ---------------------------------------------------------------------------
 
 def _drop_owned(repo, port: PortUsage, keep: Optional[Element] = None) -> None:
-    for c in list(port.owned_elements):
+    for c in list(port.children):
         if isinstance(c, (*INTERFACE_CLASSES, PortDefinition)) and c is not keep:
             repo.remove(c)
 
@@ -1438,7 +1439,7 @@ def _connector_owner(a: PortUsage, b: PortUsage) -> Optional[Element]:
             or any(definition_of(c) is holder for c in components_of(comp))
 
     for cand in (ca.owner, ca, cb.owner, cb):
-        if isinstance(cand, (PartDefinition, PartUsage)) and wires(cand, ca) and wires(cand, cb):
+        if (is_part_definition(cand) or is_part_usage(cand)) and wires(cand, ca) and wires(cand, cb):
             return cand
     return ca.owner if isinstance(ca.owner, Namespace) else None
 
@@ -1463,7 +1464,7 @@ def connect_ports(repo, source: Element, target: Element, *, name: Optional[str]
         comp = owning_component(port)
         if comp is owner:
             return {"component": None, "port": port}
-        if isinstance(comp, PartDefinition):
+        if is_part_definition(comp):
             # A definition port is reached through the usage of that definition here.
             comp = next((u for u in components_of(owner) if definition_of(u) is comp), comp)
         return {"component": comp, "port": port}
@@ -1486,7 +1487,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
         return []
     out: list[PortUsage] = []
     scopes = []
-    if isinstance(comp.owner, (PartDefinition, PartUsage)):
+    if (is_part_definition(comp.owner) or is_part_usage(comp.owner)):
         scopes.append(comp.owner)
     scopes.append(comp)
     for scope in scopes:
@@ -1508,7 +1509,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
 
 def create_adapter(repo, parent: Element, name: Optional[str] = None) -> Adapter:
     """Create an Adapter component (with In / Out ports) inside a composition."""
-    if not isinstance(parent, (PartDefinition, PartUsage)):
+    if not (is_part_definition(parent) or is_part_usage(parent)):
         raise InterfaceError("An adapter must be created inside an architecture or component")
     nm = name or _unique_name(parent, "Adapter", 1, always_number=False)
     _check_name(nm, "Adapter name")
@@ -1521,7 +1522,7 @@ def create_adapter(repo, parent: Element, name: Optional[str] = None) -> Adapter
 
 
 def _ensure_adapter_ports(a: Adapter, repo) -> None:
-    if any(isinstance(c, PortUsage) for c in a.owned_elements):
+    if any(isinstance(c, PortUsage) for c in a.children):
         return
     for pname, direction in (("In", FeatureDirection.IN), ("Out", FeatureDirection.OUT)):
         p = PortUsage(name=pname, direction=direction)
@@ -2107,7 +2108,7 @@ def _item_to_json(e: Element) -> dict:
 def export_dictionary(repo) -> dict:
     """The interface dictionary as a standalone JSON-able document."""
     dic = get_dictionary(repo, create=False)
-    items = [c for c in (dic.owned_elements if dic is not None else []) if item_kind(c) in ITEM_KINDS]
+    items = [c for c in (dic.children if dic is not None else []) if item_kind(c) in ITEM_KINDS]
     order = {k: i for i, k in enumerate(("ValueType", "Enumeration", "Constant", "DataInterface",
                                          "PhysicalInterface", "ServiceInterface"))}
     items.sort(key=lambda e: order.get(item_kind(e) or "", 99))

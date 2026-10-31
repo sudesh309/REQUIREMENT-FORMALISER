@@ -264,8 +264,21 @@ def _class_defaults(cls: type) -> Optional[dict]:
     return _DEFAULTS[cls]
 
 
+def is_settable(e: Any, attr: str) -> bool:
+    """Does `e` have `attr` as a stored attribute or an assignable property (not a derived
+    spec property such as ``Connector.source``)?"""
+    prop = getattr(type(e), attr, None)
+    if isinstance(prop, property):
+        return prop.fset is not None
+    return hasattr(e, attr)
+
+
 def _public_vars(e: Any) -> Iterator[tuple[str, Any]]:
     cls = type(e)
+    # Compatibility properties stand in for the attributes they replaced (ADR 0002).
+    for k in getattr(cls, "compat_attributes", ()):
+        if k not in CORE_ATTRS:
+            yield k, getattr(e, k)
     for k, v in vars(e).items():
         if k.startswith("__"):
             continue

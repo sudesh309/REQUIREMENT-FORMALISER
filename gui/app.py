@@ -41,6 +41,7 @@ from sysmlv2 import (
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.state_machines import (
     StateMachineDefinition, attach_state_machine, state_machines_of,
 )
@@ -241,7 +242,7 @@ class SysMLApp(tk.Tk):
         text = e.name or f"<{e.kind}>"
         self.tree.insert(parent_iid, "end", iid=iid, text=text, values=(e.kind,), open=True)
         self.element_by_iid[iid] = e
-        for child in e.owned_elements:
+        for child in e.children:
             self._insert_node(iid, child)
         return iid
 
@@ -427,14 +428,14 @@ class SysMLApp(tk.Tk):
         e = self._selected()
         if isinstance(e, StateMachineDefinition):
             return e
-        if isinstance(e, PartDefinition):
+        if is_part_definition(e):
             sms = state_machines_of(e)
             return sms[0] if sms else None
         return None
 
     def cmd_attach_state_machine(self) -> None:
         e = self._selected()
-        if not isinstance(e, PartDefinition):
+        if not is_part_definition(e):
             messagebox.showerror("Attach state machine",
                                  "Select a PartDefinition in the tree first.")
             return
@@ -944,13 +945,13 @@ class RequirementDialog(tk.Toplevel):
             if s is not None:
                 rel = create_link("stakeholder", r, s)
                 self._repo.registry.register(rel)
-                r.stakeholders.append(s)
+                r.add_stakeholder(s)
         for ref in [x.strip() for x in self._actors.get().split(",") if x.strip()]:
             a = self._repo.by_id(ref) or self._repo.resolve(ref)
             if a is not None:
                 rel = create_link("actor", r, a)
                 self._repo.registry.register(rel)
-                r.actors.append(a)
+                r.add_actor(a)
         self._on_create(r)
         self.destroy()
 

@@ -29,7 +29,7 @@ import datetime
 import json
 from typing import Any, Iterable, Iterator, Optional
 
-from kerml.elements import Element, Relationship
+from kerml.elements import Element, Relationship, is_pure_relationship
 from kerml.namespaces import Package
 from kerml.stereotypes import (
     CATEGORIES, DASH_PATTERNS, DEFAULT_SLOTS, ICONS, INT_RANGES, LINE_STYLES,
@@ -37,6 +37,7 @@ from kerml.stereotypes import (
     StereotypeApplication, StereotypeError, StereotypeTag, UnknownPropertyError,
     application_of, build_property, categories_of, check_name, effective_application_of,
     effective_applications, format_short, format_value, inheritance_source, kind_names,
+    is_component_definition_kind, is_component_usage_kind,
     matches_category, normalize_literals, normalize_style, stereotypes_on,
 )
 
@@ -110,7 +111,7 @@ def _in_profile_space(e: Element) -> bool:
 def model_elements(repo) -> Iterator[Element]:
     """Elements of the project that stereotypes can be applied to."""
     for e in repo.root_package.walk():
-        if e is repo.root_package or isinstance(e, Relationship) or _in_profile_space(e):
+        if e is repo.root_package or is_pure_relationship(e) or _in_profile_space(e):
             continue
         yield e
 
@@ -217,7 +218,7 @@ def _check_profile_name(repo, name: Any, owner: Package, exclude: Optional[Eleme
     for p in profiles_of(repo):
         if p is not exclude and p.name == name:
             raise _conflict(f"a profile named {name!r} already exists")
-    for m in owner.owned_elements:
+    for m in owner.children:
         if m is not exclude and m.name == name:
             raise _conflict(f"{owner.qualified_name} already contains an element named {name!r}")
     return name
@@ -300,7 +301,7 @@ def delete_profile(repo, profile: Profile) -> dict:
 
 def _check_stereotype_name(profile: Element, name: Any, exclude: Optional[Element] = None) -> str:
     name = _wrap(check_name, name, "stereotype name")
-    for m in profile.owned_elements:
+    for m in profile.children:
         if m is not exclude and m.name == name:
             raise _conflict(f"profile {profile.name!r} already has a stereotype named {name!r}")
     return name
@@ -662,7 +663,7 @@ def move_property(repo, tag: StereotypeTag, index: int) -> StereotypeTag:
     st.tags.insert(index, tag)
     # Keep the containment order in step so the tree and saved files agree.
     in_tags = {id(t) for t in st.tags}
-    others = [c for c in st.owned_elements if id(c) not in in_tags]
+    others = [c for c in st.children if id(c) not in in_tags]
     st.owned_elements = others + [t for t in st.tags if t.owner is st]
     return tag
 
@@ -672,7 +673,7 @@ def move_property(repo, tag: StereotypeTag, index: int) -> StereotypeTag:
 # ---------------------------------------------------------------------------
 
 def _check_target(e: Element) -> None:
-    if _in_profile_space(e) or isinstance(e, Relationship):
+    if _in_profile_space(e) or is_pure_relationship(e):
         raise ProfileError(f"stereotypes cannot be applied to profile definitions ({e.qualified_name})")
 
 
@@ -918,7 +919,7 @@ def element_stereotypes(element: Element) -> list[dict]:
 
 def applicable_stereotypes(repo, element: Element) -> list[Stereotype]:
     """Stereotypes that can still be applied (not abstract, not already carried or inherited)."""
-    if _in_profile_space(element) or isinstance(element, Relationship) or element is repo.root_package:
+    if _in_profile_space(element) or is_pure_relationship(element) or element is repo.root_package:
         return []
     have = {id(a.stereotype) for a in effective_applications(element)}
     return [s for s in stereotypes_of(repo)
@@ -994,7 +995,7 @@ def plan_batch(repo, stereotype: Stereotype, *, scope: str = "model", root: Any 
         if id(e) in seen or (e is repo.root_package and scope != "selection"):
             continue
         seen.add(id(e))
-        if _in_profile_space(e) or isinstance(e, Relationship):
+        if _in_profile_space(e) or is_pure_relationship(e):
             if report_mismatch:
                 skip(e, "profile definition")
             continue
@@ -1612,8 +1613,8 @@ def _default_hosts(repo, host: Element) -> list[Element]:
     of the stereotypes applied to the component usages typed by it.
     """
     hosts = [host]
-    if "PartDefinition" in kind_names(host):
-        hosts += [u for u in model_elements(repo) if "PartUsage" in kind_names(u)
+    if is_component_definition_kind(kind_names(host)):
+        hosts += [u for u in model_elements(repo) if is_component_usage_kind(kind_names(u))
                   and any(t is host for t in getattr(u, "types", None) or [])]
     return hosts
 
@@ -1621,7 +1622,7 @@ def _default_hosts(repo, host: Element) -> list[Element]:
 def _on_created(e: Element, repo) -> None:
     """Default stereotypes for new ports / connectors / components and new root architectures."""
     try:
-        if _in_profile_space(e) or isinstance(e, Relationship):
+        if _in_profile_space(e) or is_pure_relationship(e):
             return
         k = kind_names(e)
         slot = ("port" if "PortUsage" in k else "connector" if "ConnectionUsage" in k
@@ -1664,7 +1665,7 @@ def _on_removed(repo, removed: set[int]) -> None:
 
 def _inheritance_capable(e: Element) -> bool:
     """Can ``e`` inherit stereotype values (so the properties set on it are worth recording)?"""
-    return "PartUsage" in kind_names(e)
+    return is_component_usage_kind(kind_names(e))
 
 
 def _encode(e: Element) -> Any:

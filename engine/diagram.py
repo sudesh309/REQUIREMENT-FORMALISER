@@ -29,6 +29,7 @@ from sysmlv2.definitions import (
     RequirementDefinition,
     Usage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.relationships import Satisfy, Verify, Refine, DeriveRequirement, Trace
 
 
@@ -76,7 +77,7 @@ def bdd(root: Namespace) -> str:
                 lines.append(f"  {_node_id(d)} -> {_node_id(tgt)};")
     # Composition (PartUsage typed by another Definition)
     for d in defs:
-        if not isinstance(d, PartDefinition):
+        if not is_part_definition(d):
             continue
         for u in d.owned_features:
             for t in getattr(u, "types", []):
@@ -255,7 +256,7 @@ def diagram(kind: str, target: Element) -> str:
             raise TypeError("bdd requires a Namespace target")
         return bdd(target)
     if kind == "ibd":
-        if not isinstance(target, PartDefinition):
+        if not is_part_definition(target):
             raise TypeError("ibd requires a PartDefinition target")
         return ibd(target)
     if kind in ("requirements", "req"):

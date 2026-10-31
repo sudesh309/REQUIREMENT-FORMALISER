@@ -40,7 +40,7 @@ from typing import Any, Optional
 import xml.etree.ElementTree as ET
 
 from engine import profiles as P
-from kerml.elements import Element, Relationship
+from kerml.elements import Element, Relationship, is_pure_relationship
 from kerml.features import Feature, FeatureDirection, MultiplicityRange
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
@@ -51,6 +51,7 @@ from sysmlv2.definitions import (
     PartDefinition, PartUsage, PortDefinition, PortUsage, RequirementDefinition,
     StateDefinition, VerificationCaseDefinition,
 )
+from sysmlv2.definitions import is_part_definition
 
 from .common import (
     InteropError, find_stereotype, infer_scalar, move_element, set_documentation,
@@ -377,7 +378,7 @@ class _XmiImporter:
             t = self.type_of(node)
             if xt == "Port":
                 cls: type = PortUsage
-            elif isinstance(t, (PartDefinition,)) and not isinstance(owner, PortDefinition):
+            elif (is_part_definition(t)) and not isinstance(owner, PortDefinition):
                 cls = PartUsage
             else:
                 cls = AttributeUsage
@@ -418,7 +419,7 @@ class _XmiImporter:
                 direction = self.flow_direction(ident, "FlowPort")
             else:
                 iface = next(iter(port.types), None)
-                dirs = {f.direction for f in getattr(iface, "owned_elements", [])
+                dirs = {f.direction for f in getattr(iface, "children", [])
                         if isinstance(f, Feature) and f.direction is not FeatureDirection.NONE}
                 if not dirs:
                     direction = FeatureDirection.NONE
@@ -486,7 +487,7 @@ class _XmiImporter:
             for i, (src, tgt) in enumerate((c, s) for c in clients for s in suppliers):
                 rid = ident if i == 0 else f"{ident}_{i}"
                 existing = self.repo.by_id(rid) if rid else None
-                if isinstance(existing, Relationship):
+                if is_pure_relationship(existing):
                     continue
                 rel = create_link(kind, src, tgt)
                 if rid:
@@ -528,12 +529,12 @@ class _XmiImporter:
         otherwise one is created in the package ``XMI_Profiles`` with untyped
         properties for the XMI attributes.
         """
-        holder = next((p for p in self.repo.root_package.owned_elements
+        holder = next((p for p in self.repo.root_package.children
                        if isinstance(p, Package) and p.name == "XMI_Profiles"), None)
         profile = ns.rstrip("/#").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
         st = self._existing_stereotype(f"{profile}.{tag}") if profile else None
         if st is None and holder is not None:
-            st = next((s for s in holder.owned_elements
+            st = next((s for s in holder.children
                        if isinstance(s, Stereotype) and s.name == tag), None)
         if st is None:
             st = self._existing_stereotype(tag)

@@ -53,7 +53,7 @@ def _iter_edges(root: Element) -> Iterator[tuple[str, Element, Element, dict]]:
     """Yield ``(predicate, src, tgt, props)`` tuples spanning the project."""
     for e in root.walk():
         # Ownership.
-        for c in e.owned_elements:
+        for c in e.children:
             yield ("owns", e, c, {})
         # Stereotype applications.
         for app in stereotypes_on(e):
