@@ -46,5 +46,25 @@
   "metamodel.sysml.metaclasses_present": {
     "value": 0.5054,
     "better": "higher"
+  },
+  "parse.collector_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "parse.examples.diagnostics": {
+    "value": 0,
+    "better": "lower"
+  },
+  "parse.examples.files_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "parse.library.diagnostics": {
+    "value": 0,
+    "better": "lower"
+  },
+  "parse.library.files_ok": {
+    "value": 1.0,
+    "better": "higher"
   }
 }
