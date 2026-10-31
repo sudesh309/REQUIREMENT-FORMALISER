@@ -16,23 +16,23 @@
     "better": "higher"
   },
   "metamodel.kerml.attributes_present": {
-    "value": 0.2105,
+    "value": 0.9342,
     "better": "higher"
   },
   "metamodel.kerml.derived_present": {
-    "value": 0.0672,
+    "value": 0.8284,
     "better": "higher"
   },
   "metamodel.kerml.metaclasses_present": {
-    "value": 0.3415,
+    "value": 0.7805,
     "better": "higher"
   },
   "metamodel.nonstandard_kinds": {
-    "value": 44,
+    "value": 42,
     "better": "lower"
   },
   "metamodel.supertypes_consistent": {
-    "value": 0.6133,
+    "value": 0.8108,
     "better": "higher"
   },
   "metamodel.sysml.attributes_present": {
