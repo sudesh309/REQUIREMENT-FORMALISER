@@ -763,6 +763,110 @@ class BaseParser:
         node.props["ownedRelatedElement"] = [self.OwnedExpression()]
         return self.fin(node, i)
 
+    # ------------------------------------- connector and flow ends (Kernel)
+
+    def ConnectorEndMember(self) -> Node:
+        """ConnectorEndMember : EndFeatureMembership = ownedRelatedElement += ConnectorEnd
+
+        ConnectorEnd : Feature = ( ownedRelationship += OwnedCrossMultiplicityMember )?
+        ( declaredName = NAME REFERENCES )? ownedRelationship += OwnedReferenceSubsetting
+        OwnedCrossMultiplicityMember : OwningMembership = ownedRelatedElement += OwnedCrossMultiplicity
+        OwnedCrossMultiplicity : Feature = ownedRelationship += OwnedMultiplicity"""
+        k = self.k
+        i = self.p
+        end = Node(self.CONNECTOR_END)
+        if k[i] == "[":
+            mult = self.OwnedMultiplicity()
+            cross = Node("Feature", {"ownedRelationship": [mult]}, mult.span)
+            end.add("ownedRelationship", Node("OwningMembership", {"ownedRelatedElement": [cross]}, mult.span))
+        if k[self.p] == "NAME" and k[self.p + 1] in ("::>", "references"):
+            end.props["declaredName"] = self.v[self.p]
+            self.p += 2
+        end.add("ownedRelationship", self.OwnedReferenceSubsetting())
+        self.fin(end, i)
+        return Node("EndFeatureMembership", {"ownedRelatedElement": [end]}, end.span)
+
+    CONNECTOR_END = "Feature"
+
+    def _flow_ends(self, node: Node) -> None:
+        node.props.setdefault("ownedRelationship", []).extend(self._flow_ends_list())
+
+    def _flow_ends_list(self) -> list[Node]:
+        a = self.FlowEndMember()
+        self.expect("to")
+        return [a, self.FlowEndMember()]
+
+    FLOW_FEATURE = "Feature"
+
+    def FlowEndMember(self) -> Node:
+        """FlowEndMember : EndFeatureMembership = ownedRelatedElement += FlowEnd
+        FlowEnd = ( ownedRelationship += OwnedReferenceSubsetting '.' )? ownedRelationship += FlowFeatureMember
+        FlowFeatureMember : FeatureMembership = ownedRelatedElement += FlowFeature
+        FlowFeature : Feature = ownedRelationship += FlowFeatureRedefinition
+        FlowFeatureRedefinition : Redefinition = redefinedFeature = [QualifiedName]"""
+        i = self.p
+        end, n = self.scan_chain(i)
+        if end < 0:
+            raise self.error("expected a flow end")
+        end_node = Node("FlowEnd")
+        if n > 1:
+            # everything but the last segment is the (reference) subsetting
+            if n == 2:
+                ref = self.QualifiedName()
+                sub = Node("ReferenceSubsetting", {"referencedFeature": ref}, ref.span)
+            else:
+                chain = self._chain_prefix(i, n - 1)
+                sub = Node("ReferenceSubsetting", {"referencedFeature": chain, "ownedRelatedElement": [chain]},
+                           chain.span)
+            end_node.add("ownedRelationship", sub)
+            self.expect(".")
+        j = self.p
+        ref = self.QualifiedName()
+        redef = Node("Redefinition", {"redefinedFeature": ref}, ref.span)
+        feature = Node(self.FLOW_FEATURE, {"ownedRelationship": [redef]}, ref.span)
+        end_node.add("ownedRelationship", Node("FeatureMembership", {"ownedRelatedElement": [feature]}, ref.span))
+        self.fin(end_node, i)
+        return Node("EndFeatureMembership", {"ownedRelatedElement": [end_node]}, end_node.span)
+
+    def _chain_prefix(self, i: int, n: int) -> Node:
+        """A feature chain of the first ``n`` segments starting at ``i`` (not consuming the last '.')."""
+        rels = [self.OwnedFeatureChaining()]
+        while len(rels) < n:
+            self.expect(".")
+            rels.append(self.OwnedFeatureChaining())
+        return self.new("Feature", i, {"ownedRelationship": rels})
+
+    def _payload_has_identification(self, i: int) -> bool:
+        """Does the payload at ``i`` start with an Identification (rather than a type)?"""
+        k = self.k
+        if k[i] == "<":
+            return True
+        if k[i] != "NAME":
+            return False
+        j = i + 1
+        if k[j] == "[":
+            # skip a multiplicity: '[' ... ']'
+            while k[j] not in ("]", "EOF", ";", "{"):
+                j += 1
+            j += 1
+            while k[j] in ("ordered", "nonunique"):
+                j += 1
+        t = k[j]
+        return t in SPECIALIZATION_TOKENS or t in ("=", ":=", "default", "ordered", "nonunique")
+
+    def MetadataFeatureDeclaration(self, node: Node) -> None:
+        """MetadataFeatureDeclaration : MetadataFeature = ( Identification ( ':' | 'typed' 'by' ) )?
+        ownedRelationship += OwnedFeatureTyping"""
+        k = self.k
+        p = self.p
+        if k[p] == "<" or k[p] == ":" or (k[p] == "NAME" and k[p + 1] == ":") \
+                or (k[p] in ("NAME", "typed") and self.v[p + (k[p] == "NAME")] == "typed"
+                    and k[p + 1 + (k[p] == "NAME")] == "by"):
+            self.Identification(node)
+            if not self.typed_by():
+                raise self.error("expected ':'")
+        node.add("ownedRelationship", self.OwnedFeatureTyping())
+
     # Provided by ExpressionParser.
     def OwnedExpression(self) -> Node:  # pragma: no cover - overridden
         raise NotImplementedError
