@@ -10,8 +10,8 @@ which items are allowed and which memberships own them.
 from __future__ import annotations
 
 from ._base import DIRECTIONS, MULTIPLICITY_TOKENS, SPECIALIZATION_TOKENS, ParseError
-from .ast import Node
-from .expressions import EXPRESSION_START, ExpressionParser, _wrap
+from .ast import Node, Span
+from .expressions import ExpressionParser
 
 # kind keyword -> (Definition metaclass, body context)
 DEFINITIONS = {
@@ -162,7 +162,10 @@ class SysMLParser(ExpressionParser):
             add("ownedRelationship", self.fin(m, i))
             return
         if t == "expose" and ctx == "view":
-            add("ownedRelationship", self.Import(i, vis, expose=True))
+            # Expose = 'expose' ( MembershipExpose | NamespaceExpose ) RelationshipBody (no MemberPrefix)
+            if vis:
+                raise ParseError(i, "an expose has no visibility")
+            add("ownedRelationship", self.Import(i, None, expose=True))
             return
         if ctx != "package":
             member = self.special_member(i, vis, t, ctx, node)
@@ -277,26 +280,31 @@ class SysMLParser(ExpressionParser):
             # BasicUsagePrefix : Usage = RefPrefix ( isReference ?= 'ref' )?
             self.p += 1
             is_ref = True
+        individual = None
         if k[self.p] == "individual":
+            individual = self.p
             self.p += 1
             props["isIndividual"] = True
-            if k[self.p] == "def" or (k[self.p] in DEFINITIONS and k[self.p + 1] == "def") or k[self.p] == "#":
-                rels.append(self.EmptyMultiplicityMember())
         if k[self.p] in ("snapshot", "timeslice"):
             props["portionKind"] = k[self.p]
             props["isPortion"] = True
             self.p += 1
         meta = self.prefix_metadata()
-        rels += meta
         t = k[self.p]
         if t == "def" or (t in DEFINITIONS and k[self.p + 1] == "def") or (
                 t == "use" and k[self.p + 1] == "case" and k[self.p + 2] == "def"):
             bad = set(props) - {"isAbstract", "isVariation", "isIndividual"}
             if bad or is_ref:
                 raise ParseError(i, f"a definition cannot have the usage prefix {self.describe(i)}")
-            return self.definition(i, props, rels), False
+            if individual is not None and t != "def":
+                # OccurrenceDefinitionPrefix: isIndividual ?= 'individual' ownedRelationship += EmptyMultiplicityMember
+                s = self.e[individual]
+                empty = Node("Multiplicity", {}, Span(s, s, self.src))
+                meta.insert(0, Node("OwningMembership", {"ownedRelatedElement": [empty]}, empty.span))
+            return self.definition(i, props, meta), False
+        rels += meta
         if t in ("package", "dependency", "@", "metadata"):
-            if props or is_ref or (rels and t != "@" and t != "metadata" and not meta):
+            if props or is_ref or (rels and not meta):
                 raise ParseError(i, f"unexpected {self.describe(i)} before '{t}'")
             if t == "package":
                 return self.Package(i, meta), False
@@ -385,8 +393,6 @@ class SysMLParser(ExpressionParser):
             if props.get("isIndividual"):
                 type, ctx = "OccurrenceDefinition", "definition"
                 individual_def = True
-                rels = [r for r in rels if not (r.type == "OwningMembership" and
-                                                r.props["ownedRelatedElement"][0].type == "Multiplicity")]
             else:
                 type, ctx = "Definition", "definition"
             self.p += 1
@@ -559,6 +565,9 @@ class SysMLParser(ExpressionParser):
         elif t == "assert" or t == "satisfy" or t == "not":
             self.assert_usage(node)
         elif t == "transition":
+            # TransitionUsageMember is a StateBodyItem only
+            if ctx != "state":
+                raise self.error("a transition is only allowed in a state body")
             node.type = "TransitionUsage"
             self.TransitionUsage(node)
         elif t == "ref":
@@ -1502,8 +1511,9 @@ class SysMLParser(ExpressionParser):
             return None
         if ctx == "requirement" and t == "objective":
             return None
+        # the keyword belongs to SubjectUsage / ActorUsage / StakeholderUsage, else to the membership
+        j = self.p if t in ("subject", "actor", "stakeholder") else self.p + 1
         self.p += 1
-        j = self.p
         props: dict = {}
         if t in ("subject", "actor", "stakeholder"):
             el = Node({"subject": "ReferenceUsage"}.get(t, "PartUsage"))

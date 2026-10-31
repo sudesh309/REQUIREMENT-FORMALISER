@@ -144,6 +144,11 @@ class BaseParser:
         self.diagnostics.append(Diagnostic(ERROR, err.message, Span(self.s[pos], self.e[pos], self.src),
                                            err.expected))
 
+    def soft_error(self, i: int, message: str) -> None:
+        """Report a diagnostic at token ``i`` without stopping the production (the tree is still built)."""
+        if not self.spec:
+            self.diagnostics.append(Diagnostic(ERROR, message, Span(self.s[i], self.e[i], self.src)))
+
     def sync(self, pos: int, start: int) -> None:
         """Skip to just after the next ``;`` or block, or to a ``}`` that closes the body."""
         k = self.k
@@ -458,8 +463,10 @@ class BaseParser:
         """Import = visibility = VisibilityIndicator 'import' ( isImportAll ?= 'all' )?
         ImportDeclaration RelationshipBody
 
-        Called after MemberPrefix (visibility is optional: GRAMMAR_NOTES.md). With
-        ``expose``, SysML's Expose = 'expose' ( MembershipExpose | NamespaceExpose ) RelationshipBody."""
+        Called after MemberPrefix; a missing visibility is reported but the import is still built.
+        With ``expose``, SysML's Expose = 'expose' ( MembershipExpose | NamespaceExpose ) RelationshipBody."""
+        if visibility is None and not expose:
+            self.soft_error(self.p, "an import needs a visibility: write 'private import' or 'public import'")
         self.p += 1  # 'import' / 'expose'
         all_ = not expose and self.accept("all")
         node = self.ImportDeclaration(expose)

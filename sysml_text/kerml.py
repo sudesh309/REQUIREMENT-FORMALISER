@@ -247,6 +247,7 @@ class KerMLParser(ExpressionParser):
         self.Identification(node)
         if self.k[self.p] == "[":
             node.add("ownedRelationship", self.OwnedMultiplicity())
+        parts = 0
         while True:
             t = self.k[self.p]
             if t == ":>" or t == "specializes":
@@ -255,6 +256,9 @@ class KerMLParser(ExpressionParser):
                 self.ConjugationPart(node)
             else:
                 break
+            parts += 1
+        if not parts:
+            self.soft_error(self.p, "a type declaration needs ':>' (specializes) or '~' (conjugates)")
         while self.TypeRelationshipPart(node):
             pass
 
@@ -441,19 +445,21 @@ class KerMLParser(ExpressionParser):
             self.TypeBody(node)
         elif t == "step":
             # Step = FeaturePrefix 'step' FeatureDeclaration ValuePart? TypeBody
-            self.FeatureDeclaration(node)
+            if not self.FeatureDeclaration(node):
+                self.soft_error(self.p, "expected a feature declaration after 'step'")
             self.ValuePart(node)
             self.TypeBody(node)
         elif t in ("expr", "bool", "inv"):
             # Expression = FeaturePrefix 'expr' FeatureDeclaration ValuePart? FunctionBody
             # Invariant = FeaturePrefix 'inv' ( 'true' | isNegated ?= 'false' )? FeatureDeclaration
-            # ValuePart? FunctionBody
+            # ValuePart? FunctionBody   (the corpus omits the declaration of an inv: GRAMMAR_NOTES.md)
             if t == "inv":
                 if self.accept("false"):
                     node.props["isNegated"] = True
                 else:
                     self.accept("true")
-            self.FeatureDeclaration(node)
+            if not self.FeatureDeclaration(node) and t != "inv":
+                self.soft_error(self.p, f"expected a feature declaration after '{t}'")
             self.ValuePart(node)
             self.FunctionBody(node)
         elif t == "connector":
