@@ -298,10 +298,12 @@ class Printer:
         return [(head + " {") if head else "{", *self.indent(lines), "}"]
 
     def body(self, rels: list, ctx: str) -> list[str]:
-        """The members of a body, in order. A SourceSuccessionMember ('then') is written on the
-        line of the member it precedes."""
+        """The members of a body, in order, one per line; a member with a body of its own is set
+        off by blank lines. A SourceSuccessionMember ('then') is written on the line of the member
+        it precedes."""
         out: list[str] = []
         after_entry = False
+        previous_block = False
         i = 0
         while i < len(rels):
             m = rels[i]
@@ -316,7 +318,11 @@ class Printer:
                 lines = self.member(m, ctx, after_entry)
                 after_entry = ctx == "state" and self.is_entry_like(m)
                 i += 1
+            block = len(lines) > 1 and lines[-1].startswith("}")
+            if out and (block or previous_block):
+                out.append("")
             out.extend(lines)
+            previous_block = block
         return out
 
     def is_source_succession(self, m) -> bool:
@@ -594,9 +600,16 @@ class Printer:
     def join(*parts: str) -> str:
         return " ".join(p for p in parts if p)
 
+    @staticmethod
+    def name_and_spec(ident: str, spec: str) -> str:
+        """Identification and specialization part; a leading multiplicity is attached: ``x[1]``"""
+        if ident and spec.startswith("["):
+            return ident + spec
+        return " ".join(p for p in (ident, spec) if p)
+
     def declaration(self, el, cur: _Cursor, value: bool = False) -> str:
         """UsageDeclaration : Usage = Identification FeatureSpecializationPart? (ValuePart? with ``value``)"""
-        text = self.join(self.identification(el), self.specialization_part(el, cur))
+        text = self.name_and_spec(self.identification(el), self.specialization_part(el, cur))
         if value:
             text = self.join(text, self.value_part(cur))
         return text
@@ -710,7 +723,7 @@ class Printer:
         words.append(KERML_TYPES[t])
         if self.g(el, "isSufficient"):
             words.append("all")
-        words += [self.identification(el), self.specialization_part(el, cur)]
+        words.append(self.name_and_spec(self.identification(el), self.specialization_part(el, cur)))
         ctx = "function" if t in ("Function", "Predicate") else "type"
         return self.block(self.join(*words), cur.rest(), ctx)
 
@@ -741,8 +754,8 @@ class Printer:
     def kerml_feature_declaration(self, el, cur: _Cursor) -> str:
         """FeatureDeclaration : Feature = ( isSufficient ?= 'all' )? ( FeatureIdentification
         ( FeatureSpecializationPart | ConjugationPart )? | ... ) FeatureRelationshipPart*"""
-        return self.join("all" if self.g(el, "isSufficient") else "", self.identification(el),
-                         self.specialization_part(el, cur))
+        return self.join("all" if self.g(el, "isSufficient") else "",
+                         self.name_and_spec(self.identification(el), self.specialization_part(el, cur)))
 
     def cross_feature(self, cur: _Cursor) -> str:
         """OwnedCrossFeatureMember: the first member of an end feature that owns a feature."""
@@ -787,7 +800,7 @@ class Printer:
             ctx = "type" if t == "Step" else "function"
             return self.block(self.join(*words), cur.rest(), ctx)
         decl = self.kerml_feature_declaration(el, cur) if not self.g(el, "isSufficient") or self.identification(el) \
-            else self.join(self.identification(el), self.specialization_part(el, cur))
+            else self.name_and_spec(self.identification(el), self.specialization_part(el, cur))
         if t in ("Flow", "SuccessionFlow"):
             words.append(self.flow_declaration(el, cur, decl))
         else:
@@ -1567,6 +1580,8 @@ class Printer:
             ltext = self.paren(self.arg_expr(left), bp)
             rexpr = self.lazy_expr(right) if op in LAZY else self.arg_expr(right)
             rtext = self.paren(rexpr, bp + 1)
+        if op == "..":
+            return f"{ltext}..{rtext}", bp
         return f"{ltext} {op} {rtext}", bp
 
     def type_reference(self, m) -> str:

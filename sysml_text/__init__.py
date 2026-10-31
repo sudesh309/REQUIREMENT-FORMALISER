@@ -1,14 +1,21 @@
-"""Parser for the KerML and SysML textual notations to a spec-shaped AST (ADR 0003).
+"""Parser and printer for the KerML and SysML textual notations, over a spec-shaped AST (ADR 0003).
 
-    >>> from sysml_text import parse
+    >>> from sysml_text import parse, print_tree
     >>> result = parse("part def Vehicle { attribute mass : Real; }")
     >>> result.diagnostics
     []
     >>> result.root.find("PartDefinition")[0]["declaredName"]
     'Vehicle'
+    >>> print(print_tree(result.root), end="")
+    part def Vehicle {
+        attribute mass : Real;
+    }
 
 ``parse`` never raises on bad input: syntax errors become
 :class:`Diagnostic` objects and the parser recovers at ``;`` and ``}``.
+``print_tree`` writes canonical text from a tree; ``parse`` of that text gives
+the same tree (:func:`diff` is None). The printer reads trees through a small
+view interface, so model elements can be printed too (``printer`` module).
 The package is pure: it imports nothing from ``kerml``, ``sysmlv2`` or
 ``engine``. See ``GRAMMAR_NOTES.md`` for where the parser follows the
 published corpus rather than the ``.kebnf`` grammars, and for the AST
@@ -18,14 +25,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .ast import ERROR, WARNING, Diagnostic, Node, ParseResult, Ref, Source, Span, dump
+from .ast import ERROR, WARNING, Diagnostic, Node, ParseResult, Ref, Source, Span, diff, dump
 from .kerml import KerMLParser
 from .lexer import KERML_KEYWORDS, SYSML_KEYWORDS, Token, tokenize
+from .printer import AstView, Printer, PrintError, print_tree
 from .sysml import SysMLParser
 
 __all__ = ["parse", "parse_file", "language_of", "ParseResult", "Node", "Ref", "Span", "Source",
-           "Diagnostic", "ERROR", "WARNING", "dump", "tokenize", "Token", "KERML_KEYWORDS",
-           "SYSML_KEYWORDS"]
+           "Diagnostic", "ERROR", "WARNING", "dump", "diff", "tokenize", "Token", "KERML_KEYWORDS",
+           "SYSML_KEYWORDS", "print_tree", "Printer", "PrintError", "AstView"]
 
 PARSERS = {"kerml": KerMLParser, "sysml": SysMLParser}
 
