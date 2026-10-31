@@ -549,10 +549,56 @@ class Behavior(Class):
         return [f for f in self.features if isinstance(f, Step)]
 
 
-class Association(Classifier):
-    """Classifier whose features are end-features (relationship classifier)."""
+class Association(Classifier, Relationship):
+    """A classifier of links, and a relationship between the types of its end features.
+
+    ``related_types`` (and so ``sources`` / ``targets``) are derived from the
+    ``association_ends``: the first end's type is the ``source_type``.
+    """
 
     kind = "Association"
+
+    @property
+    def association_ends(self) -> list:
+        return self.end_features
+
+    @property
+    def related_types(self) -> list["Type"]:
+        out: list[Type] = []
+        for end in self.association_ends:
+            out += end.types
+        return out
+
+    @property
+    def source_type(self) -> Optional["Type"]:
+        rt = self.related_types
+        return rt[0] if rt else None
+
+    @property
+    def target_types(self) -> list["Type"]:
+        return self.related_types[1:]
+
+    @property
+    def sources(self) -> list[Element]:  # type: ignore[override]
+        s = self.source_type
+        return [s] if s is not None else []
+
+    @property
+    def targets(self) -> list[Element]:  # type: ignore[override]
+        return list(self.target_types)
+
+    @property
+    def source(self) -> Optional[Element]:  # type: ignore[override]
+        return self.source_type
+
+    @property
+    def target(self) -> Optional[Element]:  # type: ignore[override]
+        t = self.target_types
+        return t[0] if t else None
+
+    @property
+    def related_elements(self) -> list[Element]:
+        return list(self.related_types)
 
 
 __all__ = [

@@ -688,8 +688,6 @@ class Namespace(Element):
 class _RootMembership(Membership):
     """A transient membership naming a root namespace in the global scope."""
 
-    kind = "Membership"
-
     def __init__(self, root: Element):
         super().__init__(None, root)
 
