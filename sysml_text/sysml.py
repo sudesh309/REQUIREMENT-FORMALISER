@@ -185,7 +185,6 @@ class SysMLParser(ExpressionParser):
     def special_member(self, i: int, vis: str | None, t: str, ctx: str, node: Node) -> Node | None:
         """Body items introduced by their own keyword (memberships other than owning and feature
         memberships, successions and transitions); None when the item is an ordinary element."""
-        k = self.k
         mtype = None
         if t == "variant":
             # VariantUsageMember : VariantMembership = MemberPrefix 'variant' ownedVariantUsage = VariantUsageElement
@@ -1342,12 +1341,9 @@ class SysMLParser(ExpressionParser):
         ``where`` "state": followed by ActionBody; "transition": by ( '{' ActionBodyItem* '}' )?"""
         k = self.k
         node = Node("ActionUsage")
-        decl = False
         if k[self.p] == "action":
-            j = self.p
             self.p += 1
             self.UsageDeclaration(node)
-            decl = True
             if k[self.p] not in ("accept", "send", "assign"):
                 # PerformActionUsageDeclaration: 'action' UsageDeclaration ValuePart?
                 node.type = "PerformActionUsage"

@@ -571,7 +571,6 @@ class BaseParser:
 
     def OwnedFeatureChaining(self) -> Node:
         """OwnedFeatureChaining : FeatureChaining = chainingFeature = [QualifiedName]"""
-        i = self.p
         ref = self.QualifiedName()
         return Node("FeatureChaining", {"chainingFeature": ref}, ref.span)
 
@@ -617,7 +616,6 @@ class BaseParser:
 
     def OwnedSubclassification(self) -> Node:
         """OwnedSubclassification : Subclassification = superclassifier = [QualifiedName]"""
-        i = self.p
         ref = self.QualifiedName()
         return Node("Subclassification", {"superclassifier": ref}, ref.span)
 
@@ -717,7 +715,6 @@ class BaseParser:
 
     def OwnedMultiplicity(self) -> Node:
         """OwnedMultiplicity : OwningMembership = ownedRelatedElement += OwnedMultiplicityRange"""
-        i = self.p
         rng = self.MultiplicityBounds(Node("MultiplicityRange"))
         return Node("OwningMembership", {"ownedRelatedElement": [rng]}, rng.span)
 
@@ -827,7 +824,6 @@ class BaseParser:
                            chain.span)
             end_node.add("ownedRelationship", sub)
             self.expect(".")
-        j = self.p
         ref = self.QualifiedName()
         redef = Node("Redefinition", {"redefinedFeature": ref}, ref.span)
         feature = Node(self.FLOW_FEATURE, {"ownedRelationship": [redef]}, ref.span)

@@ -597,7 +597,6 @@ class KerMLParser(ExpressionParser):
 
     def PayloadFeatureMember(self) -> Node:
         """PayloadFeatureMember : FeatureMembership = ownedRelatedElement = PayloadFeature"""
-        i = self.p
         feature = self.PayloadFeature()
         return Node("FeatureMembership", {"ownedRelatedElement": [feature]}, feature.span)
 
