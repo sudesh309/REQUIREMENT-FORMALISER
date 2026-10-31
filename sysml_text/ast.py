@@ -222,6 +222,40 @@ class ParseResult:
         return f"ParseResult({self.language}, {len(self.diagnostics)} diagnostics)"
 
 
+def diff(a, b, path: str = "") -> str | None:
+    """The first structural difference between two trees, or None when they are equal.
+
+    Compares node types, property names and values (scalars by type and value,
+    references by their text, lists in order, nodes recursively); spans are ignored."""
+    if isinstance(a, Node) and isinstance(b, Node):
+        name = a.props.get("declaredName")
+        here = f"{path}/{a.type}" + (f"({name})" if isinstance(name, str) else "")
+        if a.type != b.type:
+            return f"{here}: type {a.type} != {b.type}"
+        for k in list(a.props) + [k for k in b.props if k not in a.props]:
+            if k not in b.props:
+                return f"{here}.{k}: {_scalar(a.props[k])[:60]} is missing in the second tree"
+            if k not in a.props:
+                return f"{here}.{k}: {_scalar(b.props[k])[:60]} is missing in the first tree"
+            d = diff(a.props[k], b.props[k], f"{here}.{k}")
+            if d:
+                return d
+        return None
+    if isinstance(a, list) and isinstance(b, list):
+        for i, (x, y) in enumerate(zip(a, b)):
+            d = diff(x, y, f"{path}[{i}]")
+            if d:
+                return d
+        if len(a) != len(b):
+            return f"{path}: {len(a)} items != {len(b)}"
+        return None
+    if isinstance(a, Ref) and isinstance(b, Ref):
+        return None if a.text == b.text else f"{path}: {a.text} != {b.text}"
+    if type(a) is type(b) and a == b:
+        return None
+    return f"{path}: {_scalar(a)[:60]} != {_scalar(b)[:60]}"
+
+
 def _scalar(v) -> str:
     if isinstance(v, Ref):
         return f"-> {v.text}"

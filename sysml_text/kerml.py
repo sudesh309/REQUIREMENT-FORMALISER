@@ -615,7 +615,7 @@ class KerMLParser(ExpressionParser):
             else:
                 node.add("ownedRelationship", self.OwnedFeatureTyping())
             return self.fin(node, i)
-        if self._payload_has_identification(i):
+        if self._payload_has_identification(i) or k[i] in SPECIALIZATION_TOKENS:
             self.Identification(node)
             self.FeatureSpecializationPart(node)
             self.ValuePart(node)
