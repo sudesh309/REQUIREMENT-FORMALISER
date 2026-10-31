@@ -10,7 +10,7 @@ import importlib
 import json
 from typing import Any, Callable, TYPE_CHECKING
 
-from kerml.elements import Documentation, Element, Relationship
+from kerml.elements import Documentation, Element, Relationship, is_pure_relationship
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import Stereotype, StereotypeTag, stereotypes_on
@@ -19,6 +19,19 @@ from sysmlv2.state_machines import StateMachineDefinition
 
 if TYPE_CHECKING:
     from .repository import Repository
+
+
+def is_pure_relationship_class(cls: type) -> bool:
+    from kerml.types import Type
+    return issubclass(cls, Relationship) and not issubclass(cls, Type)
+
+
+def _stored_attr(e: object, attr: str) -> bool:
+    """Is `attr` a stored (assignable) attribute of `e`, not a derived property?"""
+    if not hasattr(e, attr):
+        return False
+    prop = getattr(type(e), attr, None)
+    return not isinstance(prop, property) or prop.fset is not None
 
 
 def _fqcn(obj: object) -> str:
@@ -133,7 +146,8 @@ def _encode_element(e: Element) -> dict:
         payload["is_end"] = e.is_end
         payload["default_value"] = e.default_value
         payload["typed_by"] = [_ref(t) for t in e.types]
-        payload["subsets"] = [_ref(s.target) for s in e.subsettings if s.target]
+        payload["subsets"] = [_ref(s.target) for s in e.subsettings
+                              if s.target and type(s).__name__ == "Subsetting"]
         payload["redefines"] = [_ref(r.target) for r in e.redefinitions if r.target]
     if hasattr(e, "specializations"):
         payload["specializes"] = [
@@ -142,7 +156,7 @@ def _encode_element(e: Element) -> dict:
     # SysML-specific extras ------------------------------------------------
     for attr in ("req_id", "text", "is_conjugated", "portion_kind", "is_variant",
                  "is_reference", "is_individual", "is_variation", "is_parallel"):
-        if hasattr(e, attr):
+        if _stored_attr(e, attr):
             payload[attr] = getattr(e, attr)
     if hasattr(e, "ends"):
         payload["ends"] = [_ref(f) for f in getattr(e, "ends", []) if f]
@@ -213,10 +227,10 @@ def to_dict(repo: "Repository") -> dict:
     for e in ordered:
         # Relationships are captured by element payloads (structural) or the
         # `links` list (typed links); they are not model elements in their own right.
-        if isinstance(e, Relationship) or _in_library(e):
+        if is_pure_relationship(e) or _in_library(e):
             continue
         elements.append(_encode_element(e))
-        for rel in e.owned_relationships:
+        for rel in e._owned_relationships:
             if isinstance(rel, link_classes) and rel.source and rel.target:
                 links.append({
                     "id": rel.element_id,
@@ -250,7 +264,7 @@ def from_dict(data: dict) -> "Repository":
     # Files written before links were split out stored Relationship objects as
     # elements; those are rebuilt from payloads/links instead, so drop them.
     raw = [r for r in data["elements"]
-           if not issubclass(_resolve_class(r["class"]), Relationship)]
+           if not is_pure_relationship_class(_resolve_class(r["class"]))]
 
     # Pass 1: instantiate every element bare.
     for r in raw:
@@ -297,29 +311,31 @@ def from_dict(data: dict) -> "Repository":
             inst.is_derived = r.get("is_derived", False)
             inst.is_end = r.get("is_end", False)
             inst.default_value = r.get("default_value")
-            inst.feature_typings = []
+            inst.remove_types()
             for tid in r.get("typed_by", []):
                 tgt = by_id.get(tid)
                 if tgt is not None:
                     inst.add_type(tgt)
-            inst.subsettings = []
+            inst.remove_subsettings()
+            redefined = set(r.get("redefines", []))
             for sid in r.get("subsets", []):
                 tgt = by_id.get(sid)
-                if isinstance(tgt, Feature):
+                # Files written before Phase 1 also listed redefined features as subsetted.
+                if isinstance(tgt, Feature) and sid not in redefined:
                     inst.subset(tgt)
             for rid in r.get("redefines", []):
                 tgt = by_id.get(rid)
                 if isinstance(tgt, Feature):
                     inst.redefine(tgt)
         if hasattr(inst, "specializations"):
-            inst.specializations = []
+            inst.remove_specializations()
             for sid in r.get("specializes", []):
                 tgt = by_id.get(sid)
                 if tgt is not None:
                     inst.specialize(tgt)
         for attr in ("req_id", "text", "is_conjugated", "portion_kind", "is_variant",
                      "is_reference", "is_individual", "is_variation", "is_parallel"):
-            if attr in r and hasattr(inst, attr):
+            if attr in r and _stored_attr(inst, attr):
                 setattr(inst, attr, r[attr])
         if "ends" in r and hasattr(inst, "ends"):
             inst.ends = [by_id[i] for i in r["ends"] if i in by_id]

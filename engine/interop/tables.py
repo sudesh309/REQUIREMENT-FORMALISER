@@ -1481,10 +1481,7 @@ class _Importer:
                             heapq.heappush(heap, (pos[b], b))
             if len(ordered) != len(children) or ordered == children:
                 continue                      # inconsistent rows (cycle) or already in order
-            owner.owned_elements[:] = ordered
-            rank = {id(c): n for n, c in enumerate(ordered)}
-            if isinstance(getattr(owner, "memberships", None), list):
-                owner.memberships.sort(key=lambda m: rank.get(id(m.member), len(rank)))
+            owner.owned_elements = ordered
 
     # --- driver -----------------------------------------------------------------
     def run(self) -> ImportReport:

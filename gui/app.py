@@ -292,7 +292,7 @@ class SysMLApp(tk.Tk):
             if tname:
                 hit = self.repo.resolve(tname)
                 if isinstance(hit, Type):
-                    e.feature_typings = []
+                    e.remove_types()
                     e.add_type(hit)
                 else:
                     self._log(f"Cannot resolve type {tname!r}")
@@ -302,9 +302,7 @@ class SysMLApp(tk.Tk):
         # Documentation: replace first Documentation annotation if present.
         doc = fields.get("doc")
         if doc is not None:
-            for a in list(e.annotations):
-                if isinstance(a, Documentation):
-                    e.annotations.remove(a)
+            e.annotations = [a for a in e.annotations if not isinstance(a, Documentation)]
             if doc.strip():
                 e.add_annotation(Documentation(body=doc.strip()))
         # Refresh tree label.

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Callable, Iterable, Iterator, Optional
 
-from kerml.elements import Element, Relationship
+from kerml.elements import Element, Relationship, escape_name, split_qualified_name
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Namespace, Package
 from sysmlv2.library import SYSML_LIBRARY
@@ -45,11 +45,8 @@ def _with_dependents(root: Element, element: Element) -> list[Element]:
 
 
 def _detach_relationship(owner: Element, rel: Relationship) -> None:
-    """Remove `rel` from `owner` and from every list on it that tracks relationships."""
-    owner.owned_relationships = [r for r in owner.owned_relationships if r is not rel]
-    for attr, value in list(vars(owner).items()):
-        if isinstance(value, list) and any(v is rel for v in value):
-            setattr(owner, attr, [v for v in value if v is not rel])
+    """Remove `rel` (and the elements it owns) from `owner`."""
+    owner.remove_relationship(rel)
 
 
 class ElementRegistry:
@@ -62,10 +59,16 @@ class ElementRegistry:
         self._by_id[element.element_id] = element
 
     def register_tree(self, root: Element) -> None:
+        """Register `root`, the elements ``walk()`` reaches and the relationships they own.
+
+        Annotating elements and the structural sub-elements of compatibility
+        attributes (connector ends, ...) are reached through their owners.
+        """
+        by_id = self._by_id
         for e in root.walk():
-            self.register(e)
-            for r in getattr(e, "owned_relationships", []):
-                self._by_id[r.element_id] = r
+            by_id[e.element_id] = e
+            for r in e._owned_relationships:
+                by_id[r.element_id] = r
 
     def unregister(self, element: Element) -> None:
         self._by_id.pop(element.element_id, None)
@@ -89,8 +92,10 @@ class Repository:
         self.registry = ElementRegistry()
         self.registry.register_tree(self.root_package)
         if import_libraries:
-            self.root_package.add_import(KERML_LIBRARY, recursive=True)
-            self.root_package.add_import(SYSML_LIBRARY, recursive=True)
+            # Public imports of the libraries' top-level packages (``ScalarValues::Real``,
+            # ``Parts::Part``); their contents stay qualified, as before Phase 1.
+            self.root_package.add_import(KERML_LIBRARY)
+            self.root_package.add_import(SYSML_LIBRARY)
 
     # --- mutation -----------------------------------------------------
     def add(self, element: Element, *, parent: Optional[Namespace] = None) -> Element:
@@ -109,19 +114,23 @@ class Repository:
         modules clean their own references via ``register_removal_hook``.
         """
         doomed = _with_dependents(self.root_package, element)
-        removed = {id(x) for d in doomed for x in d.walk()}
+        removed = {id(x) for d in doomed for x in d.walk(structure=True)}
         is_removed = lambda v: isinstance(v, Element) and id(v) in removed  # noqa: E731
 
-        for e in self.root_package.walk():
+        for e in self.root_package.walk(structure=True):
             if id(e) in removed:
                 continue
-            for rel in [r for r in e.owned_relationships if is_removed(r.source) or is_removed(r.target)]:
+            for rel in [r for r in e._owned_relationships
+                        if any(is_removed(x) for x in r._sources)
+                        or any(is_removed(x) for x in r._targets)]:
                 _detach_relationship(e, rel)
                 self.registry.unregister(rel)
-            e.annotations = [a for a in e.annotations if not is_removed(getattr(a, "stereotype", None))]
+            if e._ext_annotations:
+                e._ext_annotations = [a for a in e._ext_annotations
+                                      if not is_removed(getattr(a, "stereotype", None))]
             for attr, value in list(vars(e).items()):
-                if attr == "owner":
-                    continue
+                if attr.startswith("_"):
+                    continue          # the core's own storage (relationships, caches)
                 if isinstance(value, list) and any(is_removed(v) for v in value):
                     setattr(e, attr, [v for v in value if not is_removed(v)])
                 elif is_removed(value):
@@ -133,9 +142,9 @@ class Repository:
         for d in doomed:
             for x in d.walk():
                 self.registry.unregister(x)
-                for rel in x.owned_relationships:
+                for rel in x._owned_relationships:
                     self.registry.unregister(rel)
-            d.owner = None
+            d.detach()
 
     # --- queries ------------------------------------------------------
     def by_id(self, element_id: str) -> Optional[Element]:
@@ -159,7 +168,9 @@ class Repository:
         hit = root.resolve(qn)
         if hit is not None:
             return hit
-        head, sep, rest = qn.partition("::")
+        segs = split_qualified_name(qn)
+        head, sep = segs[0], len(segs) > 1
+        rest = "::".join(escape_name(x) or "" for x in segs[1:])
         if root.name and head == root.name:
             if not sep:
                 return root

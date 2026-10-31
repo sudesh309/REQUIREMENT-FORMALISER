@@ -36,7 +36,7 @@ import re
 import sys
 from typing import Any, Iterable, Optional
 
-from .elements import Annotation, Element
+from .elements import AnnotatingElement, Element
 from .features import Feature, MultiplicityRange
 from .namespaces import Namespace, Package
 from .types import Type
@@ -731,7 +731,7 @@ def normalize_literals(literals: Any) -> list[str]:
 # Application
 # ---------------------------------------------------------------------------
 
-class StereotypeApplication(Annotation):
+class StereotypeApplication(AnnotatingElement):
     """One application of a Stereotype to an Element.
 
     ``values`` is a fresh dict ``{property name: value}`` covering every
@@ -748,6 +748,10 @@ class StereotypeApplication(Annotation):
     """
 
     kind = "StereotypeApplication"
+    spec_metaclass = "MetadataFeature"
+    # Phase 1 keeps applications as extension annotations on the element (ADR 0002
+    # decision 6); Phase 4 maps them to metadata usages.
+    _extension = True
     inherited = False          # a real application, not the view of a definition's
 
     def __init__(self, stereotype: Stereotype, values: Optional[dict[str, Any]] = None, **kwargs):

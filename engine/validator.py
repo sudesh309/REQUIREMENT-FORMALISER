@@ -106,8 +106,10 @@ class Validator:
             return []
         seen: dict[str, Element] = {}
         issues: list[ValidationIssue] = []
-        for m in e.memberships:
-            name = m.alias or m.member.name
+        for m in e.owned_memberships:
+            if m.member is None:
+                continue
+            name = m.member_name
             if name is None:
                 continue
             if name in seen and seen[name] is not m.member:

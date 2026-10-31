@@ -29,7 +29,7 @@ class XmiImportTests(unittest.TestCase):
     def test_project_and_packages(self):
         self.assertEqual(self.repo.name, "FlightDeckModel")
         self.assertEqual(self.report.warnings, [])
-        self.assertEqual([p.name for p in self.repo.root_package.owned_elements][:3],
+        self.assertEqual([p.name for p in self.repo.root_package.children][:3],
                          ["Interfaces", "Structure", "Requirements"])
         self.assertIn("Integrated modular avionics", _doc(self.repo.root_package))
 

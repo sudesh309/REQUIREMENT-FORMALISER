@@ -182,7 +182,7 @@ def tool_set_feature_type(ref: str, type_qname: str,
     tgt = SESSION.find(type_qname)
     if not isinstance(tgt, Type):
         return _err(f"Type {type_qname!r} not found")
-    e.feature_typings = []
+    e.remove_types()
     e.add_type(tgt)
     if multiplicity is not None:
         lo, up = multiplicity

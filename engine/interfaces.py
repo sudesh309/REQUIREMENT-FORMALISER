@@ -386,9 +386,7 @@ def _kerml_scalar(primitive: str) -> Optional[Type]:
 
 def _set_typing(feature: Feature, target: Optional[Type]) -> None:
     """Replace the SysML typing of `feature` with `target` (or none)."""
-    feature.feature_typings = []
-    feature.owned_relationships = [r for r in feature.owned_relationships
-                                   if r.kind != "FeatureTyping"]
+    feature.remove_types()
     if target is not None:
         feature.add_type(target)
 
@@ -445,35 +443,22 @@ def _unique_rename(owner: Element, base: str) -> str:
 
 def _reparent(child: Element, new_owner: Namespace, repo=None) -> None:
     """Move `child` to `new_owner`, dropping the old owner's membership."""
-    old = child.owner
-    if old is new_owner:
+    if child.owner is new_owner:
         return
-    if isinstance(old, Namespace):
-        stale = [m for m in old.memberships if m.member is child]
-        old.memberships = [m for m in old.memberships if m.member is not child]
-        old.owned_relationships = [r for r in old.owned_relationships
-                                   if not any(r is m for m in stale)]
-        if repo is not None:
-            for m in stale:
-                repo.registry.unregister(m)
-    if old is not None and child in old.owned_elements:
-        old.owned_elements.remove(child)
-    child.owner = None
+    stale = child.owning_relationship
+    child.detach()
+    if repo is not None and stale is not None:
+        repo.registry.unregister(stale)
     new_owner.own(child)
     if repo is not None:
         repo.registry.register_tree(child)
-        for m in new_owner.memberships:
-            if m.member is child:
-                repo.registry.register(m)
+        repo.registry.register(child.owning_relationship)
 
 
 def _reorder(ns: Element, ordered: list[Element]) -> None:
     """Put `ordered` (a subset of ns' children) first, in that order, then the rest."""
     ids = {id(e) for e in ordered}
     ns.owned_elements = list(ordered) + [c for c in ns.owned_elements if id(c) not in ids]
-    if isinstance(ns, Namespace):
-        rank = {id(e): i for i, e in enumerate(ns.owned_elements)}
-        ns.memberships.sort(key=lambda m: rank.get(id(m.member), len(rank)))
 
 
 def parse_dimensions(text: Any) -> tuple[int, ...]:

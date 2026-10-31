@@ -66,7 +66,17 @@ class PortDefinition(OccurrenceDefinition):
     kind = "PortDefinition"
     def __init__(self, *args, is_conjugated: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.is_conjugated = is_conjugated
+        self._conjugated_flag = bool(is_conjugated)
+
+    @property
+    def is_conjugated(self) -> bool:
+        """Spec ``isConjugated`` (has an owned conjugator); compatibility: also True when the
+        application flagged the port definition as conjugated (assignable)."""
+        return self._conjugated_flag or self.owned_conjugator is not None
+
+    @is_conjugated.setter
+    def is_conjugated(self, value: bool) -> None:
+        self._conjugated_flag = bool(value)
 
 # Port kinds (System Composer): 'data' (directional signals/messages),
 # 'physical' (non-directional physical/conserving connections such as power or

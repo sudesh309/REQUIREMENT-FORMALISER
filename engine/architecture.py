@@ -38,7 +38,9 @@ from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator, NamedTuple, Optional
 
 from kerml.elements import Documentation, Element
-from kerml.features import Feature, FeatureDirection, MultiplicityRange, Redefinition
+from kerml.features import (
+    CrossSubsetting, Feature, FeatureDirection, MultiplicityRange, Redefinition, ReferenceSubsetting,
+)
 from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import effective_applications, stereotypes_on
 from kerml.types import Type
@@ -220,20 +222,12 @@ def edit_owner(composition: Element) -> Element:
 
 def _detach(e: Element, repo=None) -> None:
     """Remove `e` from its owner (owned_elements, memberships) without deleting it."""
-    old = e.owner
-    if old is None:
+    m = e.owning_relationship
+    if m is None:
         return
-    old.owned_elements = [x for x in old.owned_elements if x is not e]
-    if isinstance(old, Namespace):
-        dead = [m for m in old.memberships if m.member is e]
-        if dead:
-            old.memberships = [m for m in old.memberships if m.member is not e]
-            old.owned_relationships = [r for r in old.owned_relationships
-                                       if not any(r is m for m in dead)]
-            if repo is not None:
-                for m in dead:
-                    repo.registry.unregister(m)
-    e.owner = None
+    e.detach()
+    if repo is not None and m.owning_related_element is None:
+        repo.registry.unregister(m)
 
 
 def reparent(e: Element, new_owner: Element, repo=None) -> Element:
@@ -429,8 +423,7 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
             _profiles().freeze_inherited(repo, c)
         except ImportError:
             pass
-    c.feature_typings = []
-    c.owned_relationships = [r for r in c.owned_relationships if r.kind != "FeatureTyping"]
+    c.remove_types()
     if definition is not None:
         c.add_type(definition)
     for conn, ends in affected:
@@ -575,8 +568,7 @@ def update_port(repo, port: Element, *, name: Optional[str] = None, direction: O
 def _set_types(f: Feature, types: list[Type]) -> None:
     if [t for t in f.types] == types:
         return
-    f.feature_typings = []
-    f.owned_relationships = [r for r in f.owned_relationships if r.kind != "FeatureTyping"]
+    f.remove_types()
     for t in types:
         f.add_type(t)
 
@@ -1028,9 +1020,7 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
     for r in roots:
         originals.extend(r.walk())
     for o in originals:
-        c = copy.copy(o)
-        c.element_id = str(uuid.uuid4())
-        mapping[id(o)] = c
+        mapping[id(o)] = o.clone_bare()
 
     def remap(v):
         return mapping.get(id(v), v) if isinstance(v, Element) else v
@@ -1038,17 +1028,11 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
     apps = []
     for o in originals:
         c = mapping[id(o)]
-        c.owner = None
-        c.owned_elements = []
-        for attr in _REL_LISTS:
-            if attr in vars(c):
-                setattr(c, attr, [])
-        c.annotations = []
         c.tool_data = _json_copy(o.tool_data)
         if isinstance(o, Feature):
             c.multiplicity = MultiplicityRange(o.multiplicity.lower, o.multiplicity.upper)
         for attr, value in list(vars(c).items()):
-            if attr in _SKIP_ATTRS:
+            if attr in _SKIP_ATTRS or attr.startswith("_"):
                 continue
             if isinstance(value, Element):
                 setattr(c, attr, remap(value))
@@ -1060,16 +1044,21 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
                 setattr(c, attr, copy.copy(value))
     for o in originals:
         c = mapping[id(o)]
-        for child in o.owned_elements:
-            c.own(mapping[id(child)])
+        for child in o.children:
+            c.own(mapping[id(child)], membership=type(child.owning_relationship))
         if isinstance(o, Feature):
-            for t in o.types:
-                c.add_type(remap(t))
-            for s in o.subsettings:
+            for ft in o.owned_typings:
+                if ft.type is not None:
+                    c.add_type(remap(ft.type))
+            for s in o.owned_subsettings:
                 if s.target is None:
                     continue
                 if isinstance(s, Redefinition):
                     c.redefine(remap(s.target))
+                elif isinstance(s, ReferenceSubsetting):
+                    c.reference_subset(remap(s.target))
+                elif isinstance(s, CrossSubsetting):
+                    c.cross_subset(remap(s.target))
                 else:
                     c.subset(remap(s.target))
         if isinstance(o, Type):
@@ -1085,7 +1074,7 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
                     c.add_import(remap(imp.target), recursive=imp.recursive)
         for a in o.annotations:
             if isinstance(a, Documentation):
-                c.add_annotation(Documentation(body=a.body))
+                c.add_annotation(Documentation(body=a.body, locale=a.locale))
         for app in stereotypes_on(o):
             apps.append((c, app.stereotype, app.own_values()))      # not what it inherits
     return [mapping[id(r)] for r in roots], mapping, apps

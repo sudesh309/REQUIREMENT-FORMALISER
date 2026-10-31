@@ -5,12 +5,12 @@ Object, Performance) that user definitions implicitly specialize.
 """
 from __future__ import annotations
 
-from .namespaces import Package
+from .namespaces import LibraryPackage, Package, register_global_root
 from .types import Behavior, Class, Classifier, DataType, Structure
 
 
 def build_kerml_library() -> Package:
-    root = Package(name="KerML")
+    root = LibraryPackage(name="KerML", is_standard=True)
 
     base = Package(name="Base"); root.own(base)
     scalars = Package(name="ScalarValues"); root.own(scalars)
@@ -43,3 +43,4 @@ def build_kerml_library() -> Package:
 
 
 KERML_LIBRARY: Package = build_kerml_library()
+register_global_root(KERML_LIBRARY)

@@ -444,19 +444,12 @@ def text_hash(req: Element) -> str:
 
 def _detach(repo, e: Element) -> None:
     """Remove `e` from its owner (owned_elements, memberships) without deleting it."""
-    old = e.owner
-    if old is None:
+    m = e.owning_relationship
+    if m is None:
         return
-    old.owned_elements = [x for x in old.owned_elements if x is not e]
-    if isinstance(old, Namespace):
-        dead = [m for m in old.memberships if m.member is e]
-        if dead:
-            old.memberships = [m for m in old.memberships if m.member is not e]
-            old.owned_relationships = [r for r in old.owned_relationships
-                                       if not any(r is m for m in dead)]
-            for m in dead:
-                repo.registry.unregister(m)
-    e.owner = None
+    e.detach()
+    if m.owning_related_element is None:
+        repo.registry.unregister(m)
 
 
 def _place(repo, e: Element, owner: Element, index: Optional[int] = None) -> None:
@@ -465,10 +458,8 @@ def _place(repo, e: Element, owner: Element, index: Optional[int] = None) -> Non
         _detach(repo, e)
         owner.own(e)
         repo.registry.register_tree(e)
-        if isinstance(owner, Namespace):
-            for m in owner.memberships:
-                if m.member is e:
-                    repo.registry.register(m)
+        if e.owning_relationship is not None:
+            repo.registry.register(e.owning_relationship)
     if index is not None:
         items = [x for x in owner.owned_elements if x is not e]
         items.insert(max(0, min(index, len(items))), e)
