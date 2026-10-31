@@ -215,7 +215,7 @@ class SysMLParser(ExpressionParser):
         elif ctx == "state" and t in ("then", "accept", "if", "transition"):
             return self.state_transition_member(i, vis, t, node)
         elif t == "then":
-            return self.then_member(i, vis, ctx)
+            return self.then_member(i, vis, ctx, node)
         elif ctx in ACTION_CONTEXTS and t in ("first", "if", "else"):
             return self.action_succession_member(i, vis, t, ctx)
         else:
@@ -318,7 +318,7 @@ class SysMLParser(ExpressionParser):
             return self.fin(node, i), True
         if is_ref:
             node.props["isReference"] = True
-        if t in USAGE_KEYWORDS:
+        if t in USAGE_KEYWORDS or (t == "not" and k[self.p + 1] == "satisfy"):
             self.usage(node, ctx)
             return self.fin(node, i), True
         if meta:
@@ -428,14 +428,16 @@ class SysMLParser(ExpressionParser):
         EnumeratedValue : EnumerationUsage = 'enum'? Usage"""
         i = self.p
         vis = self.VisibilityIndicator()
+        j = self.p
+        meta = self.prefix_metadata()
         t = self.k[self.p]
-        if t in ("comment", "COMMENT", "locale", "doc", "rep", "language", "@", "metadata", "#"):
-            el = self.AnnotatingElement()
+        if t in ("comment", "COMMENT", "locale", "doc", "rep", "language", "@", "metadata"):
+            el = self.MetadataUsage(j, meta) if t in ("@", "metadata") else self.AnnotatingElement()
             m = self.new("OwningMembership", i, {"ownedRelatedElement": [el]})
         else:
-            j = self.p
+            # EnumeratedValue with UsageExtensionKeywords (GRAMMAR_NOTES.md)
             self.accept("enum")
-            el = Node("EnumerationUsage")
+            el = Node("EnumerationUsage", {"ownedRelationship": meta} if meta else {})
             self.Usage(el)
             self.fin(el, j)
             m = self.new("VariantMembership", i, {"ownedRelatedElement": [el]})
@@ -554,7 +556,7 @@ class SysMLParser(ExpressionParser):
             self.ExhibitStateUsage(node)
         elif t == "include":
             self.IncludeUseCaseUsage(node)
-        elif t == "assert" or t == "satisfy":
+        elif t == "assert" or t == "satisfy" or t == "not":
             self.assert_usage(node)
         elif t == "transition":
             node.type = "TransitionUsage"
@@ -1137,18 +1139,18 @@ class SysMLParser(ExpressionParser):
         ( ownedRelationship += OwnedReferenceSubsetting FeatureSpecializationPart?
         | 'requirement' UsageDeclaration ) ValuePart? ( 'by' ownedRelationship += SatisfactionSubjectMember )?
         RequirementBody"""
-        if self.accept("assert"):
-            if self.accept("not"):
-                node.props["isNegated"] = True
-            if not self.accept("satisfy"):
-                node.type = "AssertConstraintUsage"
-                if self.accept("constraint"):
-                    self.ConstraintUsageDeclaration(node)
-                else:
-                    self.owned_reference(node)
-                self.CalculationBody(node)
-                return
-        else:
+        asserted = self.accept("assert")
+        if self.accept("not"):
+            node.props["isNegated"] = True
+        if asserted and not self.accept("satisfy"):
+            node.type = "AssertConstraintUsage"
+            if self.accept("constraint"):
+                self.ConstraintUsageDeclaration(node)
+            else:
+                self.owned_reference(node)
+            self.CalculationBody(node)
+            return
+        if not asserted:
             self.expect("satisfy")
         node.type = "SatisfyRequirementUsage"
         if self.accept("requirement"):
@@ -1174,7 +1176,7 @@ class SysMLParser(ExpressionParser):
 
     # ---------------------------------------------- successions in actions
 
-    def then_member(self, i: int, vis: str | None, ctx: str) -> Node:
+    def then_member(self, i: int, vis: str | None, ctx: str, node: Node) -> Node:
         """'then' in a body: ActionTargetSuccessionMember (action bodies: 'then' target) or
         SourceSuccessionMember followed by an occurrence usage member.
 
@@ -1197,12 +1199,14 @@ class SysMLParser(ExpressionParser):
         end_member = Node("EndFeatureMembership", {"ownedRelatedElement": [end]}, end.span)
         succ = self.new("SuccessionAsUsage", j, {"ownedRelationship": [end_member]})
         source = self.new("FeatureMembership", i, {"ownedRelatedElement": [succ]})
-        if vis:
-            source.props["visibility"] = vis
-        # ... ownedRelationship += OccurrenceUsageMember (returned to the caller as a second member)
-        self._pending = source
-        el, _ = self.element(ctx)
-        return self._member("FeatureMembership", self.s.index(el.span.start) if False else j, None, el)
+        node.add("ownedRelationship", source)
+        # ... ownedRelationship += OccurrenceUsageMember, whose MemberPrefix follows 'then'
+        k0 = self.p
+        vis = self.VisibilityIndicator() or vis
+        el, is_usage = self.element(ctx)
+        if not is_usage:
+            raise ParseError(k0, "expected a usage after 'then'")
+        return self._member("FeatureMembership", k0, vis, el)
 
     def _member(self, type: str, i: int, vis: str | None, el: Node) -> Node:
         m = Node(type, {"ownedRelatedElement": [el]}, None)
@@ -1381,7 +1385,7 @@ class SysMLParser(ExpressionParser):
         after_entry = bool(rels) and id(rels[-1]) in self._entry_members
         j = self.p
         if t == "then" and not self._then_target():
-            return self.then_member(i, vis, "state")
+            return self.then_member(i, vis, "state", node)
         if after_entry and t in ("then", "if"):
             if t == "then":
                 succ = self.TargetSuccession()
