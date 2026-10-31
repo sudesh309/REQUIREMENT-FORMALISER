@@ -43,12 +43,25 @@ Conventions for this package (also followed by modules that add metaclasses)
 """
 from __future__ import annotations
 
+import random
 import re
 import uuid
 from typing import Any, Callable, Iterable, Iterator, Optional
 
 # Namespace for deterministic ids of elements materialized from values (ADR 0002 decision 5).
 ID_NAMESPACE = uuid.UUID("6f1b6c2e-8a51-5c55-9a3f-7d3c1f0e2b41")
+
+
+_RNG = random.SystemRandom().randrange(1 << 62)
+_rand = random.Random(_RNG)
+
+
+def new_id() -> str:
+    """A random (version 4) UUID string; faster than ``str(uuid.uuid4())``."""
+    n = _rand.getrandbits(128)
+    n = (n & ~(0xF000 << 64) & ~(0xC000 << 48)) | (0x4000 << 64) | (0x8000 << 48)
+    h = "%032x" % n
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
 
 
 def derived_id(owner_id: str, role: str) -> str:
@@ -197,11 +210,11 @@ class Element:
                  declared_short_name: Optional[str] = None,
                  alias_ids: Optional[Iterable[str]] = None,
                  is_implied_included: bool = False):
-        self.element_id: str = element_id or str(uuid.uuid4())
+        self.element_id: str = element_id or new_id()
         self._declared_name: Optional[str] = declared_name if declared_name is not None else name
         self._declared_short_name: Optional[str] = (declared_short_name if declared_short_name is not None
                                                     else short_name)
-        self.alias_ids: list[str] = list(alias_ids or ())
+        self.alias_ids: list[str] = list(alias_ids) if alias_ids else []
         self.is_implied_included: bool = bool(is_implied_included)
         self._owned_relationships: list[Relationship] = []
         self._owning_relationship: Optional[Relationship] = None
@@ -523,7 +536,7 @@ class Element:
         """
         import copy as _copy
         c = _copy.copy(self)
-        c.element_id = element_id or str(uuid.uuid4())
+        c.element_id = element_id or new_id()
         c._owned_relationships = []
         c._owning_relationship = None
         c.owner = None
@@ -531,6 +544,7 @@ class Element:
         c._ext_annotations = []
         c.alias_ids = list(self.alias_ids)
         c.__dict__.pop("_inh_cache", None)
+        c.__dict__.pop("_types_cache", None)
         if isinstance(self, Relationship):
             c._sources = list(self._sources)
             c._targets = list(self._targets)

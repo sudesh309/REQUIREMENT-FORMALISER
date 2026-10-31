@@ -13,6 +13,7 @@ from typing import Any, Callable, TYPE_CHECKING
 from kerml.elements import Documentation, Element, Relationship, is_pure_relationship
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
+from kerml.types import Type
 from kerml.stereotypes import Stereotype, StereotypeTag, stereotypes_on
 from sysmlv2.definitions import StateUsage, TransitionUsage
 from sysmlv2.state_machines import StateMachineDefinition
@@ -26,12 +27,23 @@ def is_pure_relationship_class(cls: type) -> bool:
     return issubclass(cls, Relationship) and not issubclass(cls, Type)
 
 
+_STORED: dict = {}
+
+
 def _stored_attr(e: object, attr: str) -> bool:
     """Is `attr` a stored (assignable) attribute of `e`, not a derived property?"""
-    if not hasattr(e, attr):
-        return False
-    prop = getattr(type(e), attr, None)
-    return not isinstance(prop, property) or prop.fset is not None
+    cls = type(e)
+    kind = _STORED.get((cls, attr))
+    if kind is None:
+        prop = getattr(cls, attr, None)
+        if isinstance(prop, property):
+            kind = 1 if prop.fset is not None else 0
+        else:
+            kind = 2 if prop is None else 1
+        _STORED[(cls, attr)] = kind
+    if kind == 2:
+        return attr in getattr(e, "__dict__", {})
+    return kind == 1
 
 
 def _fqcn(obj: object) -> str:
@@ -103,10 +115,16 @@ def _json_safe(value: Any) -> bool:
 _LIB_PREFIX = "lib:"
 
 
+_LIBS: tuple = ()
+
+
 def _libraries() -> tuple:
-    from kerml.library import KERML_LIBRARY
-    from sysmlv2.library import SYSML_LIBRARY
-    return (KERML_LIBRARY, SYSML_LIBRARY)
+    global _LIBS
+    if not _LIBS:
+        from kerml.library import KERML_LIBRARY
+        from sysmlv2.library import SYSML_LIBRARY
+        _LIBS = (KERML_LIBRARY, SYSML_LIBRARY)
+    return _LIBS
 
 
 def _ref(e: Element) -> str:
@@ -149,7 +167,7 @@ def _encode_element(e: Element) -> dict:
         payload["subsets"] = [_ref(s.target) for s in e.subsettings
                               if s.target and type(s).__name__ == "Subsetting"]
         payload["redefines"] = [_ref(r.target) for r in e.redefinitions if r.target]
-    if hasattr(e, "specializations"):
+    if isinstance(e, Type):
         payload["specializes"] = [
             _ref(s.target) for s in e.specializations if s.target
         ]
@@ -285,9 +303,12 @@ def from_dict(data: dict) -> "Repository":
                              element_id=r["id"])
             # Re-init kind-specific defaults via class' __init__ where possible
             try:
-                cls.__init__(inst, name=r.get("name"))
+                cls.__init__(inst, name=r.get("name"), element_id=r["id"])
             except TypeError:
-                pass
+                try:
+                    cls.__init__(inst, name=r.get("name"))
+                except TypeError:
+                    pass
             inst.element_id = r["id"]
             inst.is_abstract = r.get("is_abstract", False)
         by_id[r["id"]] = inst
@@ -311,12 +332,14 @@ def from_dict(data: dict) -> "Repository":
             inst.is_derived = r.get("is_derived", False)
             inst.is_end = r.get("is_end", False)
             inst.default_value = r.get("default_value")
-            inst.remove_types()
+            if inst._owned_relationships:
+                inst.remove_types()
             for tid in r.get("typed_by", []):
                 tgt = by_id.get(tid)
                 if tgt is not None:
                     inst.add_type(tgt)
-            inst.remove_subsettings()
+            if inst._owned_relationships:
+                inst.remove_subsettings()
             redefined = set(r.get("redefines", []))
             for sid in r.get("subsets", []):
                 tgt = by_id.get(sid)
@@ -327,8 +350,9 @@ def from_dict(data: dict) -> "Repository":
                 tgt = by_id.get(rid)
                 if isinstance(tgt, Feature):
                     inst.redefine(tgt)
-        if hasattr(inst, "specializations"):
-            inst.remove_specializations()
+        if isinstance(inst, Type):
+            if inst._owned_relationships:
+                inst.remove_specializations()
             for sid in r.get("specializes", []):
                 tgt = by_id.get(sid)
                 if tgt is not None:

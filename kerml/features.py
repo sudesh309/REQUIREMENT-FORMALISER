@@ -20,7 +20,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Iterable, Optional
 
-from .elements import Element, Relationship
+from .elements import _EPOCH, Element, Relationship
 from .namespaces import OwningMembership
 from .types import Conjugation, FeatureMembership, Specialization, Type
 
@@ -436,6 +436,15 @@ class Feature(Type):
     def types(self) -> list[Type]:
         """Types of this feature: its typings and those of the features it subsets
         (and of the last feature of its chain), redundant supertypes removed."""
+        cache = self.__dict__.get("_types_cache")
+        epoch = _EPOCH[0]
+        if cache is not None and cache[0] == epoch:
+            return list(cache[1])
+        out = self._compute_types()
+        self.__dict__["_types_cache"] = (epoch, out)
+        return list(out)
+
+    def _compute_types(self) -> list[Type]:
         typings: list = []
         other = False
         for r in self._owned_relationships:
