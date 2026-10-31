@@ -51,9 +51,15 @@ def _fqcn(obj: object) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+_CLASSES: dict[str, type] = {}
+
+
 def _resolve_class(fqcn: str) -> type:
-    mod, _, name = fqcn.rpartition(".")
-    return getattr(importlib.import_module(mod), name)
+    cls = _CLASSES.get(fqcn)
+    if cls is None:
+        mod, _, name = fqcn.rpartition(".")
+        cls = _CLASSES[fqcn] = getattr(importlib.import_module(mod), name)
+    return cls
 
 
 # -- extension codecs ----------------------------------------------------
@@ -213,7 +219,7 @@ def _encode_element(e: Element) -> dict:
             "finals": [s.element_id for s in e.final_states],
         }
     # UI state such as canvas layout; only JSON-able entries are kept.
-    tool_data = {k: v for k, v in e.tool_data.items() if _json_safe(v)}
+    tool_data = {k: v for k, v in (e.__dict__.get("_tool_data") or {}).items() if _json_safe(v)}
     if tool_data:
         payload["tool_data"] = tool_data
     ext = _encode_ext(_CODECS, e)
@@ -299,16 +305,17 @@ def from_dict(data: dict) -> "Repository":
         else:
             cls = _resolve_class(r["class"])
             inst = cls.__new__(cls)
-            Element.__init__(inst, name=r.get("name"), short_name=r.get("short_name"),
-                             element_id=r["id"])
-            # Re-init kind-specific defaults via class' __init__ where possible
+            # Kind-specific defaults via the class' __init__ where possible.
             try:
                 cls.__init__(inst, name=r.get("name"), element_id=r["id"])
             except TypeError:
+                Element.__init__(inst, name=r.get("name"), element_id=r["id"])
                 try:
                     cls.__init__(inst, name=r.get("name"))
                 except TypeError:
                     pass
+            if r.get("short_name") is not None:
+                inst.short_name = r["short_name"]
             inst.element_id = r["id"]
             inst.is_abstract = r.get("is_abstract", False)
         by_id[r["id"]] = inst

@@ -43,6 +43,7 @@ Conventions for this package (also followed by modules that add metaclasses)
 """
 from __future__ import annotations
 
+import hashlib
 import random
 import re
 import uuid
@@ -64,9 +65,20 @@ def new_id() -> str:
     return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
 
 
+_NS_BYTES = ID_NAMESPACE.bytes
+
+
 def derived_id(owner_id: str, role: str) -> str:
-    """Deterministic UUID v5 for a sub-element of `owner_id` playing `role`."""
-    return str(uuid.uuid5(ID_NAMESPACE, f"{owner_id}/{role}"))
+    """Deterministic UUID v5 for a sub-element of `owner_id` playing `role`.
+
+    Same value as ``str(uuid.uuid5(ID_NAMESPACE, f"{owner_id}/{role}"))``, computed
+    without building UUID objects (loading a model derives thousands of them).
+    """
+    d = bytearray(hashlib.sha1(_NS_BYTES + f"{owner_id}/{role}".encode("utf-8")).digest()[:16])
+    d[6] = (d[6] & 0x0F) | 0x50
+    d[8] = (d[8] & 0x3F) | 0x80
+    h = d.hex()
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
 
 
 # A global modification counter: every structural mutation increments it, so
@@ -204,6 +216,28 @@ class Element:
     # Class flags read by the traversal (see the module docstring).
     _annotating = False      # AnnotatingElement
     _extension = False       # kept outside the relationship structure (stereotype applications)
+    # ``_hides_child(rel, child)``: an owner class can hide more of its owned members from
+    # the application tree (a transition's succession); None hides nothing extra.
+    _hides_child = None
+    #: Compatibility properties (with setters) that generic tools (tables, copying) treat
+    #: like stored attributes, in the order they must be assigned.
+    compat_attributes: tuple[str, ...] = ()
+
+    # Defaults kept on the class so that an element only stores what differs (models have
+    # many small elements; memberships and typings outnumber everything else).
+    _declared_name: Optional[str] = None
+    _declared_short_name: Optional[str] = None
+    is_implied_included: bool = False
+    _owned_relationships = ()        # becomes a list when the first relationship is added
+    _owning_relationship = None
+    # Spec ``owner`` (the owning related element of the owning relationship), cached as a
+    # plain attribute and kept in step by the mutation API; never assign it.
+    owner = None
+    _oe = None                       # cache of owned_elements
+    _tc = None                       # cache of the application tree children
+    _ext_annotations = ()            # extension annotations (stereotype applications)
+    # Compatibility: every element has ``is_abstract`` (the spec has it on Type).
+    is_abstract = False
 
     def __init__(self, name: Optional[str] = None, *, short_name: Optional[str] = None,
                  element_id: Optional[str] = None, declared_name: Optional[str] = None,
@@ -211,23 +245,39 @@ class Element:
                  alias_ids: Optional[Iterable[str]] = None,
                  is_implied_included: bool = False):
         self.element_id: str = element_id or new_id()
-        self._declared_name: Optional[str] = declared_name if declared_name is not None else name
-        self._declared_short_name: Optional[str] = (declared_short_name if declared_short_name is not None
-                                                    else short_name)
-        self.alias_ids: list[str] = list(alias_ids) if alias_ids else []
-        self.is_implied_included: bool = bool(is_implied_included)
-        self._owned_relationships: list[Relationship] = []
-        self._owning_relationship: Optional[Relationship] = None
-        # Spec ``owner`` (the owning related element of the owning relationship), cached
-        # as a plain attribute and kept in step by the mutation API; never assign it.
-        self.owner: Optional[Element] = None
-        self._oe: Optional[list] = None      # cache of owned_elements
-        self._tc: Optional[list] = None      # cache of the application tree children
-        self._ext_annotations: list = []     # extension annotations (stereotype applications)
-        # Compatibility: every element has ``is_abstract`` (the spec has it on Type).
-        self.is_abstract = False
-        # Free-form metadata used by tooling (canvas layout, source position, ...).
-        self.tool_data: dict = {}
+        n = declared_name if declared_name is not None else name
+        if n is not None:
+            self._declared_name = n
+        sn = declared_short_name if declared_short_name is not None else short_name
+        if sn is not None:
+            self._declared_short_name = sn
+        if alias_ids:
+            self._alias_ids = list(alias_ids)
+        if is_implied_included:
+            self.is_implied_included = True
+
+    @property
+    def alias_ids(self) -> list[str]:
+        a = self.__dict__.get("_alias_ids")
+        if a is None:
+            a = self._alias_ids = []
+        return a
+
+    @alias_ids.setter
+    def alias_ids(self, value: Iterable[str]) -> None:
+        self._alias_ids = list(value or ())
+
+    @property
+    def tool_data(self) -> dict:
+        """Free-form metadata used by tooling (canvas layout, source position, ...)."""
+        d = self.__dict__.get("_tool_data")
+        if d is None:
+            d = self._tool_data = {}
+        return d
+
+    @tool_data.setter
+    def tool_data(self, value: dict) -> None:
+        self._tool_data = value
 
     # --- metaclass ---------------------------------------------------------
     @classmethod
@@ -328,6 +378,7 @@ class Element:
 
     @owned_relationships.setter
     def owned_relationships(self, value: Iterable["Relationship"]) -> None:
+        self._owned_relationships = list(self._owned_relationships)
         wanted = list(value)
         keep = {id(r) for r in wanted}
         for r in list(self._owned_relationships):
@@ -369,6 +420,7 @@ class Element:
                 self.own(x)
         rank = {id(x): i for i, x in enumerate(wanted)}
         n = len(rank)
+        self._owned_relationships = list(self._owned_relationships)
 
         def key(r: "Relationship") -> int:
             owned = r._owned_related_elements
@@ -464,10 +516,11 @@ class Element:
         tc = self._tc
         if tc is None:
             tc = []
+            hide = self._hides_child
             for r in self._owned_relationships:
                 if r._tree_owns:
                     for x in r._owned_related_elements:
-                        if not x._annotating:
+                        if not x._annotating and (hide is None or not hide(r, x)):
                             tc.append(x)
             self._tc = tc
         return tc
@@ -487,10 +540,13 @@ class Element:
             cur.remove_relationship(rel)
         if rel._owning_relationship is not None:
             rel.detach()
+        lst = self._owned_relationships
+        if lst.__class__ is tuple:
+            lst = self._owned_relationships = []
         if index is None:
-            self._owned_relationships.append(rel)
+            lst.append(rel)
         else:
-            self._owned_relationships.insert(index, rel)
+            lst.insert(index, rel)
         rel._owning_related_element = self
         rel.owner = self
         for x in rel._owned_related_elements:
@@ -537,22 +593,32 @@ class Element:
         import copy as _copy
         c = _copy.copy(self)
         c.element_id = element_id or new_id()
-        c._owned_relationships = []
-        c._owning_relationship = None
-        c.owner = None
-        c._oe = c._tc = None
-        c._ext_annotations = []
-        c.alias_ids = list(self.alias_ids)
+        d = c.__dict__
+        for k in ("_owned_relationships", "_owning_relationship", "owner", "_oe", "_tc",
+                  "_ext_annotations"):
+            d.pop(k, None)
+        if "_alias_ids" in d:
+            c._alias_ids = list(self._alias_ids)
+        if "_tool_data" in d:
+            c._tool_data = dict(self._tool_data)
         c.__dict__.pop("_inh_cache", None)
         c.__dict__.pop("_types_cache", None)
         if isinstance(self, Relationship):
             c._sources = list(self._sources)
             c._targets = list(self._targets)
-            c._owned_related_elements = []
-            c._owning_related_element = None
+            d.pop("_owned_related_elements", None)
+            d.pop("_owning_related_element", None)
         if isinstance(self, AnnotatingElement):
             c._annotated_compat = None
+        c._after_clone()
         return c
+
+    def _is_owned_relationship(self) -> bool:
+        """Is this element a relationship in the owned relationships of an element?"""
+        return False
+
+    def _after_clone(self) -> None:
+        """Hook for :meth:`clone_bare`: give the copy its own private mutable state."""
 
     def own(self, child: "Element") -> "Element":
         """Take ownership of `child`. Only a Namespace can own members."""
@@ -570,7 +636,7 @@ class Element:
         """
         if annotation._extension or not annotation._annotating:
             annotation.annotated_element = self
-            self._ext_annotations.append(annotation)
+            self._ext_annotations = list(self._ext_annotations) + [annotation]
             return annotation
         from .namespaces import Namespace
         if isinstance(self, Namespace):
@@ -660,10 +726,7 @@ def is_pure_relationship(e: Any) -> bool:
     as model elements and keeps pure relationships (memberships, links,
     specializations) out of element lists.
     """
-    if not isinstance(e, Relationship):
-        return False
-    from .types import Type
-    return not isinstance(e, Type)
+    return getattr(e, "_pure_relationship", False)
 
 
 # ---------------------------------------------------------------------------
@@ -692,6 +755,11 @@ class Relationship(Element):
     _tree_owns = False
     _carries_annotation = False
     _dies_with_owned = False
+    # See is_pure_relationship(); Type sets it back to False (connectors, associations).
+    _pure_relationship = True
+    _owned_related_elements = ()     # becomes a list when the first element is owned
+    _owning_related_element = None
+    is_implied = False
 
     def __init__(self, source: Optional[Element] = None, target: Optional[Element] = None, *,
                  sources: Optional[Iterable[Element]] = None,
@@ -706,9 +774,8 @@ class Relationship(Element):
             [source] if source is not None else [])
         self._targets: list[Element] = list(targets) if targets is not None else (
             [target] if target is not None else [])
-        self._owned_related_elements: list[Element] = []
-        self._owning_related_element: Optional[Element] = None
-        self.is_implied: bool = bool(is_implied)
+        if is_implied:
+            self.is_implied = True
 
     # --- related elements ----------------------------------------------------
     @property
@@ -778,6 +845,9 @@ class Relationship(Element):
     def owning_related_element(self) -> Optional[Element]:
         return self._owning_related_element
 
+    def _is_owned_relationship(self) -> bool:
+        return self._owning_related_element is not None
+
     def detach(self) -> None:
         if self._owning_relationship is not None:
             super().detach()
@@ -803,8 +873,12 @@ class Relationship(Element):
         """Own `element` (it leaves its previous owner)."""
         if element._owning_relationship is self:
             return element
-        element.detach()
-        self._owned_related_elements.append(element)
+        if element._owning_relationship is not None or element._is_owned_relationship():
+            element.detach()
+        lst = self._owned_related_elements
+        if lst.__class__ is tuple:
+            lst = self._owned_related_elements = []
+        lst.append(element)
         element._owning_relationship = self
         element.owner = self._owning_related_element
         o = self._owning_related_element

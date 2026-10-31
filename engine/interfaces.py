@@ -46,6 +46,7 @@ from sysmlv2.definitions import (
     EnumerationDefinition, EnumerationUsage, PartDefinition, PartUsage,
     PortDefinition, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .hooks import notify_created, register_created_hook
 from .properties import register_scalar_property
@@ -1438,7 +1439,7 @@ def _connector_owner(a: PortUsage, b: PortUsage) -> Optional[Element]:
             or any(definition_of(c) is holder for c in components_of(comp))
 
     for cand in (ca.owner, ca, cb.owner, cb):
-        if isinstance(cand, (PartDefinition, PartUsage)) and wires(cand, ca) and wires(cand, cb):
+        if (is_part_definition(cand) or is_part_usage(cand)) and wires(cand, ca) and wires(cand, cb):
             return cand
     return ca.owner if isinstance(ca.owner, Namespace) else None
 
@@ -1463,7 +1464,7 @@ def connect_ports(repo, source: Element, target: Element, *, name: Optional[str]
         comp = owning_component(port)
         if comp is owner:
             return {"component": None, "port": port}
-        if isinstance(comp, PartDefinition):
+        if is_part_definition(comp):
             # A definition port is reached through the usage of that definition here.
             comp = next((u for u in components_of(owner) if definition_of(u) is comp), comp)
         return {"component": comp, "port": port}
@@ -1486,7 +1487,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
         return []
     out: list[PortUsage] = []
     scopes = []
-    if isinstance(comp.owner, (PartDefinition, PartUsage)):
+    if (is_part_definition(comp.owner) or is_part_usage(comp.owner)):
         scopes.append(comp.owner)
     scopes.append(comp)
     for scope in scopes:
@@ -1508,7 +1509,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
 
 def create_adapter(repo, parent: Element, name: Optional[str] = None) -> Adapter:
     """Create an Adapter component (with In / Out ports) inside a composition."""
-    if not isinstance(parent, (PartDefinition, PartUsage)):
+    if not (is_part_definition(parent) or is_part_usage(parent)):
         raise InterfaceError("An adapter must be created inside an architecture or component")
     nm = name or _unique_name(parent, "Adapter", 1, always_number=False)
     _check_name(nm, "Adapter name")

@@ -51,6 +51,7 @@ from engine.validator import Severity, ValidationIssue, _REPO_RULES, register_re
 from kerml.elements import Documentation, Element
 from kerml.namespaces import Package
 from sysmlv2.definitions import PartDefinition, PartUsage, PortUsage
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from . import profile as AP
 from . import requirements_lib as RL
@@ -359,11 +360,11 @@ def function_choices(repo) -> list[dict]:
             add(e)
     for arch in sources:
         for c in arch.walk():
-            if isinstance(c, PartUsage) and c is not arch:
+            if is_part_usage(c) and c is not arch:
                 add(c)
     if not out:
         for arch in repo.root_package.walk():
-            if isinstance(arch, PartDefinition) and "function" in (arch.name or "").lower():
+            if is_part_definition(arch) and "function" in (arch.name or "").lower():
                 for c in components_of(arch):
                     add(c)
     return [_ref(e) | {"category": AL.category_of(e)} for e in out]
@@ -471,9 +472,9 @@ def _name(e: Optional[Element]) -> str:
 
 def _item_for(source: Element) -> Optional[Element]:
     """The component whose DAL counts for something that implements a requirement."""
-    if isinstance(source, (PartUsage, PartDefinition)):
+    if (is_part_usage(source) or is_part_definition(source)):
         return source
-    if isinstance(source, PortUsage) and isinstance(source.owner, (PartUsage, PartDefinition)):
+    if isinstance(source, PortUsage) and (is_part_usage(source.owner) or is_part_definition(source.owner)):
         return source.owner
     return None
 
@@ -504,7 +505,7 @@ def _compositions(repo) -> Iterator[Element]:
     """Definitions and inline components: where hosted items are owned (usages of a definition
     share the definition's)."""
     for e in repo.root_package.walk():
-        if isinstance(e, PartDefinition) or (isinstance(e, PartUsage) and definition_of(e) is None):
+        if is_part_definition(e) or (is_part_usage(e) and definition_of(e) is None):
             yield e
 
 

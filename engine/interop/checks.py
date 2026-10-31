@@ -38,6 +38,7 @@ from kerml.elements import Element
 from sysmlv2.definitions import (
     ConnectionUsage, InterfaceDefinition, PartDefinition, PartUsage, PortDefinition, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .common import documentation, in_library, is_profile_content
 
@@ -98,12 +99,12 @@ def _relevant(e: Element) -> bool:
 
 def _structure(e: Element) -> list[Element]:
     return [c for c in e.children
-            if isinstance(c, (PartUsage, PortUsage, ConnectionUsage)) or
+            if (isinstance(c, (PortUsage, ConnectionUsage,)) or is_part_usage(c)) or
             getattr(c, "kind", "").endswith("Usage")]
 
 
 def _is_component(e: Element) -> bool:
-    return isinstance(e, PartUsage) and isinstance(e.owner, (PartDefinition, PartUsage))
+    return is_part_usage(e) and (is_part_definition(e.owner) or is_part_usage(e.owner))
 
 
 def check_element(e: Element) -> Iterator[ValidationIssue]:
@@ -111,30 +112,30 @@ def check_element(e: Element) -> Iterator[ValidationIssue]:
     if not _relevant(e):
         return
     label = e.name or f"<{e.kind}>"
-    if isinstance(e, PartDefinition) or (isinstance(e, PartUsage) and definition_of(e) is None):
-        if not _structure(e) and not (isinstance(e, PartUsage) and e.types):
-            what = "Component" if isinstance(e, PartUsage) else "Architecture"
+    if is_part_definition(e) or (is_part_usage(e) and definition_of(e) is None):
+        if not _structure(e) and not (is_part_usage(e) and e.types):
+            what = "Component" if is_part_usage(e) else "Architecture"
             yield _issue(Severity.INFO, "advisor.empty-composition",
                          f"{what} {label!r} is empty: add components or ports"
-                         + ("" if isinstance(e, PartDefinition) else
+                         + ("" if is_part_definition(e) else
                             ", or reference a definition"), e)
     if _is_component(e) and not ports_of(e) and (components_of(e) or e.types):
         yield _issue(Severity.INFO, "advisor.component-without-ports",
                      f"Component {label!r} has no ports, so it cannot be connected", e)
-    if isinstance(e, (PartDefinition, PartUsage)):
+    if (is_part_definition(e) or is_part_usage(e)):
         yield from _duplicates(e)
     documented = (PartDefinition, PortUsage, PortDefinition, InterfaceDefinition)
     if (isinstance(e, documented) or _is_component(e)) and e.name and not documentation(e):
         what = ("Port" if isinstance(e, PortUsage) else
                 "Interface" if isinstance(e, (PortDefinition, InterfaceDefinition)) else
-                "Component" if isinstance(e, PartUsage) else "Architecture")
+                "Component" if is_part_usage(e) else "Architecture")
         yield _issue(Severity.INFO, "advisor.missing-documentation",
                      f"{what} {label!r} has no documentation", e)
 
 
 def _duplicates(comp: Element) -> Iterator[ValidationIssue]:
     members = components_of(comp) + ports_of(comp)
-    typed_usage = isinstance(comp, PartUsage) and definition_of(comp) is not None
+    typed_usage = is_part_usage(comp) and definition_of(comp) is not None
     groups: dict[str, list[Element]] = {}
     for m in members:
         if m.name:
@@ -159,7 +160,7 @@ def _compositions(repo) -> Iterable[Element]:
     for e in repo.root_package.walk():
         if not _relevant(e):
             continue
-        if isinstance(e, PartDefinition) or (isinstance(e, PartUsage) and definition_of(e) is None):
+        if is_part_definition(e) or (is_part_usage(e) and definition_of(e) is None):
             yield e
 
 

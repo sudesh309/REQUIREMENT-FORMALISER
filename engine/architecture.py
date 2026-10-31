@@ -47,6 +47,7 @@ from kerml.types import Type
 from sysmlv2.definitions import (
     PORT_KINDS, ConnectionUsage, PartDefinition, PartUsage, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 from sysmlv2.state_machines import StateMachineDefinition
 
 from engine.graph_export import register_edge_source
@@ -184,14 +185,14 @@ def sibling_names(e: Element) -> set[str]:
         return set()
     owners = [owner]
     # A usage's own extras share the namespace view with its definition's members.
-    if isinstance(owner, PartUsage):
+    if is_part_usage(owner):
         owners = internal_owners(owner)
     return _names_in(owners, exclude=e)
 
 
 def _usages_of(repo, definition: Element) -> list[PartUsage]:
     return [u for u in repo.root_package.walk()
-            if isinstance(u, PartUsage) and definition_of(u) is definition]
+            if is_part_usage(u) and definition_of(u) is definition]
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ def _usages_of(repo, definition: Element) -> list[PartUsage]:
 def require_composition(e: Optional[Element], what: str = "composition") -> Element:
     if e is None:
         raise _not_found(what)
-    if not isinstance(e, (PartDefinition, PartUsage)):
+    if not (is_part_definition(e) or is_part_usage(e)):
         raise ArchitectureError(f"{e.qualified_name} ({e.kind}) is not an architecture or component")
     return e
 
@@ -247,7 +248,7 @@ def _enclosing_definitions(e: Element) -> set[int]:
     out: set[int] = set()
     node: Optional[Element] = e
     while node is not None:
-        if isinstance(node, PartDefinition):
+        if is_part_definition(node):
             out.add(id(node))
         d = definition_of(node)
         if d is not None:
@@ -258,7 +259,7 @@ def _enclosing_definitions(e: Element) -> set[int]:
 
 def _definitions_reachable(e: Element) -> set[int]:
     out: set[int] = set()
-    if isinstance(e, PartDefinition):
+    if is_part_definition(e):
         out.add(id(e))
     for c, _depth, _parent in component_tree(e):
         d = definition_of(c)
@@ -346,10 +347,10 @@ def add_component(repo, composition: Element, name: Optional[str] = None,
         if name in taken:
             raise _conflict(f"{comp.name} already has a member named {name!r}")
     else:
-        name = unique_name(definition.name if isinstance(definition, PartDefinition) and definition.name
+        name = unique_name(definition.name if is_part_definition(definition) and definition.name
                            else "Component", taken)
     if definition is not None:
-        if not isinstance(definition, PartDefinition):
+        if not is_part_definition(definition):
             raise ArchitectureError(f"{definition.qualified_name} is not a PartDefinition")
         _check_no_cycle(comp, definition)
     lay = clean_box(layout) if layout else None
@@ -373,7 +374,7 @@ def rename(repo, element: Element, name: str) -> Element:
     if name in sibling_names(element):
         owner = element.owner.name if element.owner else "the model"
         raise _conflict(f"{owner} already has a member named {name!r}")
-    if isinstance(element, PortUsage) and isinstance(element.owner, PartDefinition):
+    if isinstance(element, PortUsage) and is_part_definition(element.owner):
         for u in _usages_of(repo, element.owner):
             if name in _names_in([u]):
                 raise _conflict(f"component {u.qualified_name} already has a member named {name!r}")
@@ -385,7 +386,7 @@ def merged_ports(component: Element, definition: Optional[Element]) -> list[tupl
     """The component's own ports that `definition` already has (same name), each paired
     with that definition port: making the component a reference to `definition` merges
     them (see ``set_definition``)."""
-    if not isinstance(definition, PartDefinition):
+    if not is_part_definition(definition):
         return []
     by_name = {q.name: q for q in ports_of(definition) if q.name}
     return [(p, by_name[p.name]) for p in component.children
@@ -407,7 +408,7 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
     c = require_component(component)
     old = definition_of(c)
     if definition is not None:
-        if not isinstance(definition, PartDefinition):
+        if not is_part_definition(definition):
             raise ArchitectureError(f"{definition.qualified_name} is not a PartDefinition")
         _check_no_cycle(c.owner, definition)
     swap = {id(p): q for p, q in merged_ports(c, definition)}
@@ -500,7 +501,7 @@ def add_port(repo, owner: Element, name: Optional[str] = None, direction: Option
     iface = _check_interface(interface)
     target = comp if usage_only else edit_owner(comp)
     taken = member_names(comp)
-    if isinstance(target, PartDefinition):
+    if is_part_definition(target):
         for u in _usages_of(repo, target):
             taken |= _names_in([u])
     if name:
@@ -719,7 +720,7 @@ def _existing_conflict(composition: Element, kind: str, src: Endpoint, dst: Endp
 def connector_problems(conn: ConnectionUsage) -> list[tuple[str, str]]:
     """``[(rule, message), ...]`` for a stored connector (empty when valid)."""
     comp = conn.owner
-    if not isinstance(comp, (PartDefinition, PartUsage)):
+    if not (is_part_definition(comp) or is_part_usage(comp)):
         return []
     ends = connector_ends(conn, comp)
     if len(ends) != 2:
@@ -807,8 +808,8 @@ def _chain(composition: Element, component: Element) -> list[Element]:
     node = component
     while not any(node is c for c in direct):
         parent = node.owner
-        if not isinstance(parent, PartUsage):
-            if isinstance(parent, PartDefinition) and parent is not edit_owner(composition):
+        if not is_part_usage(parent):
+            if is_part_definition(parent) and parent is not edit_owner(composition):
                 raise ArchitectureError(
                     f"{component.name} is inside the referenced definition {parent.name}; connect to a "
                     "port of the reference component instead (or inline it first)")
@@ -853,7 +854,7 @@ def _endpoint(repo, composition: Element, spec: Any, created: list[Element]) -> 
         component, port = spec
     if component is None:
         return (None, resolve_port(composition, port))
-    if not isinstance(component, PartUsage):
+    if not is_part_usage(component):
         raise ArchitectureError(f"{getattr(component, 'qualified_name', component)} is not a component")
     p = resolve_port(component, port)
     if any(component is c for c in components_of(composition)):
@@ -957,7 +958,7 @@ def connect_new_port(repo, composition: Element, source: Any, component: Optiona
         owner = component if component is not None else comp
         target = edit_owner(owner)
         taken = member_names(owner)
-        if isinstance(target, PartDefinition):
+        if is_part_definition(target):
             for u in _usages_of(repo, target):
                 taken |= _names_in([u])
         if port_name:
@@ -1077,6 +1078,20 @@ def clone_forest(roots: list[Element], mapping: Optional[dict] = None
                 c.add_annotation(Documentation(body=a.body, locale=a.locale))
         for app in stereotypes_on(o):
             apps.append((c, app.stereotype, app.own_values()))      # not what it inherits
+    # Compatibility properties over the spec structure (connector ends, transition
+    # source / target / trigger, state actions, requirement text): set them once every
+    # copy is owned, so the structure they build points at the copies.
+    for o in originals:
+        c = mapping[id(o)]
+        for attr in getattr(type(o), "compat_attributes", ()):
+            value = getattr(o, attr)
+            if isinstance(value, list):
+                value = [remap(v) for v in value]
+            elif isinstance(value, tuple):
+                value = tuple(remap(v) for v in value)
+            else:
+                value = remap(value)
+            setattr(c, attr, value)
     return [mapping[id(r)] for r in roots], mapping, apps
 
 
@@ -1299,7 +1314,7 @@ def expand(repo, component: Element) -> list[PartUsage]:
     if definition_of(g) is not None:
         raise ArchitectureError(f"{g.name} is a reference to {definition_of(g).name}; inline it first")
     parent = g.owner
-    inner = [c for c in g.children if isinstance(c, PartUsage)]
+    inner = [c for c in g.children if is_part_usage(c)]
     taken = member_names(parent, exclude=g)
     gbox = effective_box(g, parent)
     ports = [p for p in g.children if isinstance(p, PortUsage)]
@@ -1614,7 +1629,7 @@ def apply_layout(repo, items: list) -> int:
         elif isinstance(e, ConnectionUsage):
             pts = item.get("points")
             planned.append((e, "points", None if pts is None else clean_points(pts)))
-        elif isinstance(e, (PartUsage, PartDefinition)):
+        elif (is_part_usage(e) or is_part_definition(e)):
             planned.append((e, "layout", _merged_box(e, item)))
         else:
             raise ArchitectureError(f"{e.qualified_name} ({e.kind}) has no canvas layout")
@@ -1885,7 +1900,7 @@ def _layout_groups(repo) -> list[tuple[Element, list[PartUsage]]]:
     """Every architecture, definition or inline component with the components it owns."""
     out = []
     for e in repo.root_package.walk():
-        if isinstance(e, (PartDefinition, PartUsage)) and not isinstance(e, PortUsage):
+        if (is_part_definition(e) or is_part_usage(e)) and not isinstance(e, PortUsage):
             owned = [c for c in components_of(e) if c.owner is e]
             if owned:
                 out.append((e, owned))
@@ -2060,7 +2075,7 @@ def connector_view(conn: ConnectionUsage, composition: Element,
         if i >= len(ends):
             return None
         ctx, p = ends[i]
-        if isinstance(p, PartUsage) and not isinstance(p, PortUsage):
+        if is_part_usage(p) and not isinstance(p, PortUsage):
             return {"component_id": p.element_id, "port_id": None}
         return {"component_id": ctx.element_id if ctx is not None else None, "port_id": p.element_id}
 
@@ -2091,7 +2106,7 @@ def breadcrumbs(composition: Element, path: Optional[list[Element]] = None) -> l
             return [{"id": e.element_id, "name": e.name, "kind": e.kind} for e in path]
     chain = [composition]
     node = composition
-    while isinstance(node.owner, (PartUsage, PartDefinition)):
+    while (is_part_usage(node.owner) or is_part_definition(node.owner)):
         node = node.owner
         chain.insert(0, node)
     return [{"id": e.element_id, "name": e.name, "kind": e.kind} for e in chain]
@@ -2109,15 +2124,15 @@ def locate(e: Element) -> Optional[dict]:
     node: Optional[Element] = e
     while node is not None:
         owner = node.owner
-        if isinstance(node, ConnectionUsage) and isinstance(owner, (PartUsage, PartDefinition)):
+        if isinstance(node, ConnectionUsage) and (is_part_usage(owner) or is_part_definition(owner)):
             return {"composition": owner, "select": node}
-        elif isinstance(node, PortUsage) and isinstance(owner, (PartUsage, PartDefinition)):
+        elif isinstance(node, PortUsage) and (is_part_usage(owner) or is_part_definition(owner)):
             if is_component(owner):
                 return {"composition": owner.owner, "select": node}
             return {"composition": owner, "select": node}
         elif is_component(node):
             return {"composition": owner, "select": node}
-        elif isinstance(node, (PartDefinition, PartUsage)):
+        elif (is_part_definition(node) or is_part_usage(node)):
             return {"composition": node, "select": None}
         node = owner
     return None
@@ -2163,7 +2178,7 @@ def model_tree(root: Element, *, decorate: Optional[Callable] = None) -> dict:
             "children": [],
             **_decor(decorate, e),
         }
-        key = id(d) if d is not None else (id(e) if isinstance(e, PartDefinition) else None)
+        key = id(d) if d is not None else (id(e) if is_part_definition(e) else None)
         if key is not None and key in seen:
             out["recursive"] = True
             return out
@@ -2175,15 +2190,15 @@ def model_tree(root: Element, *, decorate: Optional[Callable] = None) -> dict:
 
 def architecture_roots(repo) -> list[PartDefinition]:
     """Part definitions not used as the type of any component (top-level architectures)."""
-    defs = [e for e in repo.root_package.walk() if isinstance(e, PartDefinition)
+    defs = [e for e in repo.root_package.walk() if is_part_definition(e)
             and not isinstance(e, StateMachineDefinition)]
     used = {id(definition_of(u)) for u in repo.root_package.walk()
-            if isinstance(u, PartUsage) and definition_of(u) is not None}
+            if is_part_usage(u) and definition_of(u) is not None}
     return [d for d in defs if id(d) not in used]
 
 
 def part_definitions(repo) -> list[PartDefinition]:
-    return [e for e in repo.root_package.walk() if isinstance(e, PartDefinition)]
+    return [e for e in repo.root_package.walk() if is_part_definition(e)]
 
 
 # ---------------------------------------------------------------------------
@@ -2401,12 +2416,12 @@ def check_repo(repo) -> Iterable[ValidationIssue]:
         if isinstance(e, PortUsage) and e.port_kind not in allowed:
             yield ValidationIssue(Severity.ERROR, "arch.port.kind",
                                   f"{e.port_kind} ports are not allowed in a {t} architecture", e)
-        if isinstance(e, PortUsage) and isinstance(e.owner, PartUsage):
+        if isinstance(e, PortUsage) and is_part_usage(e.owner):
             d = definition_of(e.owner)
             if d is not None and any(p.name == e.name for p in ports_of(d) if p is not e):
                 yield ValidationIssue(Severity.ERROR, "arch.port.unique",
                                       f"port name {e.name!r} is also used by {d.name}", e)
-        if not isinstance(e, ConnectionUsage) or not isinstance(e.owner, (PartDefinition, PartUsage)):
+        if not isinstance(e, ConnectionUsage) or not (is_part_definition(e.owner) or is_part_usage(e.owner)):
             continue
         for rule, msg in connector_problems(e):
             yield ValidationIssue(Severity.ERROR, rule, msg, e)
@@ -2444,7 +2459,7 @@ def _on_created(e: Element, repo) -> None:
     if not e.name:
         return
     if not (is_component(e) or (isinstance(e, PortUsage)
-                                and isinstance(e.owner, (PartDefinition, PartUsage)))):
+                                and (is_part_definition(e.owner) or is_part_usage(e.owner)))):
         return
     taken = sibling_names(e)
     if e.name in taken:

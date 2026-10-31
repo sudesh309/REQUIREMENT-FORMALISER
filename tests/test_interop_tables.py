@@ -13,6 +13,7 @@ from engine.interop.xlsx import safe_xml
 from kerml.features import FeatureDirection
 from kerml.stereotypes import stereotypes_on
 from sysmlv2 import PartUsage
+from sysmlv2.definitions import is_part_usage
 from tests.test_interop_fixtures import avionics_repo
 
 
@@ -325,7 +326,7 @@ class ModelBuilderTests(unittest.TestCase):
         repo = b.build()
         self.assertEqual(repo.name, "IMA")
         cab = repo.resolve("Cabinet")
-        self.assertEqual([c.name for c in cab.owned_elements if isinstance(c, PartUsage)],
+        self.assertEqual([c.name for c in cab.owned_elements if is_part_usage(c)],
                          ["cpm", "iom"])
         conn = repo.resolve("Cabinet::afdx")
         self.assertEqual([e.name for e in conn.ends], ["busOut", "busIn"])

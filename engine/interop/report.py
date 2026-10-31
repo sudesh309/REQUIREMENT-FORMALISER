@@ -38,6 +38,7 @@ from sysmlv2.definitions import (
     ConnectionUsage, PartDefinition, PartUsage, PortUsage, RequirementDefinition,
     RequirementUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .checks import run_model_check
 from .common import (
@@ -128,14 +129,14 @@ def root_architectures(repo) -> list[Element]:
     used = set()
     elements = project_elements(repo)
     for e in elements:
-        if isinstance(e, PartUsage):
+        if is_part_usage(e):
             d = definition_of(e)
             if d is not None:
                 used.add(id(d))
-    roots = [e for e in elements if isinstance(e, PartDefinition) and not is_profile_content(e)
+    roots = [e for e in elements if is_part_definition(e) and not is_profile_content(e)
              and id(e) not in used and components_of(e)]
-    roots += [e for e in elements if isinstance(e, PartUsage) and not
-              isinstance(e.owner, (PartDefinition, PartUsage)) and components_of(e)]
+    roots += [e for e in elements if is_part_usage(e) and not
+              (is_part_definition(e.owner) or is_part_usage(e.owner)) and components_of(e)]
     return roots
 
 
@@ -211,8 +212,8 @@ class _Report:
             t = table_of(e)
             if t:
                 tables[t] = tables.get(t, 0) + 1
-        comps = [e for e in self.elements if isinstance(e, PartUsage)]
-        archs = [e for e in self.elements if isinstance(e, PartDefinition)]
+        comps = [e for e in self.elements if is_part_usage(e)]
+        archs = [e for e in self.elements if is_part_definition(e)]
         reqs = [e for e in self.elements if isinstance(e, (RequirementDefinition, RequirementUsage))]
         cards = [("Architectures / component types", len(archs)), ("Components", len(comps)),
                  ("Ports", tables.get("Ports", 0)), ("Connectors", tables.get("Connections", 0)),
@@ -411,7 +412,7 @@ class _Report:
                     seen.add(id(comp))
                     order.append(comp)
         for e in self.elements:
-            if isinstance(e, (PartDefinition, PartUsage)) and id(e) not in seen \
+            if (is_part_definition(e) or is_part_usage(e)) and id(e) not in seen \
                     and not is_profile_content(e):
                 seen.add(id(e))
                 order.append(e)

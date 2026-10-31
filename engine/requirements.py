@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Optional
 
-from kerml.elements import Documentation, Element, Relationship
+from kerml.elements import Documentation, Element, Relationship, is_pure_relationship
 from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import stereotypes_on
 from sysmlv2.definitions import (
@@ -80,6 +80,7 @@ from sysmlv2.definitions import (
     StateDefinition, StateUsage, TransitionUsage,
     VerificationCaseDefinition, VerificationCaseUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 from sysmlv2.relationships import DeriveRequirement, Refine, Satisfy, Trace, Verify
 
 from .diagram import requirements as _dot_requirements
@@ -214,7 +215,7 @@ def _is_interface(e: Any) -> bool:
 CATEGORIES: list[tuple[str, str, Any]] = [
     ("requirements", "Requirements", is_requirement),
     ("test-cases", "Test cases", is_test_case),
-    ("components", "Components", lambda e: isinstance(e, (PartUsage, PartDefinition))),
+    ("components", "Components", lambda e: (is_part_usage(e) or is_part_definition(e))),
     ("ports", "Ports", lambda e: isinstance(e, PortUsage)),
     ("connectors", "Connectors", lambda e: isinstance(e, ConnectionUsage)),
     ("interfaces", "Interfaces", _is_interface),
@@ -1920,7 +1921,7 @@ def _encode_links(repo) -> Optional[dict]:
 def _decode_links(repo, data: dict, by_id: dict) -> None:
     for rel_id, base in (data or {}).items():
         rel = repo.by_id(rel_id)
-        if isinstance(rel, Relationship) and isinstance(base, dict):
+        if is_pure_relationship(rel) and isinstance(base, dict):
             rel.req_baseline = {"source": base.get("source"), "target": base.get("target")}
 
 

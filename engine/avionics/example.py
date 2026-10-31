@@ -36,6 +36,7 @@ from engine.hooks import notify_created
 from kerml.elements import Documentation, Element
 from kerml.namespaces import Package
 from sysmlv2.definitions import PartDefinition
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.state_machines import attach_state_machine
 
 from . import interfaces_lib
@@ -969,7 +970,7 @@ def _build_allocations(b: _Builder, func: dict, logical: dict, phys: dict, hw: d
 def _all_compositions(repo) -> list[Element]:
     out = []
     for e in repo.root_package.walk():
-        if isinstance(e, PartDefinition) or e.kind == "PartUsage":
+        if is_part_definition(e) or e.kind == "PartUsage":
             if [c for c in A.components_of(e) if c.owner is e]:
                 out.append(e)
     return out
@@ -1024,13 +1025,13 @@ def describe_example(repo: Repository) -> dict:
     """Counts of what the example holds (used by the template list, the HTTP API and the tests)."""
     from engine.structure import component_tree
     arch = next((e for e in repo.root_package.children
-                 if isinstance(e, PartDefinition) and e.name == "PhysicalArchitecture"), None)
+                 if is_part_definition(e) and e.name == "PhysicalArchitecture"), None)
     sets = rq.requirement_sets(repo)
     reqs = rq.all_requirements(repo)
     tests = [e for e in repo.root_package.walk() if rq.is_test_case(e)]
     return {
         "architectures": [e.name for e in repo.root_package.children
-                          if isinstance(e, PartDefinition) and e.name.endswith("Architecture")],
+                          if is_part_definition(e) and e.name.endswith("Architecture")],
         "physical_components": len(list(component_tree(arch))) - 1 if arch else 0,
         "requirement_sets": [s.name for s in sets], "requirements": len(reqs), "test_cases": len(tests),
         "fha_rows": len(SF.fha_rows(repo)),

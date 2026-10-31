@@ -185,6 +185,17 @@ class FeatureMembership(OwningMembership):
 
 
 _FLIP = {"in": "out", "out": "in"}
+_LAZY: dict = {}      # classes of later modules, imported on first use
+
+
+def _load_lazy() -> None:
+    from .behaviors import ParameterMembership, ReturnParameterMembership
+    from .features import EndFeatureMembership, Feature, FeatureDirection
+    _LAZY["Feature"] = Feature
+    _LAZY["End"] = EndFeatureMembership
+    _LAZY["NONE"] = FeatureDirection.NONE
+    _LAZY["Param"] = ParameterMembership
+    _LAZY["Return"] = ReturnParameterMembership
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +208,8 @@ class Type(Namespace):
     kind = "Type"
     # True for Behaviors and Steps: their directed features are parameters.
     _is_behavioral = False
+    # A type that is also a relationship (Connector, Association) is not a *pure* one.
+    _pure_relationship = False
 
     def __init__(self, name: Optional[str] = None, *, is_abstract: bool = False,
                  is_sufficient: bool = False, **kwargs):
@@ -206,16 +219,17 @@ class Type(Namespace):
 
     # --- membership choice -------------------------------------------------------
     def _membership_class_for(self, child: Element) -> type:
-        from .features import EndFeatureMembership, Feature, FeatureDirection
-        if not isinstance(child, Feature):
+        k = _LAZY
+        if not k:
+            _load_lazy()
+        if not isinstance(child, k["Feature"]):
             return OwningMembership
         if child.is_end:
-            return EndFeatureMembership
-        if self._is_behavioral and child.direction is not FeatureDirection.NONE:
-            from .behaviors import ParameterMembership, ReturnParameterMembership
+            return k["End"]
+        if self._is_behavioral and child.direction is not k["NONE"]:
             if getattr(child, "parameter_kind", None) == "return":
-                return ReturnParameterMembership
-            return ParameterMembership
+                return k["Return"]
+            return k["Param"]
         return FeatureMembership
 
     # --- specialization ------------------------------------------------------------

@@ -61,6 +61,7 @@ from sysmlv2 import (
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.relationships import Satisfy, Verify
 from sysmlv2.state_machines import (
     StateMachineDefinition, StateMachineRunner, attach_state_machine,
@@ -303,7 +304,7 @@ def tool_create_requirement(name: str,
         rel = create_link("stakeholder", r, s)
         SESSION.repo.registry.register(rel)
         if hasattr(r, "stakeholders"):
-            r.stakeholders.append(s)
+            r.add_stakeholder(s)
     for ref in actors or []:
         a = SESSION.find(ref)
         if a is None:
@@ -311,7 +312,7 @@ def tool_create_requirement(name: str,
         rel = create_link("actor", r, a)
         SESSION.repo.registry.register(rel)
         if hasattr(r, "actors"):
-            r.actors.append(a)
+            r.add_actor(a)
     return _ok(SESSION.element_summary(r))
 
 
@@ -395,7 +396,7 @@ def tool_export_graph(format: str = "turtle") -> dict:
 def tool_export_diagram(kind: str = "bdd", target: Optional[str] = None) -> dict:
     if kind == "ibd":
         t = SESSION.find(target) if target else None
-        if not isinstance(t, PartDefinition):
+        if not is_part_definition(t):
             return _err("ibd requires a PartDefinition target")
         return _ok({"kind": "ibd", "format": "dot", "text": ibd_dot(t)})
     root = SESSION.find(target) if target else SESSION.repo.root_package
@@ -412,7 +413,7 @@ def _resolve_sm(ref: str) -> StateMachineDefinition | None:
     e = SESSION.find(ref)
     if isinstance(e, StateMachineDefinition):
         return e
-    if isinstance(e, PartDefinition):
+    if is_part_definition(e):
         sms = state_machines_of(e)
         return sms[0] if sms else None
     return None
@@ -420,7 +421,7 @@ def _resolve_sm(ref: str) -> StateMachineDefinition | None:
 
 def tool_attach_state_machine(part: str, name: str) -> dict:
     p = SESSION.find(part)
-    if not isinstance(p, PartDefinition):
+    if not is_part_definition(p):
         return _err(f"{part!r} is not a PartDefinition")
     sm = attach_state_machine(p, name)
     SESSION.repo.registry.register_tree(sm)

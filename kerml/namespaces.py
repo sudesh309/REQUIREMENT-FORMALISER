@@ -55,15 +55,21 @@ class Membership(Relationship):
 
     kind = "Membership"
     _dies_with_owned = True
+    _visibility = PUBLIC
+    _member_name: Optional[str] = None
+    _member_short_name: Optional[str] = None
 
     def __init__(self, namespace: Optional["Namespace"] = None, member: Optional[Element] = None, *,
                  visibility: str = PUBLIC, alias: Optional[str] = None,
                  member_name: Optional[str] = None, member_short_name: Optional[str] = None,
                  **kwargs):
         super().__init__(source=namespace, target=member, **kwargs)
-        self._visibility = _check_visibility(visibility)
-        self._member_name: Optional[str] = member_name if member_name is not None else alias
-        self._member_short_name: Optional[str] = member_short_name
+        if visibility != PUBLIC:
+            self._visibility = _check_visibility(visibility)
+        if member_name is not None or alias is not None:
+            self._member_name = member_name if member_name is not None else alias
+        if member_short_name is not None:
+            self._member_short_name = member_short_name
 
     @property
     def visibility(self) -> str:

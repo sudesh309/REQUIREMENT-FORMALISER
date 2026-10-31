@@ -35,7 +35,10 @@ def _with_dependents(root: Element, element: Element) -> list[Element]:
         for e in root.walk():
             if id(e) in removed:
                 continue
+            # A connector cannot stand once a feature its ends reference (directly or as a
+            # link of the chain ``context.port``) is gone; nor a transition without its states.
             anchors = list(getattr(e, "ends", None) or [])
+            anchors += list(getattr(e, "end_contexts", None) or ())
             anchors += [getattr(e, "transition_source", None), getattr(e, "transition_target", None)]
             if any(a is not None and id(a) in removed for a in anchors):
                 doomed.append(e)

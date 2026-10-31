@@ -33,12 +33,13 @@ from kerml.elements import Element
 from sysmlv2.definitions import (
     ConnectionUsage, PartDefinition, PartUsage, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 
 def definition_of(component: Element) -> Optional[PartDefinition]:
     """The PartDefinition a component usage is typed by (None for inline components)."""
-    if isinstance(component, PartUsage):
-        return next((t for t in component.types if isinstance(t, PartDefinition)), None)
+    if is_part_usage(component):
+        return next((t for t in component.types if is_part_definition(t)), None)
     return None
 
 
@@ -55,7 +56,7 @@ def components_of(composition: Element) -> list[PartUsage]:
     """Direct sub-components of an architecture or component."""
     out: list[PartUsage] = []
     for owner in _internal_owners(composition):
-        out += [c for c in owner.children if isinstance(c, PartUsage)]
+        out += [c for c in owner.children if is_part_usage(c)]
     return out
 
 
@@ -96,12 +97,12 @@ def component_tree(root: Element, *, _depth: int = 0, _parent: Optional[Element]
 
 def owning_component(port: PortUsage) -> Optional[Element]:
     """The component or architecture that owns a port."""
-    return port.owner if isinstance(port.owner, (PartUsage, PartDefinition)) else None
+    return port.owner if (is_part_usage(port.owner) or is_part_definition(port.owner)) else None
 
 
 def is_component(e: Element) -> bool:
     """True for a PartUsage that sits inside an architecture or another component."""
-    return isinstance(e, PartUsage) and isinstance(e.owner, (PartUsage, PartDefinition))
+    return is_part_usage(e) and (is_part_usage(e.owner) or is_part_definition(e.owner))
 
 
 def internal_owners(composition: Element) -> list[Element]:

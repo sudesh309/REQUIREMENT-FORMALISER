@@ -41,6 +41,7 @@ from sysmlv2.definitions import (
     ConnectionUsage, PartDefinition, PartUsage, PortUsage,
     StateDefinition, StateUsage, TransitionUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from . import graph_export
 from .graph_export import register_edge_source
@@ -187,7 +188,7 @@ def category_of(e: Optional[Element]) -> Optional[str]:
     kind = getattr(e, "kind", "") or ""
     if "Function" in kind and "Element" not in kind:
         return "function"
-    if isinstance(e, (PartUsage, PartDefinition)):
+    if (is_part_usage(e) or is_part_definition(e)):
         return "component"
     if isinstance(e, PortUsage):
         return "port"
@@ -237,7 +238,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
 
     def visit_function(f: Element, depth: int, parent_key: str) -> None:
         row = emit(f, depth, parent_key, "function")
-        subs = [x for x in f.children if is_function(x) and not isinstance(x, PartUsage)]
+        subs = [x for x in f.children if is_function(x) and not is_part_usage(x)]
         row["leaf"] = not subs
         for s in subs:
             visit_function(s, depth + 1, row["key"])
@@ -249,7 +250,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
             owners.append(d)
         for o in owners:
             for c in o.children:
-                if not isinstance(c, (PartUsage, PartDefinition)) and category_of(c) == "function":
+                if not (is_part_usage(c) or is_part_definition(c)) and category_of(c) == "function":
                     visit_function(c, depth, parent_key)
         for p in ports_of(comp):
             emit(p, depth, parent_key, "port")
@@ -274,7 +275,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
             if isinstance(c, Package):
                 header = emit(c, depth, parent_key, None)
                 visit_package(c, depth + 1, header["key"])
-            elif isinstance(c, (PartDefinition, PartUsage)):
+            elif (is_part_definition(c) or is_part_usage(c)):
                 visit_component(c, depth, parent_key, frozenset())
             elif category_of(c) == "function":
                 visit_function(c, depth, parent_key)
@@ -283,7 +284,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
             elif isinstance(c, ConnectionUsage):
                 emit(c, depth, parent_key, "connector")
 
-    if isinstance(arch, (PartDefinition, PartUsage)):
+    if (is_part_definition(arch) or is_part_usage(arch)):
         visit_internals(arch, 0, "", frozenset({id(arch)}))
     elif isinstance(arch, Namespace):
         visit_package(arch, 0, "")
@@ -307,7 +308,7 @@ def architecture_candidates(repo: Any) -> list[dict]:
             continue
         if any(_is_allocation_container(a) for a in _ancestors(e)):
             continue
-        is_arch = isinstance(e, PartDefinition) and not isinstance(e.owner, (PartDefinition, PartUsage))
+        is_arch = is_part_definition(e) and not (is_part_definition(e.owner) or is_part_usage(e.owner))
         if is_arch or (isinstance(e, Package) and type(e) is Package):
             out.append({"id": e.element_id, "name": e.name or f"<{e.kind}>", "kind": e.kind,
                         "qualified_name": e.qualified_name})
@@ -324,7 +325,7 @@ def _ancestors(e: Element) -> Iterator[Element]:
 def _check_architecture(repo: Any, e: Optional[Element], role: str) -> Element:
     if e is None:
         raise AllocationError(f"{role} architecture not found", 404)
-    if not (isinstance(e, PartDefinition) or type(e) is Package) or _is_allocation_container(e):
+    if not (is_part_definition(e) or type(e) is Package) or _is_allocation_container(e):
         raise AllocationError(
             f"{role} architecture must be an architecture (PartDefinition) or a Package, "
             f"not {e.kind} {e.qualified_name!r}")

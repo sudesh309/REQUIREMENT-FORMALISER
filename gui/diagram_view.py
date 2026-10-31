@@ -23,6 +23,7 @@ from sysmlv2.definitions import (
     ConnectionUsage, Definition, PartDefinition, PortUsage, RequirementDefinition,
     StateUsage, TransitionUsage, Usage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.state_machines import StateMachineDefinition, state_machines_of
 
 
@@ -75,7 +76,7 @@ class DiagramView(ttk.Frame):
         self._element_target = element
         if isinstance(element, StateMachineDefinition):
             self._mode.set("StateMachine")
-        elif isinstance(element, PartDefinition):
+        elif is_part_definition(element):
             # If the part owns a state machine, default to that view.
             sms = state_machines_of(element)
             if sms:
@@ -93,7 +94,7 @@ class DiagramView(ttk.Frame):
         mode = self._mode.get()
         if mode == "BDD":
             self._draw_bdd(root)
-        elif mode == "IBD" and isinstance(self._element_target, PartDefinition):
+        elif mode == "IBD" and is_part_definition(self._element_target):
             self._draw_ibd(self._element_target)
         elif mode == "IBD":
             self.canvas.create_text(20, 20, anchor="nw",
@@ -101,7 +102,7 @@ class DiagramView(ttk.Frame):
                                     fill="#666")
         elif mode == "StateMachine":
             sm = self._element_target if isinstance(self._element_target, StateMachineDefinition) else None
-            if sm is None and isinstance(self._element_target, PartDefinition):
+            if sm is None and is_part_definition(self._element_target):
                 sms = state_machines_of(self._element_target)
                 sm = sms[0] if sms else None
             if sm is None:
@@ -163,7 +164,7 @@ class DiagramView(ttk.Frame):
                 if s.target and s.target.element_id in coords:
                     self._arrow(coords[d.element_id], coords[s.target.element_id],
                                 label="«specializes»")
-            if isinstance(d, PartDefinition):
+            if is_part_definition(d):
                 for u in d.owned_features:
                     if isinstance(u, ConnectionUsage):
                         continue
@@ -297,12 +298,12 @@ class DiagramView(ttk.Frame):
         try:
             if mode == "BDD":
                 dot = bdd(root)
-            elif mode == "IBD" and isinstance(self._element_target, PartDefinition):
+            elif mode == "IBD" and is_part_definition(self._element_target):
                 dot = ibd_dot(self._element_target)
             elif mode == "StateMachine":
                 sm = self._element_target if isinstance(self._element_target, StateMachineDefinition) else (
                     state_machines_of(self._element_target)[0]
-                    if isinstance(self._element_target, PartDefinition)
+                    if is_part_definition(self._element_target)
                     and state_machines_of(self._element_target) else None
                 )
                 if sm is None:

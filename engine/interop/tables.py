@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator, Optional
 
 from engine import profiles as P
-from kerml.elements import Element, Relationship
+from kerml.elements import Element, Relationship, is_pure_relationship
 from kerml.features import Feature, FeatureDirection
 from kerml.namespaces import Package
 from kerml.stereotypes import (
@@ -54,10 +54,11 @@ from sysmlv2.definitions import (
     ConnectionUsage, Definition, InterfaceDefinition, PartDefinition, PartUsage,
     PortDefinition, PortUsage, RequirementDefinition, RequirementUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .common import (
     InteropError, cell_text, class_default, class_for_kind, coerce_like, decode_untyped_cell,
-    documentation, extra_attributes, find_stereotype, format_multiplicity, in_library,
+    documentation, extra_attributes, find_stereotype, format_multiplicity, in_library, is_settable,
     is_profile_content, link_kind_name, model_links, move_element, new_element,
     parse_direction, parse_multiplicity, project_elements, relative_qname, resolve_qname,
     set_documentation, set_feature_types, set_specializations,
@@ -167,7 +168,7 @@ def table_of(e: Element) -> Optional[str]:
         return "Connections"
     if isinstance(e, PortUsage):
         return "Ports"
-    if isinstance(e, (PartDefinition, PartUsage)):
+    if (is_part_definition(e) or is_part_usage(e)):
         return "Components"
     if isinstance(e, (RequirementDefinition, RequirementUsage)):
         return "Requirements"
@@ -238,7 +239,7 @@ def _element_row(repo, e: Element, table: str) -> dict[str, Any]:
         for name, v in a.values.items():
             row[f"{a.stereotype.full_name}.{name}"] = v
     for attr in REFERENCE_ATTRIBUTES:
-        if not hasattr(e, attr):
+        if not is_settable(e, attr):
             continue
         v = getattr(e, attr)
         if isinstance(v, Element):
@@ -635,7 +636,7 @@ class _Importer:
             if spec is not None and spec.element is not None:
                 return spec.element
             hit = self.repo.by_id(ident)
-            if hit is not None and not isinstance(hit, Relationship):
+            if hit is not None and not is_pure_relationship(hit):
                 return hit
         if name:
             return resolve_qname(self.repo, name)
@@ -694,7 +695,7 @@ class _Importer:
                 if existing is self.repo.root_package or ident in self.root_ids:
                     errors.append(f"{where}: ID {ident!r} is the project root")
                     continue
-                if isinstance(existing, Relationship):
+                if is_pure_relationship(existing):
                     errors.append(f"{where}: ID {ident!r} belongs to a link, not an element")
                     continue
                 if existing is not None and type(existing) is not cls:
@@ -728,7 +729,7 @@ class _Importer:
             parent = self.repo.by_id(pid) if pid else None
             if parent is None and not pid and _text(row.get("Parent")):
                 parent = resolve_qname(self.repo, _text(row.get("Parent")))
-            if (pid and pid in component_ids) or isinstance(parent, (PartDefinition, PartUsage)):
+            if (pid and pid in component_ids) or (is_part_definition(parent) or is_part_usage(parent)):
                 return "PartUsage"
             return "PartDefinition"
         if table == "Interfaces":
@@ -1179,7 +1180,7 @@ class _Importer:
             self._set_ends(spec)
         for attr in REFERENCE_ATTRIBUTES:
             col = f"{attr} ID"
-            if col not in spec.row or not hasattr(e, attr):
+            if col not in spec.row or not is_settable(e, attr):
                 continue
             current = getattr(e, attr)
             if not (current is None or isinstance(current, (Element, list))):
@@ -1224,7 +1225,7 @@ class _Importer:
             # The context is the sub-component usage an end is reached through; a
             # boundary port of the composition itself (or a definition) has none.
             composition = e.owner
-            ctx = [comp if isinstance(comp, PartUsage) and comp is not composition else None
+            ctx = [comp if is_part_usage(comp) and comp is not composition else None
                    for comp in comps]
             e.end_contexts = tuple(ctx) if any(c is not None for c in ctx) else ()  # type: ignore[attr-defined]
 
@@ -1333,9 +1334,9 @@ class _Importer:
                 raise InteropError(f"{where}: {missing} {ref!r} not found")
             ident = _text(row.get("ID"))
             existing = self.repo.by_id(ident) if ident else None
-            if existing is not None and not isinstance(existing, Relationship):
+            if existing is not None and not is_pure_relationship(existing):
                 raise InteropError(f"{where}: ID {ident!r} belongs to an element, not a link")
-            if isinstance(existing, Relationship):
+            if is_pure_relationship(existing):
                 if type(existing) is lk.cls and existing.source is src and existing.target is tgt:
                     self.report.links_unchanged += 1
                     continue
@@ -1386,7 +1387,7 @@ class _Importer:
         if self.restore:
             # The sheet lists all tool data of the project: elements without rows have none.
             for e in self.repo.root_package.walk():
-                if not isinstance(e, Relationship):
+                if not is_pure_relationship(e):
                     e.tool_data = dict(data[id(e)][1]) if id(e) in data else {}
             return
         for key, (e, values) in data.items():

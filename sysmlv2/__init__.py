@@ -29,6 +29,12 @@ from .definitions import (
     ParameterDefinition, ParameterUsage,
     MetadataDefinition, MetadataUsage,
     OccurrenceDefinition, OccurrenceUsage,
+    ReferenceUsage, ConnectorAsUsage, AcceptActionUsage, CaseDefinition, CaseUsage,
+)
+from .memberships import (
+    SubjectMembership, ActorMembership, StakeholderMembership, RequirementConstraintMembership,
+    TransitionFeatureMembership, StateSubactionMembership, Expose, MembershipExpose,
+    NamespaceExpose, TriggerInvocationExpression,
 )
 from .relationships import (
     Satisfy, Verify, Refine, Trace, DeriveRequirement, Copy,
@@ -67,6 +73,10 @@ __all__ = [
     "ParameterDefinition", "ParameterUsage",
     "MetadataDefinition", "MetadataUsage",
     "OccurrenceDefinition", "OccurrenceUsage",
+    "ReferenceUsage", "ConnectorAsUsage", "AcceptActionUsage", "CaseDefinition", "CaseUsage",
+    "SubjectMembership", "ActorMembership", "StakeholderMembership",
+    "RequirementConstraintMembership", "TransitionFeatureMembership", "StateSubactionMembership",
+    "Expose", "MembershipExpose", "NamespaceExpose", "TriggerInvocationExpression",
     "Satisfy", "Verify", "Refine", "Trace", "DeriveRequirement", "Copy",
     "Allocation", "SubjectOf", "StakeholderOf", "ActorOf", "FramedConcern",
     "ParameterBinding", "AssumeConstraint", "RequireConstraint", "Exposes",
