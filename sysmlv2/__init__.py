@@ -41,6 +41,23 @@ from .state_machines import (
 )
 from .library import SYSML_LIBRARY, build_sysml_library
 from . import metamodel  # noqa: F401,E402 - registers the SysML metaclasses
+from .actions import (
+    EventOccurrenceUsage, PerformActionUsage, ExhibitStateUsage, SendActionUsage,
+    AssignmentActionUsage, TerminateActionUsage, IfActionUsage, LoopActionUsage,
+    WhileLoopActionUsage, ForLoopActionUsage, ControlNode, DecisionNode, ForkNode, JoinNode,
+    MergeNode,
+)
+from .ports import ConjugatedPortDefinition, PortConjugation, ConjugatedPortTyping
+from .flows import (
+    FlowDefinition, FlowUsage, SuccessionFlowUsage, BindingConnectorAsUsage, SuccessionAsUsage,
+)
+from .cases import (
+    AssertConstraintUsage, SatisfyRequirementUsage, FramedConcernMembership,
+    RequirementVerificationMembership, ObjectiveMembership, IncludeUseCaseUsage,
+)
+from .views import RenderingDefinition, RenderingUsage, ViewRenderingMembership
+from .variability import VariantMembership
+from . import derived  # noqa: F401,E402 - installs the generated SysML derived properties (last)
 
 __all__ = [
     "Definition", "Usage",
@@ -73,4 +90,14 @@ __all__ = [
     "StateMachineDefinition", "EventDefinition", "EventUsage",
     "StateMachineRunner", "attach_state_machine", "state_machines_of",
     "SYSML_LIBRARY", "build_sysml_library",
+    "EventOccurrenceUsage", "PerformActionUsage", "ExhibitStateUsage", "SendActionUsage",
+    "AssignmentActionUsage", "TerminateActionUsage", "IfActionUsage", "LoopActionUsage",
+    "WhileLoopActionUsage", "ForLoopActionUsage", "ControlNode", "DecisionNode", "ForkNode",
+    "JoinNode", "MergeNode",
+    "ConjugatedPortDefinition", "PortConjugation", "ConjugatedPortTyping",
+    "FlowDefinition", "FlowUsage", "SuccessionFlowUsage", "BindingConnectorAsUsage",
+    "SuccessionAsUsage",
+    "AssertConstraintUsage", "SatisfyRequirementUsage", "FramedConcernMembership",
+    "RequirementVerificationMembership", "ObjectiveMembership", "IncludeUseCaseUsage",
+    "RenderingDefinition", "RenderingUsage", "ViewRenderingMembership", "VariantMembership",
 ]

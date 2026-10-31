@@ -345,14 +345,25 @@ def installed(language: Optional[str] = None) -> list[Installed]:
 
 
 def report() -> dict[str, str]:
-    """``Metaclass::property`` -> why no property was installed (no class, no rule, not generated)."""
+    """``Metaclass::property`` -> why no property was installed (no class, no rule, not generated).
+
+    Properties that the class implements by now (in its body or as an
+    attribute of a new instance) are left out.
+    """
     out = {}
     for spec, why in _SKIPPED.items():
         owner, _, _name = spec.rpartition("::")
         cls = class_for(owner)
         p = _prop(spec)
-        if cls is not None and p is not None and _defined(cls, mm.python_name(p)) is not _MISSING:
-            continue
+        if cls is not None and p is not None:
+            name = mm.python_name(p)
+            if _defined(cls, name) is not _MISSING:
+                continue
+            try:
+                if name in vars(cls()):
+                    continue
+            except Exception:  # noqa: BLE001 - a class needing arguments is reported as is
+                pass
         out[spec] = why
     return dict(sorted(out.items()))
 
@@ -401,6 +412,16 @@ def _association_target_types(self) -> list:
     return out
 
 
+def _feature_reference_referent(self):
+    """Spec ``FeatureReferenceExpression::referent``: the member of the first owned membership
+    that is not a ParameterMembership, if it is a Feature."""
+    from .behaviors import ParameterMembership
+    from .features import Feature
+    m = next((m for m in self.owned_memberships if not isinstance(m, ParameterMembership)), None)
+    el = m.member_element if m is not None else None
+    return el if isinstance(el, Feature) else None
+
+
 def _expression_result(self):
     """Spec ``Expression::result``: the parameter owned (possibly by a supertype) through a
     ReturnParameterMembership."""
@@ -414,6 +435,7 @@ KERML_EXPLICIT: dict[str, Callable] = {
     "Association::sourceType": _association_source_type,
     "Association::targetType": _association_target_types,
     "Expression::result": _expression_result,
+    "FeatureReferenceExpression::referent": _feature_reference_referent,
 }
 
 #: KerML derived properties the type filter must not generate.
