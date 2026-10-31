@@ -105,13 +105,6 @@ class BaseParser:
             return p
         raise self.error(f"expected {self._show(kind)}", (kind,))
 
-    def expect_word(self, word: str) -> None:
-        """A contextual word (``typed``, ``defined``) that is not reserved: a NAME token."""
-        if self.k[self.p] == "NAME" and self.v[self.p] == word:
-            self.p += 1
-            return
-        raise self.error(f"expected '{word}'", (word,))
-
     def error(self, message: str, expected: tuple[str, ...] = ()) -> ParseError:
         """A ParseError at the current token, with what was found appended."""
         return ParseError(self.p, f"{message}, found {self.describe(self.p)}", expected)
@@ -583,14 +576,10 @@ class BaseParser:
 
     # ------------------------------------------------------- specializations
 
-    def owned_chain(self, i: int) -> Node:
-        """OwnedFeatureChain : Feature = ownedRelationship += OwnedFeatureChaining
-        ( '.' ownedRelationship += OwnedFeatureChaining )+   (the first QualifiedName is parsed)"""
-        return self.FeatureChain(i)
-
     def FeatureChain(self, i: int) -> Node:
         """FeatureChain : Feature = ownedRelationship += OwnedFeatureChaining
-        ( '.' ownedRelationship += OwnedFeatureChaining )+"""
+        ( '.' ownedRelationship += OwnedFeatureChaining )+
+        (also OwnedFeatureChain; parsed again from token ``i``, where the first QualifiedName starts)"""
         p = self.p
         self.p = i
         first = self.OwnedFeatureChaining()

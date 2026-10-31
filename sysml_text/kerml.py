@@ -744,9 +744,10 @@ class KerMLParser(ExpressionParser):
         self.TypeBody(node)
         return self.fin(node, i)
 
-    def _specific_or_chain(self, node: Node, prop: str) -> None:
+    def _type_or_chain(self, node: Node, prop: str) -> None:
         """SpecificType : Specialization = specific = [QualifiedName]
-        | specific += OwnedFeatureChain { ownedRelatedElement += specific }"""
+        | specific += OwnedFeatureChain { ownedRelatedElement += specific }
+        (and GeneralType alike), assigning ``prop``: GRAMMAR_NOTES.md section 5"""
         i = self.p
         ref = self.QualifiedName()
         if self.k[self.p] == "." and self.scan_qn(self.p + 1) > 0:
@@ -781,10 +782,10 @@ class KerMLParser(ExpressionParser):
         self.p += 1
         if t == "subtype":
             # Specialization
-            self._specific_or_chain(node, "specific")
+            self._type_or_chain(node, "specific")
             if not self.accept(":>"):
                 self.expect("specializes")
-            self._general_into(node, "general")
+            self._type_or_chain(node, "general")
         elif t == "subclassifier":
             # Subclassification = ... 'subclassifier' subclassifier = [QualifiedName]
             # SPECIALIZES superclassifier = [QualifiedName] RelationshipBody
@@ -799,41 +800,41 @@ class KerMLParser(ExpressionParser):
             node.props["typedFeature"] = self.QualifiedName()
             if not self.typed_by():
                 raise self.error("expected ':' or 'typed by'")
-            self._general_into(node, "type")
+            self._type_or_chain(node, "type")
         elif t == "subset":
             # Subsetting = ... 'subset' SpecificType SUBSETS GeneralType RelationshipBody
             node.type = "Subsetting"
-            self._specific_or_chain(node, "subsettingFeature")
+            self._type_or_chain(node, "subsettingFeature")
             if not self.accept(":>"):
                 self.expect("subsets")
-            self._general_into(node, "subsettedFeature")
+            self._type_or_chain(node, "subsettedFeature")
         elif t == "redefinition":
             # Redefinition = ... 'redefinition' SpecificType REDEFINES GeneralType RelationshipBody
             node.type = "Redefinition"
-            self._specific_or_chain(node, "redefiningFeature")
+            self._type_or_chain(node, "redefiningFeature")
             if not self.accept(":>>"):
                 self.expect("redefines")
-            self._general_into(node, "redefinedFeature")
+            self._type_or_chain(node, "redefinedFeature")
         elif t == "conjugate":
             # Conjugation = ( 'conjugation' Identification )? 'conjugate' ( conjugatedType = [QualifiedName]
             # | conjugatedType = FeatureChain ) CONJUGATES ( originalType = ... ) RelationshipBody
             node.type = "Conjugation"
-            self._specific_or_chain(node, "conjugatedType")
+            self._type_or_chain(node, "conjugatedType")
             if not self.accept("~"):
                 self.expect("conjugates")
-            self._general_into(node, "originalType")
+            self._type_or_chain(node, "originalType")
         elif t == "disjoint":
             # Disjoining = ( 'disjoining' Identification )? 'disjoint' typeDisjoined 'from' disjoiningType
             node.type = "Disjoining"
-            self._specific_or_chain(node, "typeDisjoined")
+            self._type_or_chain(node, "typeDisjoined")
             self.expect("from")
-            self._general_into(node, "disjoiningType")
+            self._type_or_chain(node, "disjoiningType")
         elif t == "inverse":
             # FeatureInverting = ( 'inverting' Identification? )? 'inverse' featureInverted 'of' invertingFeature
             node.type = "FeatureInverting"
-            self._specific_or_chain(node, "featureInverted")
+            self._type_or_chain(node, "featureInverted")
             self.expect("of")
-            self._general_into(node, "invertingFeature")
+            self._type_or_chain(node, "invertingFeature")
         elif t == "featuring":
             # TypeFeaturing = 'featuring' ( Identification 'of' )? featureOfType = [QualifiedName]
             # 'by' featuringType = [QualifiedName] RelationshipBody
@@ -848,9 +849,6 @@ class KerMLParser(ExpressionParser):
             raise self.error("expected a relationship")
         self.RelationshipBody(node)
         return self.fin(node, i)
-
-    def _general_into(self, node: Node, prop: str) -> None:
-        self._specific_or_chain(node, prop)
 
     def RelationshipOwnedElement(self, node: Node) -> None:
         """RelationshipOwnedElement : Relationship = ownedRelatedElement += OwnedRelatedElement

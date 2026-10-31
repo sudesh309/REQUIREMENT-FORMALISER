@@ -229,42 +229,34 @@ def _scalar(v) -> str:
 
 
 def dump(node: Node, indent: str = "  ", spans: bool = False) -> str:
-    """A readable multi-line rendering of a tree, for debugging and tests."""
+    """A readable multi-line rendering of a tree, for debugging and tests.
+
+    Each node is a line with its type and scalar properties (refs as ``-> name``);
+    owned relationships are indented below it, owned related elements marked ``+``.
+    A non-ownership property that holds a node (an owned feature chain used as a
+    relationship end) is shown as ``prop: <Type>``."""
     lines: list[str] = []
-    seen: set[int] = set()
 
     def visit(n: Node, depth: int, label: str) -> None:
         pad = indent * depth
-        head = f"{pad}{label}{n.type}"
-        if spans and n.span is not None:
-            head += f" @{n.span.line}:{n.span.col}"
-        if id(n) in seen:
-            lines.append(head + " (see above)")
-            return
-        seen.add(id(n))
         scalars = []
-        children = []
+        refs = []
         for k, v in n.props.items():
+            if k in OWNERSHIP:
+                continue
             if isinstance(v, Node):
-                children.append((k, [v]))
-            elif isinstance(v, list) and any(isinstance(x, Node) for x in v):
-                children.append((k, v))
+                refs.append(f"{pad}{indent}{k}: <{v.type}>")
             elif isinstance(v, list):
                 scalars.append(f"{k}=[{', '.join(_scalar(x) for x in v)}]")
             else:
                 scalars.append(f"{k}={_scalar(v)}")
-        lines.append(head + (" " + " ".join(scalars) if scalars else ""))
-        for k, vs in children:
-            for v in vs:
-                if isinstance(v, Node):
-                    if k not in OWNERSHIP and id(v) in seen:
-                        lines.append(f"{pad}{indent}{k}: {v.type} (owned)")
-                    elif k in OWNERSHIP:
-                        visit(v, depth + 1, "" if k == "ownedRelationship" else "+ ")
-                    else:
-                        lines.append(f"{pad}{indent}{k}: {v.type} (owned)")
-                else:
-                    lines.append(f"{pad}{indent}{k}: {_scalar(v)}")
+        where = f" @{n.span.line}:{n.span.col}" if spans and n.span is not None else ""
+        lines.append(f"{pad}{label}{n.type}{where}" + (" " + " ".join(scalars) if scalars else ""))
+        lines.extend(refs)
+        for child in n.props.get("ownedRelationship", ()):
+            visit(child, depth + 1, "")
+        for child in n.props.get("ownedRelatedElement", ()):
+            visit(child, depth + 1, "+ ")
 
     visit(node, 0, "")
     return "\n".join(lines)
