@@ -1023,13 +1023,13 @@ def build_example(name: str = EXAMPLE_NAME, *, repo: Optional[Repository] = None
 def describe_example(repo: Repository) -> dict:
     """Counts of what the example holds (used by the template list, the HTTP API and the tests)."""
     from engine.structure import component_tree
-    arch = next((e for e in repo.root_package.owned_elements
+    arch = next((e for e in repo.root_package.children
                  if isinstance(e, PartDefinition) and e.name == "PhysicalArchitecture"), None)
     sets = rq.requirement_sets(repo)
     reqs = rq.all_requirements(repo)
     tests = [e for e in repo.root_package.walk() if rq.is_test_case(e)]
     return {
-        "architectures": [e.name for e in repo.root_package.owned_elements
+        "architectures": [e.name for e in repo.root_package.children
                           if isinstance(e, PartDefinition) and e.name.endswith("Architecture")],
         "physical_components": len(list(component_tree(arch))) - 1 if arch else 0,
         "requirement_sets": [s.name for s in sets], "requirements": len(reqs), "test_cases": len(tests),

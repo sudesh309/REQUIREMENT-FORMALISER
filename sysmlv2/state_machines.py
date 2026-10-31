@@ -103,12 +103,12 @@ class StateMachineDefinition(StateDefinition):
     # --- queries ---------------------------------------------------------
     @property
     def states(self) -> list[StateUsage]:
-        return [s for s in self.owned_elements
+        return [s for s in self.children
                 if isinstance(s, StateUsage) and not isinstance(s, TransitionUsage)]
 
     @property
     def transitions(self) -> list[TransitionUsage]:
-        return [t for t in self.owned_elements if isinstance(t, TransitionUsage)]
+        return [t for t in self.children if isinstance(t, TransitionUsage)]
 
     def transitions_from(self, state: StateUsage) -> list[TransitionUsage]:
         return [t for t in self.transitions if t.transition_source is state]
@@ -281,7 +281,7 @@ def attach_state_machine(part: PartDefinition, name: str,
 
 def state_machines_of(part: PartDefinition) -> list[StateMachineDefinition]:
     """Return every state machine owned (directly) by `part`."""
-    return [e for e in part.owned_elements if isinstance(e, StateMachineDefinition)]
+    return [e for e in part.children if isinstance(e, StateMachineDefinition)]
 
 
 # Patch PartDefinition with convenience methods so callers can write

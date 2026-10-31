@@ -432,7 +432,7 @@ class _Report:
             if doc:
                 self.w(f'<p class="doc">{_e(doc)}</p>')
             rows = []
-            for el in [c for c in i.owned_elements if isinstance(c, Feature)]:
+            for el in [c for c in i.children if isinstance(c, Feature)]:
                 extras = extra_attributes(el)
                 details = "; ".join(f"{k} = {v}" for k, v in sorted(extras.items())
                                     if not isinstance(v, (list, dict)))

@@ -95,7 +95,7 @@ def api_new_avionics(req: dict):
     template = b.get("template") or "blank"
     repo = templates.create_project(template, b.get("name"))
     session().set_repo(repo)
-    roots = [{"id": e.element_id, "name": e.name} for e in repo.root_package.owned_elements
+    roots = [{"id": e.element_id, "name": e.name} for e in repo.root_package.children
              if e.kind == "PartDefinition" and (e.name or "").endswith("Architecture")]
     main = next((r for r in roots if r["name"] == "PhysicalArchitecture"), roots[0] if roots else None)
     return ok({"name": repo.name, "root_id": repo.root_package.element_id, "template": template,

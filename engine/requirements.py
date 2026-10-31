@@ -399,11 +399,11 @@ def _unique_name(base: str, taken: set) -> str:
 def _sibling_names(owner: Optional[Element], exclude: Optional[Element] = None) -> set:
     if owner is None:
         return set()
-    return {c.name for c in owner.owned_elements if c is not exclude and c.name}
+    return {c.name for c in owner.children if c is not exclude and c.name}
 
 
 def child_requirements(e: Element) -> list[Element]:
-    return [c for c in e.owned_elements if is_requirement(c)]
+    return [c for c in e.children if is_requirement(c)]
 
 
 def set_of(e: Element) -> Optional[RequirementSet]:
@@ -461,13 +461,13 @@ def _place(repo, e: Element, owner: Element, index: Optional[int] = None) -> Non
         if e.owning_relationship is not None:
             repo.registry.register(e.owning_relationship)
     if index is not None:
-        items = [x for x in owner.owned_elements if x is not e]
+        items = [x for x in owner.children if x is not e]
         items.insert(max(0, min(index, len(items))), e)
         owner.owned_elements = items
 
 
 def _position(owner: Element, e: Element) -> int:
-    return next(i for i, x in enumerate(owner.owned_elements) if x is e)
+    return next(i for i, x in enumerate(owner.children) if x is e)
 
 
 # ---------------------------------------------------------------------------
@@ -1869,7 +1869,7 @@ def report_html(repo, rset: Optional[RequirementSet] = None) -> str:
 # ---------------------------------------------------------------------------
 
 def _req_order(e: Element) -> Optional[list[str]]:
-    kids = [c.element_id for c in e.owned_elements if is_requirement(c) or is_test_case(c)]
+    kids = [c.element_id for c in e.children if is_requirement(c) or is_test_case(c)]
     return kids if len(kids) > 1 else None
 
 
@@ -1901,8 +1901,8 @@ def _decode(e: Element, data: dict, by_id: dict) -> None:
     if order:
         wanted = [by_id[i] for i in order if i in by_id and by_id[i].owner is e]
         wanted_ids = {id(x) for x in wanted}
-        slots = [k for k, x in enumerate(e.owned_elements) if id(x) in wanted_ids]
-        items = list(e.owned_elements)
+        slots = [k for k, x in enumerate(e.children) if id(x) in wanted_ids]
+        items = list(e.children)
         for slot, x in zip(slots, wanted):
             items[slot] = x
         e.owned_elements = items

@@ -189,7 +189,7 @@ def fha_table(repo, *, create: bool = False) -> Optional[FhaTable]:
     hit = next((e for e in repo.root_package.walk() if isinstance(e, FhaTable)), None)
     if hit is not None or not create:
         return hit
-    taken = {c.name for c in repo.root_package.owned_elements}
+    taken = {c.name for c in repo.root_package.children}
     name = TABLE_NAME if TABLE_NAME not in taken else next(
         f"{TABLE_NAME}_{i}" for i in range(2, 100) if f"{TABLE_NAME}_{i}" not in taken)
     table = FhaTable(name=name)
@@ -201,7 +201,7 @@ def fha_table(repo, *, create: bool = False) -> Optional[FhaTable]:
 
 def fha_rows(repo) -> list[FhaEntry]:
     table = fha_table(repo)
-    return [e for e in table.owned_elements if isinstance(e, FhaEntry)] if table is not None else []
+    return [e for e in table.children if isinstance(e, FhaEntry)] if table is not None else []
 
 
 def find_row(repo, ref: Any) -> FhaEntry:
@@ -219,7 +219,7 @@ def find_row(repo, ref: Any) -> FhaEntry:
 
 def _next_id(table: FhaTable) -> str:
     highest = 0
-    for e in table.owned_elements:
+    for e in table.children:
         name = e.name or ""
         if name.startswith(ID_PREFIX) and name[len(ID_PREFIX):].isdigit():
             highest = max(highest, int(name[len(ID_PREFIX):]))
@@ -253,7 +253,7 @@ def add_fha_row(repo, *, failure_condition: str, function: Any = None, flight_ph
     ident = _clean_text(fha_id, "id") if fha_id else _next_id(table)
     if not ident:
         ident = _next_id(table)
-    if any(c.name == ident for c in table.owned_elements):
+    if any(c.name == ident for c in table.children):
         raise FhaError(f"{ident} already exists in {table.name}", 409)
     row = FhaEntry(name=ident)
     row.failure_condition, row.flight_phase, row.classification = text, phases, cls
@@ -292,7 +292,7 @@ def update_fha_row(repo, row: Any, *, failure_condition: Any = _UNSET, function:
         ident = _clean_text(fha_id, "id")
         if not ident:
             raise FhaError("an FHA id cannot be empty")
-        if any(c is not r and c.name == ident for c in (r.owner.owned_elements if r.owner else [])):
+        if any(c is not r and c.name == ident for c in (r.owner.children if r.owner else [])):
             raise FhaError(f"{ident} already exists in {r.owner.name}", 409)
         changes["name"] = ident
     for attr, value in changes.items():

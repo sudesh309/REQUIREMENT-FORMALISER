@@ -385,7 +385,7 @@ def from_dict(data: dict) -> "Repository":
     # Pass 3: cross-references that need every element to exist and be owned first.
     for st in by_id.values():
         if isinstance(st, Stereotype):
-            st.tags = [c for c in st.owned_elements if isinstance(c, StereotypeTag)]
+            st.tags = [c for c in st.children if isinstance(c, StereotypeTag)]
     for r in raw:
         inst = by_id[r["id"]]
         if "state_machine" in r:

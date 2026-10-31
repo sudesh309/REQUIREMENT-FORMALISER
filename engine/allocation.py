@@ -109,7 +109,7 @@ class AllocationSet(Namespace):
 
     @property
     def scenarios(self) -> list["AllocationScenario"]:
-        return [c for c in self.owned_elements if isinstance(c, AllocationScenario)]
+        return [c for c in self.children if isinstance(c, AllocationScenario)]
 
     # The set's description is its documentation, so the generic inspector edits it too.
     @property
@@ -132,7 +132,7 @@ class AllocationScenario(Namespace):
 
     @property
     def allocations(self) -> list["ArchitectureAllocation"]:
-        return [c for c in self.owned_elements if isinstance(c, ArchitectureAllocation)]
+        return [c for c in self.children if isinstance(c, ArchitectureAllocation)]
 
 
 class ArchitectureAllocation(Element):
@@ -237,7 +237,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
 
     def visit_function(f: Element, depth: int, parent_key: str) -> None:
         row = emit(f, depth, parent_key, "function")
-        subs = [x for x in f.owned_elements if is_function(x) and not isinstance(x, PartUsage)]
+        subs = [x for x in f.children if is_function(x) and not isinstance(x, PartUsage)]
         row["leaf"] = not subs
         for s in subs:
             visit_function(s, depth + 1, row["key"])
@@ -248,7 +248,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
         if d is not None and d is not comp:
             owners.append(d)
         for o in owners:
-            for c in o.owned_elements:
+            for c in o.children:
                 if not isinstance(c, (PartUsage, PartDefinition)) and category_of(c) == "function":
                     visit_function(c, depth, parent_key)
         for p in ports_of(comp):
@@ -268,7 +268,7 @@ def architecture_rows(arch: Optional[Element]) -> list[dict]:
         visit_internals(c, depth + 1, row["key"], seen | {key})
 
     def visit_package(p: Element, depth: int, parent_key: str) -> None:
-        for c in p.owned_elements:
+        for c in p.children:
             if _is_allocation_container(c):
                 continue
             if isinstance(c, Package):
@@ -340,7 +340,7 @@ def _check_architecture(repo: Any, e: Optional[Element], role: str) -> Element:
 def allocations_package(repo: Any, *, create: bool = False) -> Optional[Package]:
     """The project's 'Allocations' package (created and announced when `create`)."""
     root = repo.root_package
-    pkg = next((c for c in root.owned_elements
+    pkg = next((c for c in root.children
                 if isinstance(c, Package) and c.name == ALLOCATIONS_PACKAGE), None)
     if pkg is None and create:
         pkg = Package(name=ALLOCATIONS_PACKAGE)

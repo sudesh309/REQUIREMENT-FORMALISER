@@ -418,7 +418,7 @@ class _XmiImporter:
                 direction = self.flow_direction(ident, "FlowPort")
             else:
                 iface = next(iter(port.types), None)
-                dirs = {f.direction for f in getattr(iface, "owned_elements", [])
+                dirs = {f.direction for f in getattr(iface, "children", [])
                         if isinstance(f, Feature) and f.direction is not FeatureDirection.NONE}
                 if not dirs:
                     direction = FeatureDirection.NONE
@@ -528,12 +528,12 @@ class _XmiImporter:
         otherwise one is created in the package ``XMI_Profiles`` with untyped
         properties for the XMI attributes.
         """
-        holder = next((p for p in self.repo.root_package.owned_elements
+        holder = next((p for p in self.repo.root_package.children
                        if isinstance(p, Package) and p.name == "XMI_Profiles"), None)
         profile = ns.rstrip("/#").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
         st = self._existing_stereotype(f"{profile}.{tag}") if profile else None
         if st is None and holder is not None:
-            st = next((s for s in holder.owned_elements
+            st = next((s for s in holder.children
                        if isinstance(s, Stereotype) and s.name == tag), None)
         if st is None:
             st = self._existing_stereotype(tag)

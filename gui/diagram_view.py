@@ -182,7 +182,7 @@ class DiagramView(ttk.Frame):
             y = 80
             coords[u.element_id] = self._draw_node(x, y, _node_label(u), kind=u.kind)
             # Ports on the right edge.
-            ports = [s for s in u.owned_elements if isinstance(s, PortUsage)]
+            ports = [s for s in u.children if isinstance(s, PortUsage)]
             for j, p in enumerate(ports):
                 px = x + NODE_W
                 py = y + 20 + j * 20

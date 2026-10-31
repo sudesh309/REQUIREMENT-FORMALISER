@@ -167,7 +167,7 @@ def check_name(name: Any) -> str:
 def _names_in(owners: Iterable[Element], exclude: Optional[Element] = None) -> set[str]:
     out: set[str] = set()
     for o in owners:
-        for x in o.owned_elements:
+        for x in o.children:
             if x is not exclude and x.name:
                 out.add(x.name)
     return out
@@ -287,7 +287,7 @@ def model_package(e: Element) -> Element:
 
 def owns_state_machine(e: Element) -> bool:
     return any(isinstance(x, StateMachineDefinition)
-               for o in internal_owners(e) for x in o.owned_elements)
+               for o in internal_owners(e) for x in o.children)
 
 
 def component_badges(e: Element) -> list[str]:
@@ -388,7 +388,7 @@ def merged_ports(component: Element, definition: Optional[Element]) -> list[tupl
     if not isinstance(definition, PartDefinition):
         return []
     by_name = {q.name: q for q in ports_of(definition) if q.name}
-    return [(p, by_name[p.name]) for p in component.owned_elements
+    return [(p, by_name[p.name]) for p in component.children
             if isinstance(p, PortUsage) and p.name in by_name]
 
 
@@ -436,7 +436,7 @@ def set_definition(repo, component: Element, definition: Optional[Element]) -> P
             new_ends.append((ctx, p))
         conn.ends = [p for _, p in new_ends]
         conn.end_contexts = tuple(ctx for ctx, _ in new_ends)
-    for p in [x for x in c.owned_elements if id(x) in swap]:
+    for p in [x for x in c.children if id(x) in swap]:
         repo.remove(p)                       # no connector ends on it any more
     return c
 
@@ -1299,10 +1299,10 @@ def expand(repo, component: Element) -> list[PartUsage]:
     if definition_of(g) is not None:
         raise ArchitectureError(f"{g.name} is a reference to {definition_of(g).name}; inline it first")
     parent = g.owner
-    inner = [c for c in g.owned_elements if isinstance(c, PartUsage)]
+    inner = [c for c in g.children if isinstance(c, PartUsage)]
     taken = member_names(parent, exclude=g)
     gbox = effective_box(g, parent)
-    ports = [p for p in g.owned_elements if isinstance(p, PortUsage)]
+    ports = [p for p in g.children if isinstance(p, PortUsage)]
     port_ids = {id(p) for p in ports}
 
     outer: dict[int, list] = {}
@@ -1313,7 +1313,7 @@ def expand(repo, component: Element) -> list[PartUsage]:
                 outer.setdefault(id(p), []).append((c, ends[1 - i], i))
     inner_by_port: dict[int, list] = {}
     inner_plain: list[ConnectionUsage] = []
-    for c in [x for x in g.owned_elements if isinstance(x, ConnectionUsage)]:
+    for c in [x for x in g.children if isinstance(x, ConnectionUsage)]:
         ends = connector_ends(c, g)
         hit = False
         for i, (ctx, p) in enumerate(ends):
@@ -1383,7 +1383,7 @@ def save_as_reference(repo, component: Element, name: Optional[str] = None,
         name = unique_name(_capitalized(c.name or "Component"), taken)
     d = PartDefinition(name=name)
     pkg.own(d)
-    for x in list(c.owned_elements):
+    for x in list(c.children):
         if isinstance(x, ConnectionUsage):
             x.end_contexts = tuple(ctx for ctx, _ in connector_ends(x, c))
         reparent(x, d, repo)
@@ -1398,7 +1398,7 @@ def inline_component(repo, component: Element) -> PartUsage:
     d = definition_of(c)
     if d is None:
         raise ArchitectureError(f"{c.name} is already an inline component")
-    items = [x for x in d.owned_elements]
+    items = [x for x in d.children]
     for x in items:
         if isinstance(x, ConnectionUsage):
             x.end_contexts = tuple(ctx for ctx, _ in connector_ends(x, d))

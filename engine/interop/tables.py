@@ -830,7 +830,7 @@ class _Importer:
                                "not to a profile")
         if hit is None and pname:
             hit = next((p for p in P.profiles_of(self.repo) if p.name == pname), None) or \
-                next((e for e in self.repo.root_package.owned_elements
+                next((e for e in self.repo.root_package.children
                       if isinstance(e, Package) and e.name == pname), None)
         if hit is None:
             if not pname:
@@ -876,7 +876,7 @@ class _Importer:
         if st is not None and not isinstance(st, Stereotype):
             raise InteropError(f"{where}: Stereotype ID {sid!r} belongs to a {st.kind}")
         if st is None and sname:
-            st = next((s for s in container.owned_elements
+            st = next((s for s in container.children
                        if isinstance(s, Stereotype) and s.name == sname), None)
         category, classes = self._applies_to(row.get("Applies To"))
         style = _parse_pairs(row.get("Style"), STYLE_KEYS, "Style")
@@ -1083,7 +1083,7 @@ class _Importer:
         from engine.serializer import _encode_element
         e = spec.existing
         if e is None and not spec.id:
-            e = next((c for c in owner.owned_elements
+            e = next((c for c in owner.children
                       if c.name == spec.name and type(c) is spec.cls), None)
         if e is not None:
             spec.before = _snapshot(e)
@@ -1460,7 +1460,7 @@ class _Importer:
                     edges.setdefault(id(owner), {}).setdefault(id(ca[i]), set()).add(id(cb[i]))
         import heapq
         for key, owner in owners.items():
-            children = list(owner.owned_elements)
+            children = list(owner.children)
             pos = {id(c): n for n, c in enumerate(children)}
             succ = edges[key]
             indeg = dict.fromkeys(pos, 0)

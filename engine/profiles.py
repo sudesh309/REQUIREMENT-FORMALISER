@@ -217,7 +217,7 @@ def _check_profile_name(repo, name: Any, owner: Package, exclude: Optional[Eleme
     for p in profiles_of(repo):
         if p is not exclude and p.name == name:
             raise _conflict(f"a profile named {name!r} already exists")
-    for m in owner.owned_elements:
+    for m in owner.children:
         if m is not exclude and m.name == name:
             raise _conflict(f"{owner.qualified_name} already contains an element named {name!r}")
     return name
@@ -300,7 +300,7 @@ def delete_profile(repo, profile: Profile) -> dict:
 
 def _check_stereotype_name(profile: Element, name: Any, exclude: Optional[Element] = None) -> str:
     name = _wrap(check_name, name, "stereotype name")
-    for m in profile.owned_elements:
+    for m in profile.children:
         if m is not exclude and m.name == name:
             raise _conflict(f"profile {profile.name!r} already has a stereotype named {name!r}")
     return name
@@ -662,7 +662,7 @@ def move_property(repo, tag: StereotypeTag, index: int) -> StereotypeTag:
     st.tags.insert(index, tag)
     # Keep the containment order in step so the tree and saved files agree.
     in_tags = {id(t) for t in st.tags}
-    others = [c for c in st.owned_elements if id(c) not in in_tags]
+    others = [c for c in st.children if id(c) not in in_tags]
     st.owned_elements = others + [t for t in st.tags if t.owner is st]
     return tag
 

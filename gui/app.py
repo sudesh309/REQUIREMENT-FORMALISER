@@ -241,7 +241,7 @@ class SysMLApp(tk.Tk):
         text = e.name or f"<{e.kind}>"
         self.tree.insert(parent_iid, "end", iid=iid, text=text, values=(e.kind,), open=True)
         self.element_by_iid[iid] = e
-        for child in e.owned_elements:
+        for child in e.children:
             self._insert_node(iid, child)
         return iid
 

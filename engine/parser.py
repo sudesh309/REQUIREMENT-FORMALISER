@@ -163,7 +163,7 @@ def _feature_named(owner, name: str):
     from kerml.types import Type
     scopes = [owner] + list(getattr(owner, "types", []) or [])
     for scope in scopes:
-        hit = next((e for e in scope.owned_elements if e.name == name), None)
+        hit = next((e for e in scope.children if e.name == name), None)
         if hit is not None:
             return hit
         if isinstance(scope, Type):

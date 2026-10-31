@@ -127,7 +127,7 @@ def _doc_text(text: str) -> str:
 
 
 def _children(e: Element) -> list[Element]:
-    return [c for c in e.owned_elements if not isinstance(c, (Relationship, Annotation))]
+    return [c for c in e.children if not isinstance(c, (Relationship, Annotation))]
 
 
 def _resolve_in_scope(start: Optional[Element], qname: str) -> Optional[Element]:
@@ -440,7 +440,7 @@ class _Writer:
         if o is not None and o.owner is not None and any(o.owner is x for x in owners) \
                 and o.name and end.name:
             return [o.name, end.name]
-        for c in [x for x in (comp.owned_elements if comp else []) if isinstance(x, PartUsage)]:
+        for c in [x for x in (comp.children if comp else []) if isinstance(x, PartUsage)]:
             if any(t is end.owner for t in c.types) and c.name and end.name:
                 return [c.name, end.name]
         return None

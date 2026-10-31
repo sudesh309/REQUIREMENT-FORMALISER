@@ -55,7 +55,7 @@ def components_of(composition: Element) -> list[PartUsage]:
     """Direct sub-components of an architecture or component."""
     out: list[PartUsage] = []
     for owner in _internal_owners(composition):
-        out += [c for c in owner.owned_elements if isinstance(c, PartUsage)]
+        out += [c for c in owner.children if isinstance(c, PartUsage)]
     return out
 
 
@@ -63,7 +63,7 @@ def ports_of(component: Element) -> list[PortUsage]:
     """Ports of an architecture or component (own ports plus its definition's)."""
     out: list[PortUsage] = []
     for owner in _internal_owners(component):
-        out += [p for p in owner.owned_elements if isinstance(p, PortUsage)]
+        out += [p for p in owner.children if isinstance(p, PortUsage)]
     return out
 
 
@@ -71,7 +71,7 @@ def connectors_of(composition: Element) -> list[ConnectionUsage]:
     """Connectors wiring the internals of an architecture or component."""
     out: list[ConnectionUsage] = []
     for owner in _internal_owners(composition):
-        out += [c for c in owner.owned_elements if isinstance(c, ConnectionUsage)]
+        out += [c for c in owner.children if isinstance(c, ConnectionUsage)]
     return out
 
 

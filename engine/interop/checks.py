@@ -97,7 +97,7 @@ def _relevant(e: Element) -> bool:
 
 
 def _structure(e: Element) -> list[Element]:
-    return [c for c in e.owned_elements
+    return [c for c in e.children
             if isinstance(c, (PartUsage, PortUsage, ConnectionUsage)) or
             getattr(c, "kind", "").endswith("Usage")]
 

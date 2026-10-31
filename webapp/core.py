@@ -205,7 +205,7 @@ def summarize(e: Element) -> dict:
 
 
 def tree(e: Element) -> dict:
-    return {**summarize(e), "children": [tree(c) for c in e.owned_elements]}
+    return {**summarize(e), "children": [tree(c) for c in e.children]}
 
 
 def apply_props(e: Element, props: dict) -> None:
