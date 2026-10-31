@@ -30,6 +30,17 @@ from .expressions import (
 from .values import FeatureValue, MultiplicityRangeElement
 from .connectors import Connector, BindingConnector, Succession
 from .stereotypes import Stereotype, StereotypeTag, StereotypeApplication, stereotypes_on
+from .interactions import (
+    AssociationStructure, Interaction, Flow, FlowEnd, PayloadFeature, SuccessionFlow,
+)
+from .metadata import Metaclass, MetadataFeature
+from .functions import ResultExpressionMembership
+from .operator_expressions import (
+    InstantiationExpression, InvocationExpression, ConstructorExpression, OperatorExpression,
+    FeatureChainExpression, SelectExpression, CollectExpression, IndexExpression,
+    MetadataAccessExpression,
+)
+from . import derived  # noqa: E402 - installs the generated KerML derived properties (last)
 
 __all__ = [
     "Element", "Relationship", "Dependency", "Annotation", "AnnotatingElement", "Comment",
@@ -50,4 +61,9 @@ __all__ = [
     "FeatureValue", "MultiplicityRangeElement",
     "Connector", "BindingConnector", "Succession",
     "Stereotype", "StereotypeTag", "StereotypeApplication", "stereotypes_on",
+    "AssociationStructure", "Interaction", "Flow", "FlowEnd", "PayloadFeature", "SuccessionFlow",
+    "Metaclass", "MetadataFeature", "ResultExpressionMembership",
+    "InstantiationExpression", "InvocationExpression", "ConstructorExpression",
+    "OperatorExpression", "FeatureChainExpression", "SelectExpression", "CollectExpression",
+    "IndexExpression", "MetadataAccessExpression",
 ]
