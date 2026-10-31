@@ -126,6 +126,13 @@ class ExpressionParser(BaseParser):
 
     def expression(self, min_bp: int) -> Node:
         """Operator expressions binding tighter than ``min_bp`` (Pratt loop)."""
+        self.nest(self.p)
+        try:
+            return self._expression(min_bp)
+        finally:
+            self.depth -= 1
+
+    def _expression(self, min_bp: int) -> Node:
         k = self.k
         i = self.p
         if k[i] == "if":

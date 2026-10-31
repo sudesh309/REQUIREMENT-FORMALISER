@@ -13,8 +13,15 @@ Errors raise :class:`ParseError`; body loops catch it, record a
 """
 from __future__ import annotations
 
+import sys
+
 from .ast import ERROR, Diagnostic, Node, ParseResult, Ref, Source, Span
 from .lexer import Tokens, comment_body
+
+#: nested bodies and expressions beyond this depth are a diagnostic (each level takes ~10 frames)
+MAX_NESTING = 200
+#: the recursion limit a parse runs with at least
+RECURSION_LIMIT = 4000
 
 VISIBILITY = frozenset(("public", "private", "protected"))
 DIRECTIONS = frozenset(("in", "out", "inout"))
@@ -51,13 +58,33 @@ class BaseParser:
         self.e = toks.ends
         self.p = 0
         self.spec = 0
+        self.depth = 0
         self.eof_reported = False
+        self.root = Node("Namespace", {}, Span(0, len(text), self.src))
         self.diagnostics: list[Diagnostic] = [
             Diagnostic(ERROR, msg, Span(s, e, self.src)) for s, e, msg in toks.errors]
 
     def parse(self) -> ParseResult:
-        root = self.RootNamespace()
-        return ParseResult(root, self.diagnostics, self.src, self.LANGUAGE)
+        limit = sys.getrecursionlimit()
+        if limit < RECURSION_LIMIT:
+            sys.setrecursionlimit(RECURSION_LIMIT)
+        try:
+            self.RootNamespace()
+        except RecursionError:  # a last resort: MAX_NESTING normally stops first
+            pos = min(self.p, len(self.k) - 1)
+            self.diagnostics.append(Diagnostic(ERROR, "the text is nested too deeply to parse",
+                                               Span(self.s[pos], self.e[pos], self.src)))
+        finally:
+            if limit < RECURSION_LIMIT:
+                sys.setrecursionlimit(limit)
+        return ParseResult(self.root, self.diagnostics, self.src, self.LANGUAGE)
+
+    def nest(self, i: int) -> None:
+        """Enter a nested body or expression opened at token ``i``; fail beyond MAX_NESTING."""
+        self.depth += 1
+        if self.depth > MAX_NESTING:
+            self.depth -= 1
+            raise ParseError(i, f"nesting deeper than {MAX_NESTING} levels, found {self.describe(i)}")
 
     # ------------------------------------------------------------------ cursor
 
@@ -190,31 +217,36 @@ class BaseParser:
             self.spec -= 1
 
     def items(self, node: Node, item, close: str = "}") -> None:
-        """``item* close``: parse items into ``node`` until ``close``, recovering from errors."""
+        """``item* close`` (after the opening '{'): parse items into ``node`` until ``close``,
+        recovering from errors."""
+        self.nest(self.p - 1)
         k = self.k
-        while True:
-            t = k[self.p]
-            if t == close:
-                self.p += 1
-                return
-            if t == "EOF":
-                err = self.error(f"expected {self._show(close)}", (close,))
-                if self.spec:
-                    raise err
-                self.report(err)
-                return
-            start = self.p
-            try:
-                item(node)
-            except ParseError as err:
-                if self.spec:
-                    raise
-                self.report(err)
-                self.sync(err.pos if err.pos >= start else self.p, start)
+        try:
+            while True:
+                t = k[self.p]
+                if t == close:
+                    self.p += 1
+                    return
+                if t == "EOF":
+                    err = self.error(f"expected {self._show(close)}", (close,))
+                    if self.spec:
+                        raise err
+                    self.report(err)
+                    return
+                start = self.p
+                try:
+                    item(node)
+                except ParseError as err:
+                    if self.spec:
+                        raise
+                    self.report(err)
+                    self.sync(err.pos if err.pos >= start else self.p, start)
+        finally:
+            self.depth -= 1
 
     def RootNamespace(self) -> Node:
         """RootNamespace : Namespace = NamespaceBodyElement*   (SysML: PackageBodyElement*)"""
-        root = Node("Namespace", {}, None)
+        root = self.root
         k = self.k
         while k[self.p] != "EOF":
             start = self.p

@@ -90,12 +90,14 @@ def comment_body(raw: str) -> str:
     # White space right after "/*", up to and including the first line terminator.
     m = re.match(r"[ \t\f]*(\r\n?|\n)?", text)
     text = text[m.end():]
+    # the line holding "/*" is left as is; when its terminator was removed, every line is a later one
+    first = 0 if m.group(1) else 1
     out = []
     for i, line in enumerate(re.split(r"(\r\n?|\n)", text)):
         if i % 2:  # a line terminator
             out.append(line)
             continue
-        if i:  # every line after the first
+        if i >= first:  # every line after the one holding "/*"
             line = line.lstrip(" \t\f")
             if line.startswith("*"):
                 line = line[1:]
