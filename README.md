@@ -62,6 +62,9 @@ specifications.
   MCP protocol, KG export, persistence format, module dependencies.
 - **[docs/LOCAL_LLM_VSCODE.md](docs/LOCAL_LLM_VSCODE.md)** — connect
   Ollama / Continue / Cline / Copilot Chat to the MCP server.
+- **[docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md)** — production-readiness
+  review, recommended architecture changes and work packages for
+  implementing agents.
 - **[docs/SPEC_GAP_ANALYSIS.md](docs/SPEC_GAP_ANALYSIS.md)** — what is
   missing against the KerML 1.0, SysML 2.0 and Systems Modeling API
   specifications, and the phased plan to close it.
