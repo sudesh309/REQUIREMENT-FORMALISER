@@ -532,19 +532,22 @@ export default function install(studio) {
       cov = await studio.api("GET", `/api/allocation/scenarios/${enc(sc.id)}/coverage?kinds=${enc(kinds)}&leaves=${leaves ? 1 : 0}`);
     } catch { els.side.innerHTML = `<p class="alloc-muted">Coverage unavailable.</p>`; return; }
     if (st.sideTab !== "coverage") return;
-    const pct = Math.round(cov.ratio * 100);
+    // ratio is null when there is nothing to allocate (no source architecture): n/a, not 100%.
+    const pct = cov.ratio == null ? null : Math.round(cov.ratio * 100);
     const maxCount = Math.max(1, ...cov.per_target.map((t) => t.count));
+    const noSources = cov.source_missing ? "This set has no source architecture: nothing to cover."
+      : `The source architecture has no ${leaves ? "leaf " : ""}${esc(cov.kinds.join(" / "))} elements to allocate.`;
     els.side.innerHTML = `
       <section class="alloc-card" data-alloc-card="coverage"><h4>Coverage · ${esc(cov.set)} / ${esc(cov.scenario)}</h4><div class="in">
-        <div class="flex items-baseline gap-2"><span class="text-xl font-semibold" id="alloc-cov-pct">${pct}%</span>
+        <div class="flex items-baseline gap-2"><span class="text-xl font-semibold" id="alloc-cov-pct">${pct == null ? "n/a" : `${pct}%`}</span>
           <span class="alloc-muted">${cov.allocated} of ${cov.total} ${leaves ? "leaf " : ""}${esc(cov.kinds.join(" / "))} elements allocated</span></div>
-        <div class="alloc-bar"><div style="width:${pct}%"></div></div>
+        <div class="alloc-bar"><div style="width:${pct ?? 0}%"></div></div>
         <label class="flex items-center gap-1 alloc-muted"><input type="checkbox" data-alloc-do="cov-leaves"${leaves ? " checked" : ""} /> leaf elements only</label>
       </div></section>
       <section class="alloc-card"><h4>Unallocated sources (${cov.unallocated.length})</h4><div class="in">
         ${cov.unallocated.length ? `<ul class="alloc-list" id="alloc-cov-unallocated">${cov.unallocated.map((u) =>
           `<li><span class="alloc-cat ${u.category}">${CAT_ICON[u.category]}</span><button type="button" class="alloc-link" data-alloc-pick="${u.id}" title="${esc(u.qualified_name)}">${esc(u.name)}</button></li>`).join("")}</ul>`
-          : `<span class="alloc-muted">Every source element is allocated.</span>`}
+          : `<span class="alloc-muted">${cov.total ? "Every source element is allocated." : noSources}</span>`}
       </div></section>
       <section class="alloc-card"><h4>Allocations per target</h4><div class="in">
         <ul class="alloc-list">${cov.per_target.map((t) => `<li>

@@ -66,8 +66,7 @@ def set_property(e: Element, key: str, value: Any, resolve: Resolver) -> None:
         if not isinstance(e, Feature):
             raise ValueError(f"{e.kind} cannot be typed")
         ref = value if isinstance(value, str) else (value[0] if value else None)
-        e.feature_typings = []
-        e.owned_relationships = [r for r in e.owned_relationships if r.kind != "FeatureTyping"]
+        e.remove_types()
         if ref:
             t = resolve(ref)
             if not isinstance(t, Type):

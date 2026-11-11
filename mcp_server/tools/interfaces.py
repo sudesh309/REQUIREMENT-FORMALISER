@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from engine import interfaces as I
 from engine.interfaces import InterfaceError
+from engine.structure import connector_warning_snapshot, new_connector_warnings
 from mcp_server.core import SESSION, _err, _ok, register_kind, register_summary_hook
 from sysmlv2 import PortUsage
 
@@ -140,8 +141,13 @@ def tool_create_value_type(name: Optional[str] = None, base_type: str = "double"
 @_safe
 def tool_assign_interface(port: str, interface: Optional[str] = None) -> dict:
     p = _port(port)
+    before = connector_warning_snapshot(SESSION.repo, p)
     I.assign_interface(SESSION.repo, p, interface, resolve=SESSION.find)
-    return _ok(I.port_info(SESSION.repo, p))
+    out = I.port_info(SESSION.repo, p)
+    warnings = new_connector_warnings(SESSION.repo, p, before)     # connectors it left incompatible
+    if warnings:
+        out["warnings"] = warnings
+    return _ok(out)
 
 
 @_safe
@@ -273,7 +279,9 @@ TOOLS = [
      "handler": tool_create_value_type},
     {"name": "sysml_assign_interface",
      "description": "Assign an interface to a port: a shared interface or value type (name, id or "
-                    "qualified name), 'owned' for a port-owned copy, or null/'' to clear it.",
+                    "qualified name), 'owned' for a port-owned copy, or null/'' to clear it. The "
+                    "assignment succeeds even when it leaves a connector incompatible; the answer's "
+                    "'warnings' then name each such connector and the reason.",
      "inputSchema": {"type": "object", "properties": {"port": _STR, "interface": {"type": ["string", "null"]}},
                      "required": ["port"]},
      "handler": tool_assign_interface},

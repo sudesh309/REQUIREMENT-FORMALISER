@@ -44,7 +44,7 @@ from engine.validator import Severity, Validator
 from kerml.elements import Documentation, Element
 from kerml.features import Feature, MultiplicityRange
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from kerml.types import Type
 from sysmlv2 import (
     ActionDefinition, ActionUsage,
@@ -61,6 +61,7 @@ from sysmlv2 import (
     RequirementDefinition, RequirementUsage,
     StateDefinition, StateUsage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.relationships import Satisfy, Verify
 from sysmlv2.state_machines import (
     StateMachineDefinition, StateMachineRunner, attach_state_machine,
@@ -182,7 +183,7 @@ def tool_set_feature_type(ref: str, type_qname: str,
     tgt = SESSION.find(type_qname)
     if not isinstance(tgt, Type):
         return _err(f"Type {type_qname!r} not found")
-    e.feature_typings = []
+    e.remove_types()
     e.add_type(tgt)
     if multiplicity is not None:
         lo, up = multiplicity
@@ -303,7 +304,7 @@ def tool_create_requirement(name: str,
         rel = create_link("stakeholder", r, s)
         SESSION.repo.registry.register(rel)
         if hasattr(r, "stakeholders"):
-            r.stakeholders.append(s)
+            r.add_stakeholder(s)
     for ref in actors or []:
         a = SESSION.find(ref)
         if a is None:
@@ -311,7 +312,7 @@ def tool_create_requirement(name: str,
         rel = create_link("actor", r, a)
         SESSION.repo.registry.register(rel)
         if hasattr(r, "actors"):
-            r.actors.append(a)
+            r.add_actor(a)
     return _ok(SESSION.element_summary(r))
 
 
@@ -372,8 +373,10 @@ def tool_list_stereotypes(target: Optional[str] = None) -> dict:
         if t is None:
             return _err(f"Target {target!r} not found")
         return _ok([
-            {"stereotype": a.stereotype.qualified_name, "values": a.values}
-            for a in stereotypes_on(t)
+            {"stereotype": a.stereotype.qualified_name, "values": a.values,
+             # True: only through the definition the (reference) component is typed by.
+             "inherited": bool(a.inherited)}
+            for a in effective_applications(t)
         ])
     return _ok([
         {"qualified_name": s.qualified_name,
@@ -393,7 +396,7 @@ def tool_export_graph(format: str = "turtle") -> dict:
 def tool_export_diagram(kind: str = "bdd", target: Optional[str] = None) -> dict:
     if kind == "ibd":
         t = SESSION.find(target) if target else None
-        if not isinstance(t, PartDefinition):
+        if not is_part_definition(t):
             return _err("ibd requires a PartDefinition target")
         return _ok({"kind": "ibd", "format": "dot", "text": ibd_dot(t)})
     root = SESSION.find(target) if target else SESSION.repo.root_package
@@ -410,7 +413,7 @@ def _resolve_sm(ref: str) -> StateMachineDefinition | None:
     e = SESSION.find(ref)
     if isinstance(e, StateMachineDefinition):
         return e
-    if isinstance(e, PartDefinition):
+    if is_part_definition(e):
         sms = state_machines_of(e)
         return sms[0] if sms else None
     return None
@@ -418,7 +421,7 @@ def _resolve_sm(ref: str) -> StateMachineDefinition | None:
 
 def tool_attach_state_machine(part: str, name: str) -> dict:
     p = SESSION.find(part)
-    if not isinstance(p, PartDefinition):
+    if not is_part_definition(p):
         return _err(f"{part!r} is not a PartDefinition")
     sm = attach_state_machine(p, name)
     SESSION.repo.registry.register_tree(sm)

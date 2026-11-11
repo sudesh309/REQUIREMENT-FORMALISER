@@ -21,7 +21,11 @@ sysml-mcp = "mcp_server.server:main"
 sysml-gui = "gui.app:main"
 
 [tool.setuptools.packages.find]
-include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*"]
+include = ["kerml*", "sysmlv2*", "engine*", "gui*", "webapp*", "mcp_server*", "sysml_spec", "sysml_text*"]
 
 [tool.setuptools.package-data]
-webapp = ["static/*"]
+webapp = ["static/*", "static/**/*"]
+# The normative libraries and grammars (EPL-2.0, see sysml_spec/NOTICE.md); the example
+# corpus is for conformance tests only and is not installed.
+sysml_spec = ["LICENSE", "NOTICE.md", "bnf/*", "library/**/*.kerml", "library/**/*.sysml",
+              "library/**/.meta.json", "library/**/.project.json"]

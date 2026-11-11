@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Optional
 
-from kerml.elements import Documentation, Element, Relationship
+from kerml.elements import Documentation, Element, Relationship, is_pure_relationship
 from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import stereotypes_on
 from sysmlv2.definitions import (
@@ -80,6 +80,7 @@ from sysmlv2.definitions import (
     StateDefinition, StateUsage, TransitionUsage,
     VerificationCaseDefinition, VerificationCaseUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 from sysmlv2.relationships import DeriveRequirement, Refine, Satisfy, Trace, Verify
 
 from .diagram import requirements as _dot_requirements
@@ -214,7 +215,7 @@ def _is_interface(e: Any) -> bool:
 CATEGORIES: list[tuple[str, str, Any]] = [
     ("requirements", "Requirements", is_requirement),
     ("test-cases", "Test cases", is_test_case),
-    ("components", "Components", lambda e: isinstance(e, (PartUsage, PartDefinition))),
+    ("components", "Components", lambda e: (is_part_usage(e) or is_part_definition(e))),
     ("ports", "Ports", lambda e: isinstance(e, PortUsage)),
     ("connectors", "Connectors", lambda e: isinstance(e, ConnectionUsage)),
     ("interfaces", "Interfaces", _is_interface),
@@ -399,11 +400,11 @@ def _unique_name(base: str, taken: set) -> str:
 def _sibling_names(owner: Optional[Element], exclude: Optional[Element] = None) -> set:
     if owner is None:
         return set()
-    return {c.name for c in owner.owned_elements if c is not exclude and c.name}
+    return {c.name for c in owner.children if c is not exclude and c.name}
 
 
 def child_requirements(e: Element) -> list[Element]:
-    return [c for c in e.owned_elements if is_requirement(c)]
+    return [c for c in e.children if is_requirement(c)]
 
 
 def set_of(e: Element) -> Optional[RequirementSet]:
@@ -444,19 +445,12 @@ def text_hash(req: Element) -> str:
 
 def _detach(repo, e: Element) -> None:
     """Remove `e` from its owner (owned_elements, memberships) without deleting it."""
-    old = e.owner
-    if old is None:
+    m = e.owning_relationship
+    if m is None:
         return
-    old.owned_elements = [x for x in old.owned_elements if x is not e]
-    if isinstance(old, Namespace):
-        dead = [m for m in old.memberships if m.member is e]
-        if dead:
-            old.memberships = [m for m in old.memberships if m.member is not e]
-            old.owned_relationships = [r for r in old.owned_relationships
-                                       if not any(r is m for m in dead)]
-            for m in dead:
-                repo.registry.unregister(m)
-    e.owner = None
+    e.detach()
+    if m.owning_related_element is None:
+        repo.registry.unregister(m)
 
 
 def _place(repo, e: Element, owner: Element, index: Optional[int] = None) -> None:
@@ -465,18 +459,16 @@ def _place(repo, e: Element, owner: Element, index: Optional[int] = None) -> Non
         _detach(repo, e)
         owner.own(e)
         repo.registry.register_tree(e)
-        if isinstance(owner, Namespace):
-            for m in owner.memberships:
-                if m.member is e:
-                    repo.registry.register(m)
+        if e.owning_relationship is not None:
+            repo.registry.register(e.owning_relationship)
     if index is not None:
-        items = [x for x in owner.owned_elements if x is not e]
+        items = [x for x in owner.children if x is not e]
         items.insert(max(0, min(index, len(items))), e)
         owner.owned_elements = items
 
 
 def _position(owner: Element, e: Element) -> int:
-    return next(i for i, x in enumerate(owner.owned_elements) if x is e)
+    return next(i for i, x in enumerate(owner.children) if x is e)
 
 
 # ---------------------------------------------------------------------------
@@ -1878,7 +1870,7 @@ def report_html(repo, rset: Optional[RequirementSet] = None) -> str:
 # ---------------------------------------------------------------------------
 
 def _req_order(e: Element) -> Optional[list[str]]:
-    kids = [c.element_id for c in e.owned_elements if is_requirement(c) or is_test_case(c)]
+    kids = [c.element_id for c in e.children if is_requirement(c) or is_test_case(c)]
     return kids if len(kids) > 1 else None
 
 
@@ -1910,8 +1902,8 @@ def _decode(e: Element, data: dict, by_id: dict) -> None:
     if order:
         wanted = [by_id[i] for i in order if i in by_id and by_id[i].owner is e]
         wanted_ids = {id(x) for x in wanted}
-        slots = [k for k, x in enumerate(e.owned_elements) if id(x) in wanted_ids]
-        items = list(e.owned_elements)
+        slots = [k for k, x in enumerate(e.children) if id(x) in wanted_ids]
+        items = list(e.children)
         for slot, x in zip(slots, wanted):
             items[slot] = x
         e.owned_elements = items
@@ -1929,7 +1921,7 @@ def _encode_links(repo) -> Optional[dict]:
 def _decode_links(repo, data: dict, by_id: dict) -> None:
     for rel_id, base in (data or {}).items():
         rel = repo.by_id(rel_id)
-        if isinstance(rel, Relationship) and isinstance(base, dict):
+        if is_pure_relationship(rel) and isinstance(base, dict):
             rel.req_baseline = {"source": base.get("source"), "target": base.get("target")}
 
 

@@ -45,15 +45,28 @@ class AdvisorRuleTests(unittest.TestCase):
         repo = avionics_repo()
         issues = _issues(repo, "advisor.unconnected-port")
         msgs = sorted(i.message for i in issues)
-        self.assertEqual(msgs, ["Port ims.health is not connected in FlightDeck"])
+        # ims has a part inside, so its port must be wired both inside and in FlightDeck.
+        self.assertEqual(msgs, ["Boundary port ims.health is not connected to any component",
+                                "Port ims.health is not connected in FlightDeck"])
         self.assertEqual(issues[0].severity.value, "warning")
-        # Connecting it inside the component (delegation) clears the issue.
+        # Connecting it inside the component (delegation) clears the inside issue only: the
+        # port still leads nowhere in FlightDeck.
         ims = repo.resolve("FlightDeck::ims")
+        health = repo.resolve("FlightDeck::ims::health")
         part = repo.resolve("FlightDeck::ims::partition1")
         p = PortUsage(name="hb", direction=FeatureDirection.OUT)
         part.own(p)
-        ims.own(ConnectionUsage(name="deleg", ends=[p, repo.resolve("FlightDeck::ims::health")]))
+        ims.own(ConnectionUsage(name="deleg", ends=[p, health]))
         repo.registry.register_tree(ims)
+        self.assertEqual([i.message for i in _issues(repo, "advisor.unconnected-port")],
+                         ["Port ims.health is not connected in FlightDeck"])
+        # Wiring it in FlightDeck as well clears it.
+        pfd = repo.resolve("FlightDeck::pfd")
+        mon = PortUsage(name="healthIn", direction=FeatureDirection.IN)
+        pfd.own(mon)
+        repo.resolve("FlightDeck").own(ConnectionUsage(name="healthBus", ends=[health, mon],
+                                                       end_contexts=(ims, pfd)))
+        repo.registry.register_tree(repo.root_package)
         self.assertEqual(_issues(repo, "advisor.unconnected-port"), [])
 
     def test_boundary_ports(self):

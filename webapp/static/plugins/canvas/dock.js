@@ -18,10 +18,11 @@ function interfaceOptions(studio, selectedId) {
 function stereoRows(stereotypes) {
   if (!stereotypes?.length) return `<div class="arch-dock-muted">None</div>`;
   return stereotypes.map(s => {
-    // `display` (profiles feature) carries the value with its unit, e.g. "7 kg".
-    const shown = (k, v) => s.display?.[k] ?? (v !== null && typeof v === "object" ? JSON.stringify(v) : v);
-    const vals = Object.entries(s.values || {}).map(([k, v]) => `<div class="arch-kv" data-stereo-value="${esc(k)}"><span>${esc(k)}</span><b>${esc(shown(k, v))}</b></div>`).join("");
-    return `<div class="arch-stereo-row">«${esc(s.name)}»${vals}</div>`;
+    // `display_short` (profiles feature) carries the value with its unit, rounded for reading
+    // ("4.54 kg"); `display` the same at full precision, which the tooltip gives.
+    const shown = (k, v) => s.display_short?.[k] ?? s.display?.[k] ?? (v !== null && typeof v === "object" ? JSON.stringify(v) : v);
+    const vals = Object.entries(s.values || {}).map(([k, v]) => `<div class="arch-kv" data-stereo-value="${esc(k)}"${s.display?.[k] !== undefined && s.display[k] !== shown(k, v) ? ` title="${esc(s.display[k])}"` : ""}><span>${esc(k)}</span><b>${esc(shown(k, v))}</b></div>`).join("");
+    return `<div class="arch-stereo-row">«${esc(s.name)}»${s.inherited ? ` <span class="arch-dock-muted">(inherited)</span>` : ""}${vals}</div>`;
   }).join("");
 }
 

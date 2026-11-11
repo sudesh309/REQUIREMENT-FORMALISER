@@ -1,24 +1,53 @@
-"""KerML kernel metamodel - foundation for SysML v2."""
-from .elements import Element, Relationship, Comment, Documentation, Annotation
-from .namespaces import Namespace, Package, Membership, Import, OwningMembership
+"""KerML kernel metamodel - foundation for SysML v2.
+
+See :mod:`kerml.elements` for the conventions every module follows
+(metaclass names, Python property names, constructors, ownership storage).
+"""
+from .elements import (
+    Element, Relationship, Dependency, Annotation, AnnotatingElement, Comment, Documentation,
+    TextualRepresentation, DerivedList, derived_id, escape_name, is_pure_relationship,
+)
+from .namespaces import (
+    Namespace, Package, LibraryPackage, Membership, OwningMembership, Import, NamespaceImport,
+    MembershipImport, ElementFilterMembership, VISIBILITIES,
+)
 from .types import (
     Type, Classifier, DataType, Class, Structure, Behavior, Association,
-    Specialization, Conjugation,
+    Specialization, Subclassification, Conjugation, Disjoining, Unioning, Intersecting,
+    Differencing, FeatureMembership,
 )
 from .features import (
-    Feature, FeatureMembership, FeatureTyping, Subsetting, Redefinition,
+    Feature, FeatureTyping, Subsetting, Redefinition, ReferenceSubsetting, CrossSubsetting,
+    FeatureChaining, FeatureInverting, TypeFeaturing, EndFeatureMembership,
     Multiplicity, MultiplicityRange, FeatureDirection,
 )
-from .expressions import Expression, LiteralExpression, FeatureReferenceExpression, Invocation
+from .behaviors import Step, Function, Predicate, ParameterMembership, ReturnParameterMembership
+from .expressions import (
+    Expression, BooleanExpression, Invariant, LiteralExpression, LiteralBoolean, LiteralInteger,
+    LiteralRational, LiteralString, LiteralInfinity, NullExpression, FeatureReferenceExpression,
+    Invocation,
+)
+from .values import FeatureValue, MultiplicityRangeElement
+from .connectors import Connector, BindingConnector, Succession
 from .stereotypes import Stereotype, StereotypeTag, StereotypeApplication, stereotypes_on
 
 __all__ = [
-    "Element", "Relationship", "Comment", "Documentation", "Annotation",
-    "Namespace", "Package", "Membership", "Import", "OwningMembership",
+    "Element", "Relationship", "Dependency", "Annotation", "AnnotatingElement", "Comment",
+    "Documentation", "TextualRepresentation", "DerivedList", "derived_id", "escape_name",
+    "is_pure_relationship",
+    "Namespace", "Package", "LibraryPackage", "Membership", "OwningMembership", "Import",
+    "NamespaceImport", "MembershipImport", "ElementFilterMembership", "VISIBILITIES",
     "Type", "Classifier", "DataType", "Class", "Structure", "Behavior", "Association",
-    "Specialization", "Conjugation",
-    "Feature", "FeatureMembership", "FeatureTyping", "Subsetting", "Redefinition",
-    "Multiplicity", "MultiplicityRange", "FeatureDirection",
-    "Expression", "LiteralExpression", "FeatureReferenceExpression", "Invocation",
+    "Specialization", "Subclassification", "Conjugation", "Disjoining", "Unioning",
+    "Intersecting", "Differencing", "FeatureMembership",
+    "Feature", "FeatureTyping", "Subsetting", "Redefinition", "ReferenceSubsetting",
+    "CrossSubsetting", "FeatureChaining", "FeatureInverting", "TypeFeaturing",
+    "EndFeatureMembership", "Multiplicity", "MultiplicityRange", "FeatureDirection",
+    "Step", "Function", "Predicate", "ParameterMembership", "ReturnParameterMembership",
+    "Expression", "BooleanExpression", "Invariant", "LiteralExpression", "LiteralBoolean",
+    "LiteralInteger", "LiteralRational", "LiteralString", "LiteralInfinity", "NullExpression",
+    "FeatureReferenceExpression", "Invocation",
+    "FeatureValue", "MultiplicityRangeElement",
+    "Connector", "BindingConnector", "Succession",
     "Stereotype", "StereotypeTag", "StereotypeApplication", "stereotypes_on",
 ]

@@ -53,6 +53,7 @@ async function api(method, path, body, opts = {}) {
     if (!rev.inflight && settlePending()) scheduleSettle();   // also after a network error
   }
   noteRevision(resp.headers.get("X-Model-Revision"));
+  if (resp.ok) showNotices(resp.headers.get("X-Studio-Notices"));
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
   if (!resp.ok) {
@@ -62,6 +63,22 @@ async function api(method, path, body, opts = {}) {
     throw new Error(message);
   }
   return data;
+}
+
+// Warnings the server raised while a request succeeded (webapp.core.add_notice): an interface
+// that left a connector incompatible, a connector drawn between incompatible ports.
+function showNotices(header) {
+  if (!header) return;
+  let items = [];
+  try { items = JSON.parse(decodeURIComponent(header)); } catch { return; }
+  for (const n of Array.isArray(items) ? items : []) notify(readableError(n.message), n.severity || "warning");
+}
+
+// Tell the user something now: an Output log line, and a toast in views that have them
+// (the architecture canvas listens to "notice").
+function notify(message, severity = "warning") {
+  log(message, severity);
+  emit("notice", { message, severity });
 }
 
 const UUID_RE = /'?\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b'?/gi;
@@ -227,7 +244,7 @@ function renderTreeNode(node, depth) {
   const k = document.createElement("span"); k.className = "kind"; k.textContent = node.kind;
   row.appendChild(k);
 
-  row.addEventListener("click", () => selectElement(node.id));
+  row.addEventListener("click", () => selectSingle(node.id));
 
   li.appendChild(row);
   if (node.children?.length) {
@@ -253,6 +270,19 @@ async function selectElement(id) {
   if (state.tab === "diagram") refreshDiagram();
   setStatus(`${el.kind}  ${el.qualified_name}`);
   emit("select", el);
+}
+
+// A click in the containment tree or a `navigate` selects one element and replaces the
+// multi-selection (an earlier canvas pick or table rows), so getSelection() is always the
+// latest selection, wherever it was made: Link to Selection must never use a stale pick.
+// selectElement alone keeps the multi-selection (the canvas publishes its picks with
+// setSelection and then selects the primary one; editors re-select after a reload).
+// getSelection() is [id] at once; selection-changed follows "select", so views that follow
+// "select" (the canvas scrolls to the element) see it first.
+async function selectSingle(id) {
+  state.selection = [];
+  try { await selectElement(id); }
+  finally { emit("selection-changed", getSelection()); }
 }
 
 function renderInspectorSections(el) {
@@ -878,7 +908,8 @@ function setSelection(ids) {
 //   highlight {ids, color?, reason?}    emphasize elements on the canvas; null clears
 //   canvas-filter {ids, label?}         canvas shows only these components (views); null clears
 //   selection-changed [ids]             multi-selection changed
-on("navigate", ({ id }) => { if (id) selectElement(id); });
+//   notice {message, severity}          studio.notify(): a warning to show now (log line + toast)
+on("navigate", ({ id }) => { if (id) selectSingle(id); });
 
 const studio = {
   // data + backend
@@ -890,7 +921,7 @@ const studio = {
   //         "element-changed" ({revision, selected}: the model changed without a tree refresh)
   on, emit,
   // UI helpers
-  log, setStatus, escapeHtml, modal, dialog, download, openFile,
+  log, notify, setStatus, escapeHtml, modal, dialog, download, openFile,
   // unsaved changes: plugins report them; New / Load warn
   registerUnsavedCheck, unsavedReason, unsavedHtml, markSaved,
   // registries

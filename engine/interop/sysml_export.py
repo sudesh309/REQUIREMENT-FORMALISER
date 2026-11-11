@@ -19,10 +19,10 @@ import re
 from functools import lru_cache
 from typing import Optional
 
-from kerml.elements import Annotation, Element, Relationship
+from kerml.elements import Element, Relationship, is_pure_relationship
 from kerml.features import Feature, FeatureDirection
 from kerml.namespaces import Namespace, Package
-from kerml.stereotypes import Stereotype, stereotypes_on
+from kerml.stereotypes import Stereotype, effective_applications
 from sysmlv2.definitions import (
     ActionDefinition, ActionUsage, AnalysisCaseDefinition, AttributeDefinition,
     AttributeUsage, CalculationDefinition, CalculationUsage, ConcernDefinition,
@@ -32,6 +32,7 @@ from sysmlv2.definitions import (
     RequirementUsage, StateDefinition, StateUsage, TransitionUsage, Usage, UseCaseDefinition,
     VerificationCaseDefinition, ViewpointDefinition,
 )
+from sysmlv2.definitions import is_part_usage
 
 from .common import (
     documentation, format_multiplicity, in_library, link_kind_name, model_links,
@@ -57,11 +58,11 @@ _DEF_KEYWORDS: list[tuple[type, str, bool]] = [
     (CalculationDefinition, "calc", False),
     (StateDefinition, "state", True),
     (ActionDefinition, "action", True),
+    (InterfaceDefinition, "interface", True),
+    (ConnectionDefinition, "connection", True),
     (PartDefinition, "part", True),
     (ItemDefinition, "item", True),
     (PortDefinition, "port", True),
-    (InterfaceDefinition, "interface", True),
-    (ConnectionDefinition, "connection", True),
     (AttributeDefinition, "attribute", True),
 ]
 _USAGE_KEYWORDS: list[tuple[type, str, bool]] = [
@@ -71,10 +72,10 @@ _USAGE_KEYWORDS: list[tuple[type, str, bool]] = [
     (StateUsage, "state", True),
     (CalculationUsage, "calc", False),
     (ActionUsage, "action", True),
+    (ConnectionUsage, "connection", True),
     (PartUsage, "part", True),
     (ItemUsage, "item", True),
     (PortUsage, "port", True),
-    (ConnectionUsage, "connection", True),
     (AttributeUsage, "attribute", True),
 ]
 
@@ -127,7 +128,7 @@ def _doc_text(text: str) -> str:
 
 
 def _children(e: Element) -> list[Element]:
-    return [c for c in e.owned_elements if not isinstance(c, (Relationship, Annotation))]
+    return [c for c in e.children if not is_pure_relationship(c)]
 
 
 def _resolve_in_scope(start: Optional[Element], qname: str) -> Optional[Element]:
@@ -214,8 +215,11 @@ class _Writer:
         self.emit(depth, text, True)
 
     def stereotype_comments(self, e: Element, depth: int) -> None:
-        """``#Profile.Stereotype { mass = 1.5 [kg]; }`` (metadata usage with unit literals)."""
-        for app in stereotypes_on(e):
+        """``#Profile.Stereotype { mass = 1.5 [kg]; }`` (metadata usage with unit literals).
+
+        A reference component lists the values it reads: its own and, for a stereotype it
+        inherits from its definition, the definition's (the line says so)."""
+        for app in effective_applications(e):
             values = []
             tags = [t for _st, props in app.stereotype.property_groups() for t in props]
             for tag in tags:                    # inherited (base) properties first
@@ -226,7 +230,8 @@ class _Writer:
                     and not isinstance(v, bool) else ""
                 values.append(f"{tag.name} = {self.literal(v)}{unit}")
             body = f" {{ {'; '.join(values)}; }}" if values else ""
-            self.comment(depth, f"#{app.stereotype.full_name}{body}")
+            where = f"  (inherited from {app.definition.name})" if app.inherited else ""
+            self.comment(depth, f"#{app.stereotype.full_name}{body}{where}")
 
     @staticmethod
     def literal(v) -> str:
@@ -436,7 +441,7 @@ class _Writer:
         if o is not None and o.owner is not None and any(o.owner is x for x in owners) \
                 and o.name and end.name:
             return [o.name, end.name]
-        for c in [x for x in (comp.owned_elements if comp else []) if isinstance(x, PartUsage)]:
+        for c in [x for x in (comp.children if comp else []) if is_part_usage(x)]:
             if any(t is end.owner for t in c.types) and c.name and end.name:
                 return [c.name, end.name]
         return None

@@ -177,7 +177,10 @@ form of a requirement also has *Verified by test case… / Add Verify link*.
 - **Link to Selection**: select a model element in the containment tree or on the canvas
   (multi-selection works), select a requirement row, pick the link type, click *Link to
   Selection*. For Implement / Verify / Confirm the selected elements become the source; for
-  Refine / Derive / Relate the selected requirement is the source.
+  Refine / Derive / Relate the selected requirement is the source. The latest selection counts,
+  wherever it was made: a click in the tree (or on a link in a link list) replaces an earlier
+  canvas pick, and the *Selection:* note under the link-type picker always names what will be
+  linked.
 - **Link from Selection**: the selected elements are always the source.
 - **Context menu** on a row: *Link to Selection as Implement / Verify / Refine / Derive / Relate /
   Confirm*.
@@ -200,6 +203,13 @@ the canvas. It shares the set, the selected requirement and the link type with t
 a filter, *Link to Selection*, *Link from Selection* and the row context menu. Drag rows onto the
 canvas or the tree to create Implement links; double-click (or Enter) opens a row in the editor.
 It hides itself while the Requirements tab is active and remembers whether it was open.
+
+The dock takes its height from the view above it instead of covering it: the canvas gets
+shorter, a fitted canvas is fitted again to the room left (a zoomed one keeps its zoom and the
+selected block in sight), its status bar stays under the drawing, and *Fit* uses the remaining
+height. Drag the splitter between the canvas and the dock to share the height (↑ / ↓ with the
+splitter focused, Shift for bigger steps, double-click for the default); the view above keeps at
+least 280 px and the dock's height is remembered.
 
 ### Links view and suspect links
 

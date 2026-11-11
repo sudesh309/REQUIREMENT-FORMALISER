@@ -9,11 +9,12 @@ from __future__ import annotations
 from kerml.elements import Element
 from kerml.features import Feature
 from kerml.namespaces import Namespace
-from kerml.stereotypes import stereotypes_on
+from kerml.stereotypes import effective_applications
 from sysmlv2.definitions import (
     ConnectionUsage, Definition, PartDefinition, PortUsage,
     RequirementDefinition, StateUsage, TransitionUsage,
 )
+from sysmlv2.definitions import is_part_definition
 from sysmlv2.relationships import (
     Satisfy, Verify, Refine, Trace, DeriveRequirement,
 )
@@ -29,7 +30,7 @@ def _safe(text: str) -> str:
 
 
 def _stereo(e: Element) -> str:
-    apps = stereotypes_on(e)
+    apps = effective_applications(e)      # a reference component shows its definition's too
     if not apps:
         return ""
     return "«" + ", ".join(a.stereotype.name for a in apps) + "» "
@@ -54,7 +55,7 @@ def bdd_mermaid(root: Namespace) -> str:
             tgt = s.target
             if isinstance(tgt, Definition):
                 lines.append(f"    {_nid(tgt)} <|-- {_nid(d)}")
-        if isinstance(d, PartDefinition):
+        if is_part_definition(d):
             for u in d.owned_features:
                 if isinstance(u, ConnectionUsage):
                     continue
@@ -200,7 +201,7 @@ def diagram_mermaid(kind: str, target) -> str:
             raise TypeError("bdd requires a Namespace target")
         return bdd_mermaid(target)
     if kind == "ibd":
-        if not isinstance(target, PartDefinition):
+        if not is_part_definition(target):
             raise TypeError("ibd requires a PartDefinition target")
         return ibd_mermaid(target)
     if kind in ("requirements", "req"):

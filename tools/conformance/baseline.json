@@ -1,0 +1,70 @@
+{
+  "legacy_parser.collector_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "legacy_parser.examples.files_ok": {
+    "value": 0.0,
+    "better": "higher"
+  },
+  "legacy_parser.library.files_ok": {
+    "value": 0.0,
+    "better": "higher"
+  },
+  "metamodel.collector_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "metamodel.kerml.attributes_present": {
+    "value": 0.9342,
+    "better": "higher"
+  },
+  "metamodel.kerml.derived_present": {
+    "value": 0.8582,
+    "better": "higher"
+  },
+  "metamodel.kerml.metaclasses_present": {
+    "value": 0.7805,
+    "better": "higher"
+  },
+  "metamodel.nonstandard_kinds": {
+    "value": 35,
+    "better": "lower"
+  },
+  "metamodel.supertypes_consistent": {
+    "value": 0.9677,
+    "better": "higher"
+  },
+  "metamodel.sysml.attributes_present": {
+    "value": 0.8095,
+    "better": "higher"
+  },
+  "metamodel.sysml.derived_present": {
+    "value": 0.2284,
+    "better": "higher"
+  },
+  "metamodel.sysml.metaclasses_present": {
+    "value": 0.6452,
+    "better": "higher"
+  },
+  "parse.collector_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "parse.examples.diagnostics": {
+    "value": 0,
+    "better": "lower"
+  },
+  "parse.examples.files_ok": {
+    "value": 1.0,
+    "better": "higher"
+  },
+  "parse.library.diagnostics": {
+    "value": 0,
+    "better": "lower"
+  },
+  "parse.library.files_ok": {
+    "value": 1.0,
+    "better": "higher"
+  }
+}

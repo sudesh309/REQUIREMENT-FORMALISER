@@ -112,6 +112,10 @@ const STYLES = `
 .rq-check { display:inline-flex; align-items:center; gap:4px; color:#475569; }
 .rq-dock { flex:none; display:flex; flex-direction:column; height:240px; min-height:0; background:#fff; border-top:1px solid #cbd5e1; box-shadow:0 -2px 6px rgba(15,23,42,.06); }
 .rq-dock.rq-off { display:none; }
+.rq-dock > .rq-splitter { height:6px; position:relative; touch-action:none; }
+.rq-dock > .rq-splitter::before { content:""; position:absolute; left:0; right:0; top:-4px; bottom:-3px; }
+.rq-dock > .rq-splitter:focus-visible { outline:none; background:#60a5fa; }
+.rq-dock > .rq-splitter.dragging { background:#60a5fa; }
 .rq-dock-head { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:12px; }
 .rq-dock-title { font-weight:600; color:#334155; font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:help; }
 .rq-dock-head .rq-small-select { max-width:150px; }
@@ -170,7 +174,10 @@ export default async function install(studio) {
     links: [], linksSuspectOnly: false,      // "Links" view of the Requirements tab
     dockOn: false, dockFilter: "", dockH: 240, // Requirements Perspective dock
   };
-  try { S.dockOn = localStorage.getItem("rq.dock") === "1"; } catch { /* storage unavailable */ }
+  try {
+    S.dockOn = localStorage.getItem("rq.dock") === "1";
+    S.dockH = Number(localStorage.getItem("rq.dockH")) || S.dockH;
+  } catch { /* storage unavailable */ }
 
   // ------------------------------------------------------------------ helpers
   const opt = (value, label, selected) =>
@@ -1450,7 +1457,8 @@ export default async function install(studio) {
   dockEl.setAttribute("role", "region");
   dockEl.setAttribute("aria-label", "Requirements perspective");
   dockEl.innerHTML = `
-    <div class="rq-splitter" data-dock="splitter" title="Drag to resize"></div>
+    <div class="rq-splitter" data-dock="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
+         aria-label="Resize the requirements perspective" title="Drag (or ↑ / ↓) to share the height with the view above; double-click for the default height"></div>
     <div class="rq-dock-head">
       <span class="rq-dock-title" title="Requirements Perspective: drag a row onto a model element (tree or canvas) to create an Implement link, or select an element and use Link to Selection. Double-click a row to edit it.">Requirements</span>
       <select class="rq-small-select" data-dock="set" title="Requirement set"></select>
@@ -1476,11 +1484,38 @@ export default async function install(studio) {
   const dq = (k) => dockEl.querySelector(`[data-dock="${k}"]`);
 
   const dockVisible = () => S.dockOn && !S.visible.req;
+  const splitterEl = dq("splitter");
   function applyDockVisibility() {
     dockEl.classList.toggle("rq-off", !dockVisible());
-    dockEl.style.height = `${S.dockH}px`;
     dockBtn?.classList.toggle("rq-on", S.dockOn);
+    applyDockHeight();
   }
+
+  // The dock takes its height from the tab area (a flex column): the view above it (the
+  // architecture canvas, whose host refits through its ResizeObserver) gets the rest, at
+  // least DOCK_MIN_VIEW px. S.dockH is the preferred height; the splitter changes it.
+  const DOCK_MIN = 110, DOCK_MIN_VIEW = 280, DOCK_DEFAULT = 240;
+  function dockMaxHeight() {
+    const panes = document.getElementById("tab-panes").getBoundingClientRect().height;
+    const shared = panes + (dockVisible() ? dockEl.getBoundingClientRect().height : 0);
+    return Math.max(DOCK_MIN, Math.floor(shared - DOCK_MIN_VIEW));
+  }
+  function applyDockHeight() {
+    if (!dockVisible()) return;
+    const max = dockMaxHeight();
+    const h = Math.round(Math.max(DOCK_MIN, Math.min(max, S.dockH)));
+    dockEl.style.height = `${h}px`;
+    splitterEl.setAttribute("aria-valuemin", String(DOCK_MIN));
+    splitterEl.setAttribute("aria-valuemax", String(max));
+    splitterEl.setAttribute("aria-valuenow", String(h));
+  }
+  function resizeDock(h, { save = false } = {}) {
+    S.dockH = Math.round(Math.max(DOCK_MIN, Math.min(dockMaxHeight(), h)));
+    applyDockHeight();
+    if (save) { try { localStorage.setItem("rq.dockH", String(S.dockH)); } catch { /* storage unavailable */ } }
+  }
+  // The window or the output pane changed the room: keep the view above usable.
+  new ResizeObserver(() => applyDockHeight()).observe(dockEl.parentElement);
 
   function setDock(on) {
     S.dockOn = on;
@@ -1582,14 +1617,37 @@ export default async function install(studio) {
     selectRow(next.dataset.id);
     next.scrollIntoView({ block: "nearest" });
   });
-  dq("splitter").addEventListener("mousedown", (e) => {
+  // Splitter between the view above and the dock: drag it (the pointer is captured, so the
+  // canvas under it never sees the drag), ↑ / ↓ (Shift: bigger steps), Home / End, or
+  // double-click for the default height. The height is remembered.
+  splitterEl.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
     e.preventDefault();
-    const startY = e.clientY, startH = S.dockH;
-    const move = (ev) => { S.dockH = Math.max(110, Math.min(window.innerHeight - 220, startH - (ev.clientY - startY))); dockEl.style.height = `${S.dockH}px`; };
-    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
+    splitterEl.focus({ preventScroll: true });
+    try { splitterEl.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+    splitterEl.classList.add("dragging");
+    const startY = e.clientY, startH = dockEl.getBoundingClientRect().height;
+    const move = (ev) => resizeDock(startH - (ev.clientY - startY));
+    const up = () => {
+      splitterEl.classList.remove("dragging");
+      splitterEl.removeEventListener("pointermove", move);
+      splitterEl.removeEventListener("pointerup", up);
+      splitterEl.removeEventListener("pointercancel", up);
+      resizeDock(S.dockH, { save: true });
+    };
+    splitterEl.addEventListener("pointermove", move);
+    splitterEl.addEventListener("pointerup", up);
+    splitterEl.addEventListener("pointercancel", up);
   });
+  splitterEl.addEventListener("keydown", (e) => {
+    const h = dockEl.getBoundingClientRect().height, step = e.shiftKey ? 64 : 16;
+    const next = { ArrowUp: h + step, ArrowDown: h - step, Home: DOCK_MIN, End: Infinity }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resizeDock(next, { save: true });
+  });
+  splitterEl.addEventListener("dblclick", () => resizeDock(DOCK_DEFAULT, { save: true }));
 
   dockBtn = studio.registerToolbarButton({
     id: "req-perspective", label: "Req Perspective", group: "Requirements",

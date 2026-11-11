@@ -46,12 +46,16 @@ from sysmlv2.definitions import (
     EnumerationDefinition, EnumerationUsage, PartDefinition, PartUsage,
     PortDefinition, PortUsage,
 )
+from sysmlv2.definitions import is_part_usage, is_part_definition
 
 from .hooks import notify_created, register_created_hook
 from .properties import register_scalar_property
 from .repository import register_removal_hook
 from .serializer import register_codec
-from .structure import components_of, connectors_of, definition_of, owning_component, ports_of
+from .structure import (
+    components_of, connectors_of, definition_of, owning_component, ports_of,
+    register_connector_warning_source,
+)
 from .validator import Severity, ValidationIssue, register_repo_rule
 
 Resolver = Callable[[str], Optional[Element]]
@@ -383,9 +387,7 @@ def _kerml_scalar(primitive: str) -> Optional[Type]:
 
 def _set_typing(feature: Feature, target: Optional[Type]) -> None:
     """Replace the SysML typing of `feature` with `target` (or none)."""
-    feature.feature_typings = []
-    feature.owned_relationships = [r for r in feature.owned_relationships
-                                   if r.kind != "FeatureTyping"]
+    feature.remove_types()
     if target is not None:
         feature.add_type(target)
 
@@ -420,7 +422,7 @@ def _check_name(name: Any, what: str = "Name") -> str:
 def _sibling(owner: Optional[Element], name: str, exclude: Optional[Element] = None) -> Optional[Element]:
     if owner is None:
         return None
-    return next((c for c in owner.owned_elements if c.name == name and c is not exclude), None)
+    return next((c for c in owner.children if c.name == name and c is not exclude), None)
 
 
 def _unique_name(owner: Element, base: str, start: int = 0, *, always_number: bool = True) -> str:
@@ -442,35 +444,22 @@ def _unique_rename(owner: Element, base: str) -> str:
 
 def _reparent(child: Element, new_owner: Namespace, repo=None) -> None:
     """Move `child` to `new_owner`, dropping the old owner's membership."""
-    old = child.owner
-    if old is new_owner:
+    if child.owner is new_owner:
         return
-    if isinstance(old, Namespace):
-        stale = [m for m in old.memberships if m.member is child]
-        old.memberships = [m for m in old.memberships if m.member is not child]
-        old.owned_relationships = [r for r in old.owned_relationships
-                                   if not any(r is m for m in stale)]
-        if repo is not None:
-            for m in stale:
-                repo.registry.unregister(m)
-    if old is not None and child in old.owned_elements:
-        old.owned_elements.remove(child)
-    child.owner = None
+    stale = child.owning_relationship
+    child.detach()
+    if repo is not None and stale is not None:
+        repo.registry.unregister(stale)
     new_owner.own(child)
     if repo is not None:
         repo.registry.register_tree(child)
-        for m in new_owner.memberships:
-            if m.member is child:
-                repo.registry.register(m)
+        repo.registry.register(child.owning_relationship)
 
 
 def _reorder(ns: Element, ordered: list[Element]) -> None:
     """Put `ordered` (a subset of ns' children) first, in that order, then the rest."""
     ids = {id(e) for e in ordered}
-    ns.owned_elements = list(ordered) + [c for c in ns.owned_elements if id(c) not in ids]
-    if isinstance(ns, Namespace):
-        rank = {id(e): i for i, e in enumerate(ns.owned_elements)}
-        ns.memberships.sort(key=lambda m: rank.get(id(m.member), len(rank)))
+    ns.owned_elements = list(ordered) + [c for c in ns.children if id(c) not in ids]
 
 
 def parse_dimensions(text: Any) -> tuple[int, ...]:
@@ -607,7 +596,7 @@ def is_owned(iface: Optional[Element]) -> bool:
 def get_dictionary(repo, create: bool = True) -> Optional[InterfaceDictionary]:
     """The project's interface dictionary package (created on first use)."""
     root = repo.root_package
-    hit = next((c for c in root.owned_elements if isinstance(c, InterfaceDictionary)), None)
+    hit = next((c for c in root.children if isinstance(c, InterfaceDictionary)), None)
     if hit is None:
         hit = next((e for e in root.walk() if isinstance(e, InterfaceDictionary)), None)
     if hit is not None or not create:
@@ -623,7 +612,7 @@ def get_dictionary(repo, create: bool = True) -> Optional[InterfaceDictionary]:
 def shared_items(repo) -> list[Element]:
     """Dictionary items that are not owned by a port, dictionary first."""
     dic = get_dictionary(repo, create=False)
-    first = [c for c in (dic.owned_elements if dic else []) if isinstance(c, ITEM_CLASSES)]
+    first = [c for c in (dic.children if dic else []) if isinstance(c, ITEM_CLASSES)]
     seen = {id(e) for e in first}
     rest = [e for e in repo.root_package.walk()
             if isinstance(e, ITEM_CLASSES) and id(e) not in seen and not is_owned(e)]
@@ -672,11 +661,11 @@ def elements_of(iface: Optional[Element]) -> list[Element]:
     if iface is None:
         return []
     if isinstance(iface, EnumerationDefinition):
-        return [c for c in iface.owned_elements if isinstance(c, EnumerationUsage)]
+        return [c for c in iface.children if isinstance(c, EnumerationUsage)]
     if isinstance(iface, INTERFACE_CLASSES):
-        return [c for c in iface.owned_elements if isinstance(c, ELEMENT_CLASSES)]
+        return [c for c in iface.children if isinstance(c, ELEMENT_CLASSES)]
     if isinstance(iface, PortDefinition):
-        return [c for c in iface.owned_elements if isinstance(c, AttributeUsage)]
+        return [c for c in iface.children if isinstance(c, AttributeUsage)]
     return []
 
 
@@ -1246,7 +1235,7 @@ def move_element(el: Element, delta: Optional[int] = None, *, index: Optional[in
 # ---------------------------------------------------------------------------
 
 def _drop_owned(repo, port: PortUsage, keep: Optional[Element] = None) -> None:
-    for c in list(port.owned_elements):
+    for c in list(port.children):
         if isinstance(c, (*INTERFACE_CLASSES, PortDefinition)) and c is not keep:
             repo.remove(c)
 
@@ -1450,7 +1439,7 @@ def _connector_owner(a: PortUsage, b: PortUsage) -> Optional[Element]:
             or any(definition_of(c) is holder for c in components_of(comp))
 
     for cand in (ca.owner, ca, cb.owner, cb):
-        if isinstance(cand, (PartDefinition, PartUsage)) and wires(cand, ca) and wires(cand, cb):
+        if (is_part_definition(cand) or is_part_usage(cand)) and wires(cand, ca) and wires(cand, cb):
             return cand
     return ca.owner if isinstance(ca.owner, Namespace) else None
 
@@ -1475,7 +1464,7 @@ def connect_ports(repo, source: Element, target: Element, *, name: Optional[str]
         comp = owning_component(port)
         if comp is owner:
             return {"component": None, "port": port}
-        if isinstance(comp, PartDefinition):
+        if is_part_definition(comp):
             # A definition port is reached through the usage of that definition here.
             comp = next((u for u in components_of(owner) if definition_of(u) is comp), comp)
         return {"component": comp, "port": port}
@@ -1498,7 +1487,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
         return []
     out: list[PortUsage] = []
     scopes = []
-    if isinstance(comp.owner, (PartDefinition, PartUsage)):
+    if (is_part_definition(comp.owner) or is_part_usage(comp.owner)):
         scopes.append(comp.owner)
     scopes.append(comp)
     for scope in scopes:
@@ -1520,7 +1509,7 @@ def connect_candidates(port: PortUsage) -> list[PortUsage]:
 
 def create_adapter(repo, parent: Element, name: Optional[str] = None) -> Adapter:
     """Create an Adapter component (with In / Out ports) inside a composition."""
-    if not isinstance(parent, (PartDefinition, PartUsage)):
+    if not (is_part_definition(parent) or is_part_usage(parent)):
         raise InterfaceError("An adapter must be created inside an architecture or component")
     nm = name or _unique_name(parent, "Adapter", 1, always_number=False)
     _check_name(nm, "Adapter name")
@@ -1533,7 +1522,7 @@ def create_adapter(repo, parent: Element, name: Optional[str] = None) -> Adapter
 
 
 def _ensure_adapter_ports(a: Adapter, repo) -> None:
-    if any(isinstance(c, PortUsage) for c in a.owned_elements):
+    if any(isinstance(c, PortUsage) for c in a.children):
         return
     for pname, direction in (("In", FeatureDirection.IN), ("Out", FeatureDirection.OUT)):
         p = PortUsage(name=pname, direction=direction)
@@ -2119,7 +2108,7 @@ def _item_to_json(e: Element) -> dict:
 def export_dictionary(repo) -> dict:
     """The interface dictionary as a standalone JSON-able document."""
     dic = get_dictionary(repo, create=False)
-    items = [c for c in (dic.owned_elements if dic is not None else []) if item_kind(c) in ITEM_KINDS]
+    items = [c for c in (dic.children if dic is not None else []) if item_kind(c) in ITEM_KINDS]
     order = {k: i for i, k in enumerate(("ValueType", "Enumeration", "Constant", "DataInterface",
                                          "PhysicalInterface", "ServiceInterface"))}
     items.sort(key=lambda e: order.get(item_kind(e) or "", 99))
@@ -2551,6 +2540,16 @@ def _on_removed(repo, removed: set[int]) -> None:
                 e.tool_data.pop("default_literal", None)
 
 
+def incompatibility_warnings(conn: Element) -> list[str]:
+    """The canvas / port-edit warning about a connector whose interfaces are incompatible
+    (``Incompatible interfaces AirDataWord → InertialData: element 'x' is missing …``)."""
+    reasons = connector_compatibility(conn)
+    if not reasons:
+        return []
+    names = [getattr(interface_of(p), "name", None) or "(none)" for p in conn.ends[:2]]
+    return [f"Incompatible interfaces {names[0]} → {names[1]}: {'; '.join(reasons)}"]
+
+
 _INSTALLED = False
 
 
@@ -2559,6 +2558,7 @@ def install() -> None:
     global _INSTALLED
     from . import hooks, repository, validator
     register_codec("interfaces", _encode, _decode)          # replaces by name
+    register_connector_warning_source(incompatibility_warnings)   # idempotent
     if validate_repo not in validator._REPO_RULES:
         register_repo_rule(validate_repo)
     if _on_created not in hooks._CREATED_HOOKS:

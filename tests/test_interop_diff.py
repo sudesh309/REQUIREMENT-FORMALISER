@@ -36,7 +36,7 @@ class CompareTests(unittest.TestCase):
         r.resolve("FlightDeck::gps").name = "gnss"
         r.resolve("Components::GPSReceiver::navOut").direction = FeatureDirection.INOUT
         pfd = r.resolve("FlightDeck::pfd")
-        pfd.feature_typings = []
+        pfd.remove_types()
         pfd.add_type(r.resolve("Components::GPSReceiver"))
         fmc = r.resolve("Components::FlightManagementComputer")
         stereotypes_on(fmc)[0].set("mass", 5.0)      # .values is a fresh dict (profiles)

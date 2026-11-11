@@ -29,6 +29,12 @@ from .definitions import (
     ParameterDefinition, ParameterUsage,
     MetadataDefinition, MetadataUsage,
     OccurrenceDefinition, OccurrenceUsage,
+    ReferenceUsage, ConnectorAsUsage, AcceptActionUsage, CaseDefinition, CaseUsage,
+)
+from .memberships import (
+    SubjectMembership, ActorMembership, StakeholderMembership, RequirementConstraintMembership,
+    TransitionFeatureMembership, StateSubactionMembership, Expose, MembershipExpose,
+    NamespaceExpose, TriggerInvocationExpression,
 )
 from .relationships import (
     Satisfy, Verify, Refine, Trace, DeriveRequirement, Copy,
@@ -40,6 +46,7 @@ from .state_machines import (
     StateMachineRunner, attach_state_machine, state_machines_of,
 )
 from .library import SYSML_LIBRARY, build_sysml_library
+from . import metamodel  # noqa: F401,E402 - registers the SysML metaclasses
 
 __all__ = [
     "Definition", "Usage",
@@ -66,6 +73,10 @@ __all__ = [
     "ParameterDefinition", "ParameterUsage",
     "MetadataDefinition", "MetadataUsage",
     "OccurrenceDefinition", "OccurrenceUsage",
+    "ReferenceUsage", "ConnectorAsUsage", "AcceptActionUsage", "CaseDefinition", "CaseUsage",
+    "SubjectMembership", "ActorMembership", "StakeholderMembership",
+    "RequirementConstraintMembership", "TransitionFeatureMembership", "StateSubactionMembership",
+    "Expose", "MembershipExpose", "NamespaceExpose", "TriggerInvocationExpression",
     "Satisfy", "Verify", "Refine", "Trace", "DeriveRequirement", "Copy",
     "Allocation", "SubjectOf", "StakeholderOf", "ActorOf", "FramedConcern",
     "ParameterBinding", "AssumeConstraint", "RequireConstraint", "Exposes",

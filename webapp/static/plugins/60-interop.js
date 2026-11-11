@@ -13,7 +13,8 @@
 //     with property-level differences), filters, search, navigate; three-way merge with
 //     per-conflict Mine / Theirs choice.
 //   * "Model Check" tab (id "checks", order 90): validator + advisor checks, severity / rule
-//     filters, search, click or Enter to navigate, counts badge on the tab.
+//     filters, search, click or Enter to show the element (canvas or Properties) and select
+//     it, counts badge on the tab.
 //
 // Backend: webapp/routes/interop.py (see docs/features/interop.md).
 
@@ -596,8 +597,10 @@ export default async function install(studio) {
     renderGrid();
   }
 
-  // The Model sheet describes the export; an existing row's ID is its identity.
-  const readOnlyCol = (name, r) => IO.sheet === "Model" || (name === "ID" && !IO.newRows.get(IO.sheet)?.has(r));
+  // The Model sheet describes the export and the Tool Data sheet carries layout (JSON) for
+  // round trips; an existing row's ID is its identity.
+  const READ_ONLY_SHEETS = new Set(["Model", "Tool Data"]);
+  const readOnlyCol = (name, r) => READ_ONLY_SHEETS.has(IO.sheet) || (name === "ID" && !IO.newRows.get(IO.sheet)?.has(r));
 
   function renderGrid() {
     const host = IO.pane.querySelector('[data-io-pane="tables"]');
@@ -640,7 +643,7 @@ export default async function install(studio) {
       `<span class="io-spacer"></span><span>Columns “X ID” hold element ids and win over the name column “X”; editing a name clears its id.</span>`;
     host.parentElement.querySelector('[data-t="apply"]').disabled = !dirty;
     host.parentElement.querySelector('[data-t="revert"]').disabled = !dirty;
-    host.parentElement.querySelector('[data-t="add"]').disabled = IO.sheet === "Model";
+    host.parentElement.querySelector('[data-t="add"]').disabled = READ_ONLY_SHEETS.has(IO.sheet);
   }
 
   function cellTd(r, c) {
@@ -744,7 +747,7 @@ export default async function install(studio) {
   }
 
   function addRow() {
-    if (!IO.work || IO.sheet === "Model") return;
+    if (!IO.work || READ_ONLY_SHEETS.has(IO.sheet)) return;
     const rows = sheetRows();
     const blank = header().map(() => "");
     // Sensible defaults: the kind most rows of this table use.
@@ -1324,7 +1327,15 @@ export default async function install(studio) {
       const body = pane.querySelector('[data-k="body"]');
       body.addEventListener("click", (e) => {
         const tr = e.target.closest("tr.io-issue");
-        if (tr) { CHK.sel = Number(tr.dataset.i); tr.focus(); studio.emit("navigate", { id: tr.dataset.id }); }
+        if (!tr) return;
+        // The row stays marked, so coming back to Model Check shows where the user was.
+        CHK.sel = Number(tr.dataset.i);
+        for (const row of tr.parentElement.children) {
+          row.classList.toggle("sel", row === tr);
+          row.tabIndex = row === tr ? 0 : -1;
+        }
+        tr.focus();
+        showIssue(tr.dataset.id).catch(() => {});
       });
       body.addEventListener("keydown", (e) => {
         const tr = e.target.closest("tr.io-issue");
@@ -1373,6 +1384,26 @@ export default async function install(studio) {
       } finally { CHK.running = null; }
     })();
     return CHK.running;
+  }
+
+  // An issue opens the view that shows its element and selects it there: the canvas for what
+  // the canvas draws (architectures, components, ports, connectors; the composition holding
+  // it is opened), Properties for anything else (requirements, interfaces, functions, ...).
+  // The view is shown before `navigate` so the canvas can scroll the element into sight.
+  // Only the last click counts when several answers are still on their way.
+  let showSeq = 0;
+  async function showIssue(id) {
+    const seq = ++showSeq;
+    let tab = "properties";
+    if (document.querySelector('#tab-bar .tab[data-tab="architecture"]')) {
+      try {
+        const r = await studio.api("GET", `/api/arch/locate/${encodeURIComponent(id)}`);
+        if (r.composition === id || r.select === id) tab = "architecture";
+      } catch { /* not part of an architecture */ }
+    }
+    if (seq !== showSeq) return;
+    if (studio.state.tab !== tab) studio.switchTab(tab);
+    studio.emit("navigate", { id });
   }
 
   function shownIssues() {

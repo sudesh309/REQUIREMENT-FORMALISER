@@ -8,7 +8,7 @@ from engine.hooks import notify_created
 from kerml.elements import Element
 from kerml.namespaces import Package
 from kerml.stereotypes import (
-    Profile, Stereotype, StereotypeError, matches_category, categories_of, stereotypes_on,
+    CATEGORIES, Profile, Stereotype, StereotypeError, matches_category, categories_of, stereotypes_on,
 )
 from sysmlv2 import (
     ActionDefinition, AttributeUsage, ConnectionUsage, InterfaceDefinition, PartDefinition,
@@ -188,6 +188,68 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(categories_of(state), [])
         self.assertEqual(categories_of(alloc), ["Allocation"])
 
+    def test_allocation_categories_are_separate(self):
+        """PO-13: Allocation matches allocations only, AllocationSet allocation sets only."""
+        from engine.allocation import AllocationScenario, AllocationSet, ArchitectureAllocation
+        from sysmlv2.definitions import AllocationDefinition
+        aset, scen, alloc = AllocationSet(name="S"), AllocationScenario(name="Sc"), ArchitectureAllocation(name="a")
+        self.assertEqual(categories_of(aset), ["AllocationSet"])
+        self.assertEqual(categories_of(alloc), ["Allocation"])
+        self.assertEqual(categories_of(scen), [])              # a scenario is neither
+        self.assertEqual(categories_of(AllocationDefinition(name="AD")), ["Allocation"])
+        self.assertEqual(categories_of(AllocationUsage(name="au")), ["Allocation"])
+        self.assertIn("AllocationSet", CATEGORIES)
+        self.assertEqual(CATEGORIES.index("AllocationSet"), CATEGORIES.index("Allocation") + 1)
+
+    def test_allocation_categories_persist_and_travel_in_profile_files(self):
+        """PO-13: the AllocationSet category survives Save / Load and a profile file."""
+        repo = Repository("A")
+        prof = P.create_profile(repo, "Alloc")
+        P.add_stereotype(repo, prof, "Plan", applies_to="AllocationSet")
+        P.add_stereotype(repo, prof, "Binding", applies_to="Allocation")
+        again = from_json(to_json(repo))
+        self.assertEqual([(s.name, s.category) for s in P.find_profile(again, "Alloc").stereotypes],
+                         [("Plan", "AllocationSet"), ("Binding", "Allocation")])
+        text = P.export_profile_json(prof)
+        self.assertIn('"applies_to": "AllocationSet"', text)
+        other = Repository("B")
+        P.import_profile(other, text)
+        self.assertEqual(P.find_stereotype(other, "Alloc.Plan").effective_category(), "AllocationSet")
+        with self.assertRaises(P.ProfileError):
+            P.add_stereotype(other, P.find_profile(other, "Alloc"), "Bad", applies_to="AllocationSets")
+        # a derived stereotype inherits the category; mixing the two is refused
+        base = P.find_stereotype(other, "Alloc.Plan")
+        derived = P.add_stereotype(other, P.find_profile(other, "Alloc"), "SubPlan", base=base)
+        self.assertEqual(derived.effective_category(), "AllocationSet")
+        with self.assertRaises(P.ProfileError):
+            P.add_stereotype(other, P.find_profile(other, "Alloc"), "Odd", base=base, applies_to="Allocation")
+
+    def test_allocation_stereotypes_apply_only_to_allocations(self):
+        from engine.allocation import AllocationSet, ArchitectureAllocation
+        repo = Repository("A")
+        prof = P.create_profile(repo, "Alloc")
+        on_alloc = P.add_stereotype(repo, prof, "Binding", applies_to="Allocation")
+        on_set = P.add_stereotype(repo, prof, "Plan", applies_to="AllocationSet")
+        anything = P.add_stereotype(repo, prof, "Tagged")
+        aset = _new(repo, AllocationSet, "Set", repo.root_package)
+        alloc = _new(repo, ArchitectureAllocation, "al", repo.root_package)
+        offered = lambda e: {s.name for s in P.applicable_stereotypes(repo, e)}
+        self.assertEqual(offered(alloc), {"Binding", "Tagged"})
+        self.assertEqual(offered(aset), {"Plan", "Tagged"})
+        P.apply_stereotype(repo, alloc, on_alloc)
+        P.apply_stereotype(repo, aset, on_set)
+        with self.assertRaises(P.ProfileError):
+            P.apply_stereotype(repo, aset, on_alloc)             # the old category let this through
+        with self.assertRaises(P.ProfileError):
+            P.apply_stereotype(repo, alloc, on_set)
+        # a batch over the model skips what is already stereotyped and tags nothing else
+        out = P.batch_apply(repo, on_alloc, scope="model")
+        self.assertEqual((out["count"], [x["reason"] for x in out["skipped"]]), (0, ["already applied"]))
+        out = P.batch_apply(repo, on_set, scope="model")
+        self.assertEqual((out["count"], [x["reason"] for x in out["skipped"]]), (0, ["already applied"]))
+        reloaded = from_json(to_json(repo))
+        self.assertEqual(sum(1 for e in P.model_elements(reloaded) if stereotypes_on(e)), 2)
+
     def test_kinds_from_parallel_features_match_by_name(self):
         class DataInterface(PortDefinition):
             kind = "DataInterface"
@@ -207,7 +269,9 @@ class CategoryTests(unittest.TestCase):
         self.assertTrue(matches_category(DataInterface(name="d"), "Interface"))
         self.assertTrue(matches_category(DataElement(name="e"), "InterfaceElement"))
         self.assertFalse(matches_category(InterfaceDictionary(name="x"), "Interface"))
-        self.assertTrue(matches_category(AllocationSet(name="s"), "Allocation"))
+        # PO-13: an Allocation stereotype applies to allocations only; sets have their own category.
+        self.assertFalse(matches_category(AllocationSet(name="s"), "Allocation"))
+        self.assertTrue(matches_category(AllocationSet(name="s"), "AllocationSet"))
         self.assertTrue(matches_category(FunctionDefinition(name="f"), "Function"))
 
         class ServiceInterface(PortDefinition):
@@ -504,7 +568,8 @@ class BatchTests(unittest.TestCase):
 
     def test_composition_and_selection_scopes(self):
         out = P.batch_apply(self.repo, self.lru, scope="composition", root=self.arch.element_id)
-        self.assertEqual({self.repo.by_id(i).name for i in out["applied"]}, {"AvSystem", "FMC", "ADC"})
+        # SU-7: the elements inside the composition, not the composition itself
+        self.assertEqual({self.repo.by_id(i).name for i in out["applied"]}, {"FMC", "ADC"})
         out = P.batch_apply(self.repo, self.port, scope="selection",
                             elements=[self.p.element_id, self.other_c.element_id])
         self.assertEqual(out["applied"], [self.p.element_id])

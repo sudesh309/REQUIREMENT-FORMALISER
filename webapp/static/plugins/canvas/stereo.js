@@ -12,6 +12,14 @@
 // checks and the inline error marking are the profiles plugin's (studio.profiles.ui); without
 // that plugin the section lists the stereotypes read-only.
 //
+// Values are shown with their unit and rounded (4.5359237 kg reads 4.54 kg); the field shows the
+// stored precision while it has the focus, and what is typed is stored as typed (a number, an
+// expression such as 2*1.5, or a value with a compatible unit such as 10 lb).
+//
+// A reference component shows the stereotypes and values it inherits from its definition,
+// marked as inherited; typing a value overrides it for this component, "Reset" inherits the
+// definition's again.
+//
 // The section's element stays in the dock while the dock re-renders around it, so a field
 // keeps its focus and text; it re-reads the values when the selection changes, or when the
 // model changed elsewhere (undo, Properties tab, MCP) and none of its fields is being edited.
@@ -103,18 +111,18 @@ export class StereoSection {
     const partial = (v.partial || []).map(p => `<div class="arch-st-partial">
         <span>«${esc(p.qualified_name)}» on ${p.count} of ${n}</span>
         <button type="button" class="btn-action" data-st-apply="${esc(p.id)}" title="Apply «${esc(p.qualified_name)}» to the other selected components">Apply to all</button></div>`).join("");
+    if (!this.roundingBound) { this.roundingBound = true; ui.rounding(this.el); }
     const groups = v.applied.map((app) => {
       const withProps = app.groups.filter(g => g.properties.length);
       const heads = withProps.length > 1 || withProps.some(g => g.id !== app.id);
+      const from = app.inherited_from?.name;
       const rows = app.groups.map(g => (!g.properties.length ? ""
         : (heads ? `<div class="pf-ghead">${esc(g.stereotype)}${g.id !== app.id ? " (inherited)" : ""}</div>` : "")
-          + g.properties.map(p => ui.propertyEditor(p)).join(""))).join("");
+          + g.properties.map(p => ui.propertyEditor(p, { round: true, from })).join(""))).join("");
       return `<details class="pf-app" data-app="${esc(app.id)}" ${this.collapsed.has(app.id) ? "" : "open"}>
         <summary title="${esc(app.description || "")}"><span class="pf-caret">▸</span>
-          <span class="pf-name">«${esc(app.qualified_name)}»</span><span class="flex-1"></span>
-          <button type="button" class="pf-icon-btn danger" data-st-remove="${esc(app.id)}"
-                  title="Remove «${esc(app.qualified_name)}»${this.many ? " from every selected component" : ""}"
-                  aria-label="Remove ${esc(app.qualified_name)}">✕</button></summary>
+          <span class="pf-name">«${esc(app.qualified_name)}»</span><span data-group-tag>${ui.groupTag(app)}</span><span class="flex-1"></span>
+          <span data-group-rm>${this.removeButton(app)}</span></summary>
         <div class="pf-props">${rows || '<div class="arch-dock-muted" style="grid-column:1/-1">No properties.</div>'}</div>
       </details>`;
     }).join("");
@@ -129,6 +137,11 @@ export class StereoSection {
       else if (input.tagName === "SELECT") { const o = input.querySelector('option[value=""]'); if (o) o.textContent = "— mixed —"; }
       else { input.dataset.hint = input.placeholder; input.placeholder = MIXED; input.title = MIXED; }
     }
+  }
+
+  // The group's remove button (none for a stereotype that is only inherited).
+  removeButton(app) {
+    return this.ui.removeButton(app, `data-st-remove="${esc(app.id)}"`, this.many ? " from every selected component" : "");
   }
 
   msg(text, cls = "") {
@@ -190,14 +203,22 @@ export class StereoSection {
       // Update this editor in place (no re-render): focus may already be in the next field.
       if (shown) {
         ui.showStored(input, shown);
+        const app = v.applied.find(a => a.groups.some(g => g.properties.some(p => p.path === path)));
+        ui.markOrigin(input, shown, app);
+        ui.markGroup(input.closest("details.pf-app"), app, this.removeButton(app));
         if (input.dataset.mixed) {
           delete input.dataset.mixed;
           input.indeterminate = false;
           if (input.dataset.hint !== undefined) input.placeholder = input.dataset.hint;
         }
       }
-      const text = `${path} = ${shown?.display ?? ""}${this.many ? ` on ${this.ids.length} components` : ""}`;
-      this.studio.log(`${this.many ? "" : `${this.what()}: `}${text}`, "ok");
+      const where = this.many ? ` on ${this.ids.length} components` : "";
+      // What was stored, rounded for reading: "mass = 4.54 kg (stored 4.5359237 kg)".
+      const kept = shown && shown.display_short !== shown.display ? ` (stored ${shown.display})` : "";
+      // A value typed with a unit says what it came to: "10 lb" -> "mass = 4.54 kg (stored 4.5359237 kg)".
+      const typed = input.type !== "checkbox" && /[A-DF-Za-df-z%°]/.test(String(value)) && shown?.unit ? ` (entered as ${String(value).trim()})` : "";
+      const text = `${path} = ${shown?.display_short ?? shown?.display ?? ""}${kept}${typed}${where}`;
+      this.studio.log(`${this.many ? "" : `${this.what()}: `}${path} = ${shown?.display ?? ""}${where}`, "ok");
       this.msg(text, "ok");
       await this.notify();
     } catch (e) {
@@ -206,6 +227,17 @@ export class StereoSection {
       input.title = errorText(e);
       this.msg(errorText(e), "err");
     }
+  }
+
+  async reset(path) {
+    try {
+      const v = this.many
+        ? await this.studio.api("POST", "/api/arch/stereotypes/reset", { ids: this.ids, properties: [path] })
+        : await this.studio.api("POST", `/api/elements/${encodeURIComponent(this.ids[0])}/stereotypes/reset`, { properties: [path] });
+      this.studio.log(`${this.many ? `${this.ids.length} components` : this.what()}: ${path} is inherited again`, "ok");
+      this.fill(v);
+      await this.notify();
+    } catch (e) { this.msg(errorText(e), "err"); }
   }
 
   onChange(e) {
@@ -218,7 +250,9 @@ export class StereoSection {
     const rm = e.target.closest("[data-st-remove]");
     if (rm) { e.preventDefault(); e.stopPropagation(); this.remove(rm.dataset.stRemove); return; }
     const ap = e.target.closest("[data-st-apply]");
-    if (ap) this.apply(ap.dataset.stApply);
+    if (ap) { this.apply(ap.dataset.stApply); return; }
+    const rs = e.target.closest("[data-reset]");
+    if (rs) { e.preventDefault(); this.reset(rs.dataset.reset); }
   }
 
   onKey(e) {

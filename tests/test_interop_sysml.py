@@ -7,6 +7,7 @@ from kerml.elements import Documentation
 from kerml.features import Feature, FeatureDirection, MultiplicityRange
 from kerml.library import KERML_LIBRARY
 from kerml.namespaces import Package
+from sysmlv2.definitions import is_part_usage
 from sysmlv2 import (
     ActionDefinition, ActionUsage, AttributeDefinition, AttributeUsage, ConnectionUsage,
     ConstraintDefinition, EnumerationDefinition, EnumerationUsage, InterfaceDefinition,
@@ -162,7 +163,7 @@ class SysmlExportTests(unittest.TestCase):
         else:
             self.assertIn("port navOut : Interfaces::A429Word [0..*];  // out", text)
         fd = new.resolve("FlightDeck")
-        self.assertEqual({p.name for p in fd.owned_elements if isinstance(p, PartUsage)},
+        self.assertEqual({p.name for p in fd.owned_elements if is_part_usage(p)},
                          {"gps", "fmc", "pfd", "ims"})
         self.assertEqual(new.resolve("FlightDeck::pfd").multiplicity.lower, 2)
         conns = [c for c in fd.owned_elements if isinstance(c, ConnectionUsage)]

@@ -13,6 +13,7 @@ from engine.interop.xlsx import safe_xml
 from kerml.features import FeatureDirection
 from kerml.stereotypes import stereotypes_on
 from sysmlv2 import PartUsage
+from sysmlv2.definitions import is_part_usage
 from tests.test_interop_fixtures import avionics_repo
 
 
@@ -44,7 +45,9 @@ class ExportTests(unittest.TestCase):
 
     def test_sheets_and_headers(self):
         self.assertEqual(list(self.sheets), ["Model", "Profiles", "Components", "Ports", "Interfaces",
-                                             "Connections", "Requirements", "Elements", "Links"])
+                                             "Connections", "Requirements", "Elements", "Links",
+                                             "Tool Data"])
+        self.assertEqual(self.sheets["Tool Data"][0], ["ID", "Name", "Kind", "Key", "Value"])
         self.assertEqual(self.sheets["Components"][0][:7],
                          ["ID", "Name", "Kind", "Parent ID", "Parent", "Reference ID", "Reference"])
         # Named as engine.profiles names the stereotype: «LRU» lives in a plain package.
@@ -323,7 +326,7 @@ class ModelBuilderTests(unittest.TestCase):
         repo = b.build()
         self.assertEqual(repo.name, "IMA")
         cab = repo.resolve("Cabinet")
-        self.assertEqual([c.name for c in cab.owned_elements if isinstance(c, PartUsage)],
+        self.assertEqual([c.name for c in cab.owned_elements if is_part_usage(c)],
                          ["cpm", "iom"])
         conn = repo.resolve("Cabinet::afdx")
         self.assertEqual([e.name for e in conn.ends], ["busOut", "busIn"])

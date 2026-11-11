@@ -38,7 +38,7 @@ from engine.interop.tables import (
 from engine.interop.common import safe_filename
 from engine.interop.xmi_import import import_xmi, xmi_to_project
 from engine.parser import ParseError
-from webapp.core import err, ok, route, session
+from webapp.core import err, ok, register_mutation_hook, route, session
 
 MAX_UPLOAD_BYTES = 48 * 1024 * 1024
 
@@ -137,6 +137,7 @@ def api_import_tables(req: dict):
     if mode == "new":
         repo, report = tables_to_project(sheets, body.get("name") or None)
         session().set_repo(repo)
+        _remember(f"Imported {body.get('filename') or 'tables'}")
     else:
         report = import_tables(session().repo, sheets)
     return ok({"mode": mode, "report": report.to_dict(), "project": _project_summary()})
@@ -184,6 +185,7 @@ def api_import_sysml(req: dict):
         repo = Repository(name=body.get("name") or "ImportedText")
         created = import_sysml(repo, text)
         session().set_repo(repo)
+        _remember("Imported SysML v2 text")
     else:
         import_sysml(_clone(session().repo), text)      # rehearsal: a syntax error changes nothing
         created = import_sysml(session().repo, text)
@@ -207,6 +209,7 @@ def api_import_xmi(req: dict):
     if mode == "new":
         repo, report = xmi_to_project(data, body.get("name") or None)
         session().set_repo(repo)
+        _remember(f"Imported {body.get('filename') or 'XMI'}")
     else:
         report = import_xmi(session().repo, data, wrap=body.get("wrap", True) is not False)
     return ok({"mode": mode, "report": report.to_dict(), "project": _project_summary()})
@@ -222,15 +225,48 @@ def _snapshot_info() -> Optional[dict]:
             "elements": len(snap["data"].get("elements", []))}
 
 
+def _remember(label: str) -> None:
+    """Make the current project the baseline of "Compare with Last Saved"."""
+    from engine.serializer import to_dict
+    _state()["snapshot"] = {"label": label, "taken": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "data": to_dict(session().repo)}
+
+
 @route("POST", r"^/api/interop/snapshot$")
 @_guard
 def api_take_snapshot(req: dict):
-    from engine.serializer import to_dict
-    body = _body(req)
-    _state()["snapshot"] = {"label": str(body.get("label") or "Last saved"),
-                            "taken": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "data": to_dict(session().repo)}
+    _remember(str(_body(req).get("label") or "Last saved"))
     return ok(_snapshot_info())
+
+
+def _baseline_hook(method: str, path: str, _body_: Any):
+    """Keep the comparison baseline in step with project switches.
+
+    Load JSON opens the last saved version of a project (System Composer compares with the
+    file on disk), so the loaded project becomes the baseline. Undo / redo swap the
+    project object (which drops plugin state) but stay in the same project, so the
+    baseline is kept.
+    """
+    if method != "POST":
+        return None
+    if path == "/api/load":
+        def finish(status: int) -> None:
+            if status == 200:
+                _remember("Last saved (loaded file)")
+        return finish
+    if path in ("/api/undo", "/api/redo"):
+        kept = session().plugin_state.get("interop", {}).get("snapshot")
+
+        def keep(_status: int) -> None:
+            # (Undoing an "import as a new project" goes back to another project.)
+            if kept is not None and \
+                    kept["data"].get("root") == session().repo.root_package.element_id:
+                _state().setdefault("snapshot", kept)
+        return keep
+    return None
+
+
+register_mutation_hook(_baseline_hook)
 
 
 @route("GET", r"^/api/interop/snapshot$")
