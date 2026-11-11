@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Optional
 
-from kerml.elements import Documentation, Element, Relationship, is_pure_relationship
+from kerml.elements import Dependency, Documentation, Element, Relationship, is_pure_relationship
 from kerml.namespaces import Namespace, Package
 from kerml.stereotypes import stereotypes_on
 from sysmlv2.definitions import (
@@ -113,13 +113,15 @@ class RequirementSet(Package):
         self.id_prefix: str = prefix
 
 
-class Confirm(Relationship):
-    """The source (analysis, review record, stakeholder, ...) confirms the destination requirement."""
+class Confirm(Dependency):
+    """The source (analysis, review record, stakeholder, ...) confirms the destination requirement
+    (a Dependency: client = source, supplier = target)."""
 
     kind = "Confirm"
+    spec_metaclass = "Dependency"
 
-    def __init__(self, source: Element, target: Element, **kwargs):
-        super().__init__(source=source, target=target, **kwargs)
+    def __init__(self, source: Optional[Element] = None, target: Optional[Element] = None, **kwargs):
+        super().__init__(source, target, **kwargs)
 
 
 REQ_TYPES = ("functional", "performance", "interface", "safety", "environmental",

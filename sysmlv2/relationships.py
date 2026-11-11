@@ -1,91 +1,96 @@
-"""SysML v2 modeling relationships.
+"""SysML v2 traceability links of the application.
 
-These are KerML Relationships that carry SysML-specific semantics:
+These are KerML Dependencies (``source`` = client, ``target`` = supplier) that
+carry the application's link semantics, interchanged as ``Dependency`` with
+their class in ``ext`` (Phase 4c maps satisfy / verify / derive / refine /
+trace to the standard requirement constructs):
+
 - Satisfy: a part / behavior satisfies a requirement
 - Verify: a verification case verifies a requirement
 - Refine, Trace, DeriveRequirement, Copy: requirements traceability
+- Allocation, SubjectOf, StakeholderOf, ActorOf, FramedConcern, ParameterBinding,
+  AssumeConstraint, RequireConstraint, Exposes: the earlier link kinds
 """
 from __future__ import annotations
 
-from kerml.elements import Element, Relationship
+from typing import Optional
+
+from kerml.elements import Dependency, Element
 
 
-class Satisfy(Relationship):
+class _Link(Dependency):
+    """A binary application link: ``_Link(source, target)``."""
+
+    spec_metaclass = "Dependency"
+
+    def __init__(self, source: Optional[Element] = None, target: Optional[Element] = None, **kwargs):
+        super().__init__(source, target, **kwargs)
+
+
+class Satisfy(_Link):
     kind = "Satisfy"
 
-    def __init__(self, satisfier: Element, requirement: Element, **kwargs):
-        super().__init__(source=satisfier, target=requirement, **kwargs)
 
-
-class Verify(Relationship):
+class Verify(_Link):
     kind = "Verify"
 
-    def __init__(self, verifier: Element, requirement: Element, **kwargs):
-        super().__init__(source=verifier, target=requirement, **kwargs)
 
-
-class Refine(Relationship):
+class Refine(_Link):
     kind = "Refine"
 
-    def __init__(self, refining: Element, refined: Element, **kwargs):
-        super().__init__(source=refining, target=refined, **kwargs)
 
-
-class Trace(Relationship):
+class Trace(_Link):
     kind = "Trace"
 
 
-class DeriveRequirement(Relationship):
+class DeriveRequirement(_Link):
     kind = "DeriveRequirement"
 
 
-class Copy(Relationship):
+class Copy(_Link):
     kind = "Copy"
 
 
-class Allocation(Relationship):
+class Allocation(_Link):
     """Generic allocation (logical -> physical, behavior -> structure, ...)."""
     kind = "Allocation"
 
-    def __init__(self, source: Element, target: Element, **kwargs):
-        super().__init__(source=source, target=target, **kwargs)
 
-
-class SubjectOf(Relationship):
+class SubjectOf(_Link):
     """Names the subject of a requirement / case / view."""
     kind = "SubjectOf"
 
 
-class StakeholderOf(Relationship):
+class StakeholderOf(_Link):
     """Records a stakeholder for a requirement."""
     kind = "StakeholderOf"
 
 
-class ActorOf(Relationship):
+class ActorOf(_Link):
     """Records an actor for a requirement / use case."""
     kind = "ActorOf"
 
 
-class FramedConcern(Relationship):
+class FramedConcern(_Link):
     """A Concern framed by a Requirement / Viewpoint."""
     kind = "FramedConcern"
 
 
-class ParameterBinding(Relationship):
+class ParameterBinding(_Link):
     """Binds two parameters (matching their values across an invocation)."""
     kind = "ParameterBinding"
 
 
-class AssumeConstraint(Relationship):
+class AssumeConstraint(_Link):
     """Requirement assumes a Constraint."""
     kind = "AssumeConstraint"
 
 
-class RequireConstraint(Relationship):
+class RequireConstraint(_Link):
     """Requirement requires a Constraint."""
     kind = "RequireConstraint"
 
 
-class Exposes(Relationship):
+class Exposes(_Link):
     """View exposes a model element."""
     kind = "Exposes"
