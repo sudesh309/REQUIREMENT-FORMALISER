@@ -20,7 +20,7 @@
     "better": "higher"
   },
   "metamodel.kerml.derived_present": {
-    "value": 0.8284,
+    "value": 0.8582,
     "better": "higher"
   },
   "metamodel.kerml.metaclasses_present": {
@@ -28,23 +28,23 @@
     "better": "higher"
   },
   "metamodel.nonstandard_kinds": {
-    "value": 42,
+    "value": 35,
     "better": "lower"
   },
   "metamodel.supertypes_consistent": {
-    "value": 0.8108,
+    "value": 0.9677,
     "better": "higher"
   },
   "metamodel.sysml.attributes_present": {
-    "value": 0.381,
+    "value": 0.8095,
     "better": "higher"
   },
   "metamodel.sysml.derived_present": {
-    "value": 0.0355,
+    "value": 0.2284,
     "better": "higher"
   },
   "metamodel.sysml.metaclasses_present": {
-    "value": 0.5054,
+    "value": 0.6452,
     "better": "higher"
   },
   "parse.collector_ok": {
