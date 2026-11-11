@@ -20,8 +20,10 @@ defines the property itself is left alone.
 Not generated (left to hand-written code): ``Usage::mayTimeVary`` (needs the
 library: ``specializesFromLibrary``), ``TransitionUsage::source`` /
 ``target`` (the transition structure), ``ViewUsage::exposedElement`` (needs
-``Expose``), ``ConjugatedPortTyping::portDefinition`` and the others listed
-by ``kerml.derived.report()``.
+``Expose``); ``kerml.derived.report()`` lists every derived property left
+out and why. ``kerml.derived.shadowed()`` lists the compatibility attributes
+that still hide an installed derivation on their instances
+(``RequirementDefinition.required_constraints``, ...).
 """
 from __future__ import annotations
 

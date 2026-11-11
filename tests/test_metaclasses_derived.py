@@ -10,7 +10,7 @@ from kerml.namespaces import ElementFilterMembership
 from sysmlv2 import (
     ActionUsage, AttributeUsage, ConcernUsage, ConnectionUsage, EnumerationDefinition,
     EnumerationUsage, FlowUsage, InterfaceUsage, ItemUsage, MetadataUsage, OccurrenceDefinition,
-    OccurrenceUsage, PartDefinition, PartUsage, PortDefinition, PortUsage, RequirementDefinition,
+    PartDefinition, PartUsage, PortDefinition, PortUsage, RequirementDefinition,
     RequirementUsage, StateDefinition, StateUsage, TransitionUsage, Usage, UseCaseUsage,
     IncludeUseCaseUsage, ViewpointUsage,
 )

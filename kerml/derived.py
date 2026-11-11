@@ -373,18 +373,20 @@ def shadowed(classes: Optional[Iterable[type]] = None) -> list[tuple[type, str]]
 
     Each class is built with no arguments; `classes` defaults to every element
     class of the discovery packages (``kerml.metamodel.python_classes()``).
+    A subclass of a listed class that hides the same name is not listed again
+    (``Feature.multiplicity`` stands for every feature class).
     """
-    out = []
+    found = []
     for cls in (classes if classes is not None else mm.python_classes()):
         try:
             inst = cls()
         except Exception:  # noqa: BLE001 - classes that need arguments are not checked
             continue
-        for name, value in vars(inst).items():
-            d = _defined(cls, name)
-            if isinstance(d, DerivedProperty):
-                out.append((cls, name))
-    return out
+        for name in vars(inst):
+            if isinstance(_defined(cls, name), DerivedProperty):
+                found.append((cls, name))
+    return [(c, n) for c, n in found
+            if not any(o is not c and o_n == n and issubclass(c, o) for o, o_n in found)]
 
 
 # ---------------------------------------------------------------------------
